@@ -39,6 +39,7 @@ export function ScrollStrip({
   style,
   children,
   onOverflowChange,
+  onContainerResize,
   ...rest
 }: {
   className?: string;
@@ -46,10 +47,13 @@ export function ScrollStrip({
   children: ReactNode;
   /** Notifies callers when content crosses the horizontal overflow boundary. */
   onOverflowChange?: (overflowing: boolean) => void;
+  /** Called when the available strip width changes, such as sidebar resize. */
+  onContainerResize?: () => void;
 } & Omit<React.ComponentPropsWithoutRef<"div">, "className" | "style" | "children" | "ref">) {
   const innerRef = useRef<HTMLDivElement>(null);
   const [metrics, setMetrics] = useState<ScrollMetrics>(EMPTY_METRICS);
   const frame = useRef<number | null>(null);
+  const previousClientWidth = useRef<number | null>(null);
 
   const measure = useCallback(() => {
     const element = innerRef.current;
@@ -59,6 +63,10 @@ export function ScrollStrip({
       scrollWidth: element.scrollWidth,
       clientWidth: element.clientWidth,
     };
+    if (previousClientWidth.current !== null && previousClientWidth.current !== next.clientWidth) {
+      onContainerResize?.();
+    }
+    previousClientWidth.current = next.clientWidth;
     setMetrics((previous) =>
       previous.scrollLeft === next.scrollLeft &&
       previous.scrollWidth === next.scrollWidth &&
@@ -67,7 +75,7 @@ export function ScrollStrip({
         : next,
     );
     onOverflowChange?.(next.scrollWidth - next.clientWidth > 1);
-  }, [onOverflowChange]);
+  }, [onContainerResize, onOverflowChange]);
 
   /**
    * Re-measure on scroll and whenever the strip or its contents change size.

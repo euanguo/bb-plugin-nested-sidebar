@@ -62,6 +62,9 @@ export function GroupTabs({
   const handleOverflowChange = useCallback((next: boolean) => {
     if (next) setOverflowing(true);
   }, []);
+  const handleContainerResize = useCallback(() => {
+    setOverflowing(false);
+  }, []);
   return (
     <div className="flex shrink-0 items-center gap-1 px-1.5 pb-1">
       <ScrollStrip
@@ -69,6 +72,7 @@ export function GroupTabs({
         aria-label="Project groups"
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
         onOverflowChange={handleOverflowChange}
+        onContainerResize={handleContainerResize}
       >
         {tabs.map((tab) => {
           const key = groupScopeKey(tab.scope);

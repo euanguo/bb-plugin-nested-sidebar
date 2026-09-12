@@ -257,7 +257,7 @@ export function WorkspaceGroup({
         rows={rows}
       />
       {expanded ? (
-        <ul id={listId} className="flex flex-col gap-0.5">
+        <ul id={listId} className="ml-3 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
           {node.families.map((family) => (
             <FamilyRow
               key={family.root.id}
