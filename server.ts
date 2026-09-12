@@ -44,6 +44,7 @@ import {
   createGroupStore,
 } from "./lib/group-store.ts";
 import { GROUP_ICON_OPTIONS, MAX_GROUPS, MAX_GROUP_NAME_LENGTH } from "./lib/groups.ts";
+import { nestMigrations } from "./lib/migrations.ts";
 import {
   MAX_PROJECT_COLOR_ROWS,
   MAX_PROJECT_ID_LENGTH,
@@ -524,7 +525,7 @@ export default function plugin(bb: BbPluginApi) {
   });
 
   const db = bb.storage.database();
-  bb.storage.migrate(db, migrations);
+  bb.storage.migrate(db, nestMigrations(db, migrations));
   const projectColors = createProjectColorStore(db);
   const groups = createGroupStore(db);
 
