@@ -28,14 +28,26 @@ describe("modal escape hatches", () => {
   });
 
   it("only opens the new-thread dialog when a seed exists", () => {
-    assert.match(newThread, /open=\{seed !== null\}/);
-    assert.match(newThread, /seed === null \? null :/);
+    // No seed means no dialog element at all, so an unlabelled empty box is
+    // not something the plugin can render even by accident.
+    assert.match(newThread, /if \(seed === null\) return null;/);
+    assert.match(newThread, /title=\{`New thread in \$\{seed\.projectName\}`\}/);
     // The dialog closes whenever the seed clears, from either path.
     assert.match(inbox, /setNewThreadSeed\(null\)/);
     assert.match(inbox, /onClose=\{\(\) => setNewThreadSeed\(null\)\}/);
   });
 
+  it("promotes a fresh dialog every time it is opened", () => {
+    // Only opening (never a stale already-open element) and mounting while
+    // open are what stop a dialog from being left on screen un-dismissable.
+    assert.match(modal, /if \(dialog === null \|\| !open \|\| dialog\.open\) return;/);
+    assert.match(modal, /open \? \(/);
+  });
+
   it("reserves the sidebar scrollbar so the tree cannot jump sideways", () => {
-    assert.match(inbox, /scrollbarGutter: "stable"/);
+    // Padding absorbs the scrollbar instead of a stable gutter, which would
+    // leave a permanent dead strip on the right when nothing is scrollable.
+    assert.doesNotMatch(inbox, /scrollbarGutter/);
+    assert.match(inbox, /min-h-0 flex-1 overflow-y-auto pl-1\.5 pr-3 pb-2/);
   });
 });

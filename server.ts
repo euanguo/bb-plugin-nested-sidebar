@@ -219,6 +219,34 @@ export const nestRpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean() }),
   },
   /**
+   * Rename a project. Thin on purpose: the name is bb's own field, and the
+   * sidebar's project row is a second way into it rather than a parallel
+   * store. bb validates the value, so nothing is re-checked here beyond the
+   * empty case it would reject anyway.
+   */
+  renameProject: {
+    input: z.object({
+      projectId: projectIdSchema,
+      name: z.string().trim().min(1),
+    }),
+    output: z.object({ name: z.string() }),
+  },
+  /**
+   * Remove a project and its threads.
+   *
+   * Destructive and recursive, so the confirmation lives in the UI and the
+   * request carries the project's current name: a rename between the dialog
+   * opening and the click must fail rather than delete something the user did
+   * not name. The plugin never removes a project the user has not typed for.
+   */
+  removeProject: {
+    input: z.object({
+      projectId: projectIdSchema,
+      expectedName: z.string().trim().min(1),
+    }),
+    output: z.object({ ok: z.boolean() }),
+  },
+  /**
    * Create a thread from the new-thread dialog.
    *
    * The request body is forwarded to `threads.spawn` as-is rather than
@@ -777,6 +805,21 @@ export default function plugin(bb: BbPluginApi) {
       const ok = groups.reorder(groupIds);
       if (ok) bb.realtime.publish(GROUP_CHANNEL, {});
       return { ok };
+    },
+    async renameProject({ projectId, name }) {
+      const project = await bb.sdk.projects.update({ projectId, name });
+      return { name: project.name };
+    },
+    async removeProject({ projectId, expectedName }) {
+      // Re-read before deleting: the dialog confirmed against a name, and a
+      // project renamed in the meantime is not the one the user agreed to.
+      const project = await bb.sdk.projects.get({ projectId });
+      if (project.name !== expectedName) return { ok: false };
+      await bb.sdk.projects.delete({ projectId });
+      // A deleted project must not leave a member row pointing at nothing.
+      groups.assign(projectId, null);
+      bb.realtime.publish(GROUP_CHANNEL, {});
+      return { ok: true };
     },
     async spawnThread({ request }) {
       const projectId = request.projectId;
