@@ -884,16 +884,16 @@ export function ThreadInbox({
       </div>
 
       {/*
-        `scrollbar-gutter: stable` reserves the scrollbar's width whether or
-        not it is showing, so the tree does not jump sideways the moment the
-        content grows past the viewport and a scrollbar appears. Padding stays
-        symmetric because the gutter is inside the padding box; without it the
-        only way to absorb the shift is an asymmetric padding tweak.
+        Asymmetric padding, not `scrollbar-gutter: stable`.
+
+        The gutter reserves the scrollbar's full width even when nothing is
+        scrollable, which leaves a permanent dead strip on the right and makes
+        the tree look off-centre. Padding costs nothing when no bar is showing
+        and absorbs the bar exactly when one appears: the scrollbar sits in the
+        right padding, so the visible content keeps the same left and right
+        insets either way and nothing shifts.
       */}
-      <div
-        className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
-        style={{ scrollbarGutter: "stable" }}
-      >
+      <div className="min-h-0 flex-1 overflow-y-auto pl-1.5 pr-3 pb-2">
         {status === "loading" ? null : status === "error" ? (
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
           <p role="status" className={EMPTY_STATE_CLASS}>

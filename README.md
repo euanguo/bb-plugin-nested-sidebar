@@ -134,12 +134,27 @@ and hunting for it.
 
 ### New threads start from a row
 
-Every project row and every worktree row has a **+** that opens a modal seeded
+Every project row and every worktree row opens a modal seeded
 from that row: the project is filled in, and a worktree row additionally seeds
 that exact environment. The seed is a seed, not a lock -- the project picker stays
 editable, and the environment picker can still be aimed at another worktree or at
 a **newly created** one from inside the dialog. Submitting spawns the thread
 through the plugin, so it is attributed to Nest on the thread itself.
+
+### Project row actions
+
+The project row keeps **one** trailing control. At rest it is the disclosure
+chevron; on hover or focus it becomes a three-dot menu, so the row costs no extra
+icon and the chevron is never a second, redundant affordance. The menu holds
+everything you can do to a project:
+
+- New thread
+- Collapse / Expand
+- Rename…
+- **Move to group** -- a second-level menu, since membership is a rarer decision
+  than acting on the project itself
+- Project settings
+- Remove project… (asks you to type the name; deletion is recursive)
 
 ### Compact rows
 

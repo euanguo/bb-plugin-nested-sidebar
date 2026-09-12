@@ -53,13 +53,36 @@ export function NewThreadDialog({
   onClose: () => void;
   onCreated: (threadId: string | null) => void;
 }) {
+  // No seed, no dialog — not a dialog with empty content. A new-thread modal
+  // without a project has nothing to seed and nothing useful to show, so the
+  // honest thing is for it not to exist. This is also the belt to the modal's
+  // braces: even if `open` were somehow true, there is no seed to title it with
+  // and no way to get an unlabelled box on screen.
+  if (seed === null) return null;
+
+  return <SeedDialog seed={seed} onClose={onClose} onCreated={onCreated} />;
+}
+
+/**
+ * The seeded dialog itself, split out so the hook order is stable: the guard
+ * above returns before any hooks run, and this component is only ever mounted
+ * with a real seed.
+ */
+function SeedDialog({
+  seed,
+  onClose,
+  onCreated,
+}: {
+  seed: NewThreadSeed;
+  onClose: () => void;
+  onCreated: (threadId: string | null) => void;
+}) {
   const rpc = useRpc<typeof nestRpcContract>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
 
   useEffect(() => {
-    if (seed === null) return;
     setError(null);
     setBusy(false);
     setFocusRequest((value) => value + 1);
@@ -84,32 +107,30 @@ export function NewThreadDialog({
 
   return (
     <Modal
-      open={seed !== null}
+      open
       onClose={onClose}
       busy={busy}
       icon="Add"
-      title={`New thread in ${seed?.projectName ?? "project"}`}
-      subtitle={seed?.originLabel ?? ""}
+      title={`New thread in ${seed.projectName}`}
+      subtitle={seed.originLabel}
     >
       {error === null ? null : (
         <p className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-2xs text-destructive">
           {error}
         </p>
       )}
-      {seed === null ? null : (
-        <NewThreadComposer
-          // Re-mount on a new seed so the composer re-seeds its pickers from
-          // the row the user actually clicked, not the previous one.
-          key={`${seed.projectId}:${seed.originLabel}`}
-          defaultProjectId={seed.projectId}
-          defaultEnvironment={seed.environment}
-          layout="document"
-          focusRequest={focusRequest}
-          draftKey={`nest:new:${seed.projectId}`}
-          placeholder="Describe the work for this thread…"
-          onSubmit={submit}
-        />
-      )}
+      <NewThreadComposer
+        // Re-mount on a new seed so the composer re-seeds its pickers from the
+        // row the user actually clicked, not the previous one.
+        key={`${seed.projectId}:${seed.originLabel}`}
+        defaultProjectId={seed.projectId}
+        defaultEnvironment={seed.environment}
+        layout="document"
+        focusRequest={focusRequest}
+        draftKey={`nest:new:${seed.projectId}`}
+        placeholder="Describe the work for this thread…"
+        onSubmit={submit}
+      />
     </Modal>
   );
 }

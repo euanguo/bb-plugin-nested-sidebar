@@ -47,11 +47,26 @@ export function Modal({
   const titleId = useId();
   const bodyRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Only ever open the freshly-mounted dialog.
+   *
+   * The dialog element is mounted while closed and then promoted with
+   * `showModal()` the moment `open` flips. That ordering matters: a `<dialog>`
+   * that is already open in the DOM (for example a browser that restores it
+   * across a reload, or one left open by a removed plugin before this element
+   * existed) would never be re-promoted by the old `!dialog.open` guard, and
+   * would sit on screen as a stuck, chrome-less box that Escape cannot dismiss.
+   * Opening unconditionally — and swallowing the InvalidStateError when it is
+   * already showing — removes that whole class of stuck surface.
+   */
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (dialog === null) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (dialog === null || !open || dialog.open) return;
+    try {
+      dialog.showModal();
+    } catch {
+      // Already showing: nothing to promote.
+    }
   }, [open]);
 
   // A click that lands on the dialog element itself — rather than on anything
@@ -72,29 +87,33 @@ export function Modal({
   );
 
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby={titleId}
-      data-nest-modal=""
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      // Native Escape fires `cancel`; closing is always allowed, and only a
-      // mid-flight write asks to be left alone.
-      onCancel={(event) => {
-        event.preventDefault();
-        if (busy) return;
-        onClose();
-      }}
-      onClose={() => {
-        if (open) onClose();
-      }}
-      style={{ width: `min(${width}, calc(100vw - 2rem))` }}
-      className={cn(
-        "fixed left-1/2 top-1/2 z-50 m-0 flex max-h-[min(85vh,44rem)] -translate-x-1/2 -translate-y-1/2",
-        "flex-col overflow-hidden rounded-xl border border-border bg-popover p-0",
-        "text-popover-foreground shadow-xl backdrop:bg-surface-scrim/80",
-      )}
-    >
+    // Mounted only while open. An unopened dialog still contributes an element
+    // to the DOM, and anything that shows it out of band leaves the user with a
+    // box they did not ask for; not mounting it at all makes that impossible.
+    open ? (
+      <dialog
+        ref={dialogRef}
+        aria-labelledby={titleId}
+        data-nest-modal=""
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        // Native Escape fires `cancel`; closing is always allowed, and only a
+        // mid-flight write asks to be left alone.
+        onCancel={(event) => {
+          event.preventDefault();
+          if (busy) return;
+          onClose();
+        }}
+        onClose={() => {
+          if (open) onClose();
+        }}
+        style={{ width: `min(${width}, calc(100vw - 2rem))` }}
+        className={cn(
+          "fixed left-1/2 top-1/2 z-50 m-0 flex max-h-[min(85vh,44rem)] -translate-x-1/2 -translate-y-1/2",
+          "flex-col overflow-hidden rounded-xl border border-border bg-popover p-0",
+          "text-popover-foreground shadow-xl backdrop:bg-surface-scrim/80",
+        )}
+      >
       <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         {icon === undefined ? null : (
           <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -130,7 +149,8 @@ export function Modal({
           {footer}
         </div>
       )}
-    </dialog>
+      </dialog>
+    ) : null
   );
 }
 
@@ -155,30 +175,35 @@ export function PlainDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (dialog === null) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (dialog === null || !open || dialog.open) return;
+    try {
+      dialog.showModal();
+    } catch {
+      // Already showing: nothing to promote.
+    }
   }, [open]);
 
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby={labelledBy}
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
-      onClose={() => {
-        if (open) onClose();
-      }}
-      className={cn(
-        "fixed left-1/2 top-1/2 z-50 m-0 -translate-x-1/2 -translate-y-1/2",
-        "rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-xl",
-        "backdrop:bg-surface-scrim/80",
-        className,
-      )}
-    >
-      {children}
-    </dialog>
+    open ? (
+      <dialog
+        ref={dialogRef}
+        aria-labelledby={labelledBy}
+        onCancel={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
+        onClose={() => {
+          if (open) onClose();
+        }}
+        className={cn(
+          "fixed left-1/2 top-1/2 z-50 m-0 -translate-x-1/2 -translate-y-1/2",
+          "rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-xl",
+          "backdrop:bg-surface-scrim/80",
+          className,
+        )}
+      >
+        {children}
+      </dialog>
+    ) : null
   );
 }
