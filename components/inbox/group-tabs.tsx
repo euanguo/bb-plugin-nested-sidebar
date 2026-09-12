@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { ScrollStrip } from "@/components/ui/scroll-strip";
@@ -53,12 +53,14 @@ export function GroupTabs({
    */
   children?: ReactNode;
 }) {
+  const [overflowing, setOverflowing] = useState(false);
   return (
     <div className="flex shrink-0 items-center gap-1 px-1.5 pb-1">
       <ScrollStrip
         role="tablist"
         aria-label="Project groups"
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+        onOverflowChange={setOverflowing}
       >
         {tabs.map((tab) => {
           const key = groupScopeKey(tab.scope);
@@ -72,14 +74,30 @@ export function GroupTabs({
                 onClick={() => onSelect(tab.scope)}
                 title={tab.label}
                 className={cn(
-                  "flex h-7 max-w-[9rem] items-center gap-1.5 rounded-md px-2 text-xs",
+                  overflowing
+                    ? "flex size-6 items-center justify-center rounded-md px-1 text-2xs"
+                    : "flex h-6.5 max-w-[9rem] items-center gap-1.5 rounded-md px-1.5 text-2xs",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   selected
                     ? "bg-sidebar-accent font-semibold text-foreground"
                     : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
                 )}
               >
-                <span className="truncate">{tab.label}</span>
+                {overflowing ? (
+                  <Icon
+                    name={
+                      tab.scope.kind === "all"
+                        ? "Eye"
+                        : tab.scope.kind === "ungrouped"
+                          ? "FolderTree"
+                          : "Layer"
+                    }
+                    className="size-3.5"
+                    aria-hidden
+                  />
+                ) : (
+                  <span className="truncate">{tab.label}</span>
+                )}
                 {tab.statusKind === null ? null : (
                   <span className="flex shrink-0 items-center">
                     <StatusDot status={familyStatusPresentation(tab.statusKind)} />

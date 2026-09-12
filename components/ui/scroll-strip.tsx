@@ -38,11 +38,14 @@ export function ScrollStrip({
   className,
   style,
   children,
+  onOverflowChange,
   ...rest
 }: {
   className?: string;
   style?: React.CSSProperties;
   children: ReactNode;
+  /** Notifies callers when content crosses the horizontal overflow boundary. */
+  onOverflowChange?: (overflowing: boolean) => void;
 } & Omit<React.ComponentPropsWithoutRef<"div">, "className" | "style" | "children" | "ref">) {
   const innerRef = useRef<HTMLDivElement>(null);
   const [metrics, setMetrics] = useState<ScrollMetrics>(EMPTY_METRICS);
@@ -63,7 +66,8 @@ export function ScrollStrip({
         ? previous
         : next,
     );
-  }, []);
+    onOverflowChange?.(next.scrollWidth - next.clientWidth > 1);
+  }, [onOverflowChange]);
 
   /**
    * Re-measure on scroll and whenever the strip or its contents change size.
