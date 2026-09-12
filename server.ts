@@ -29,6 +29,7 @@ import {
   CHILD_EXPANSION_OPTIONS,
   CUSTOM_COLOR_DEFAULTS,
   PALETTE_PRESET_OPTIONS,
+  ROW_DETAIL_OPTIONS,
   ROW_DENSITY_OPTIONS,
   ROW_LAYOUT_OPTIONS,
   STATUS_DISPLAY_OPTIONS,
@@ -230,6 +231,21 @@ export const nestRpcContract = defineRpcContract({
       name: z.string().trim().min(1),
     }),
     output: z.object({ name: z.string() }),
+  },
+  /**
+   * Rename a worktree — its environment's display name, which is the alias the
+   * sidebar shows beside the branch.
+   *
+   * bb owns this field, so this is a forward rather than a second store: the
+   * worktree then reads the same way everywhere, and a branch change can never
+   * disagree with a name only this plugin knew about.
+   */
+  renameEnvironment: {
+    input: z.object({
+      environmentId: z.string().trim().min(1),
+      name: z.string().trim().min(1).max(120),
+    }),
+    output: z.object({ name: z.string().nullable() }),
   },
   /**
    * Remove a project and its threads.
@@ -450,6 +466,14 @@ export default function plugin(bb: BbPluginApi) {
         "One line puts the branch beside the title and halves the row height.",
       options: [...ROW_LAYOUT_OPTIONS],
       default: "Two lines",
+    },
+    rowDetails: {
+      type: "select",
+      label: "Thread details",
+      description:
+        "On hover moves branch, provider, PR, age, and child count into the row's hover card.",
+      options: [...ROW_DETAIL_OPTIONS],
+      default: "In the row",
     },
     statusDisplay: {
       type: "select",
@@ -809,6 +833,17 @@ export default function plugin(bb: BbPluginApi) {
     async renameProject({ projectId, name }) {
       const project = await bb.sdk.projects.update({ projectId, name });
       return { name: project.name };
+    },
+    async renameEnvironment({ environmentId, name }) {
+      // Routed through the environment area, which is where bb keeps a
+      // worktree's display name. The publish is what makes every sidebar row
+      // for that worktree pick the new name up.
+      const environment = await bb.sdk.environments.update({
+        environmentId,
+        name,
+      });
+      bb.realtime.publish(GROUP_CHANNEL, {});
+      return { name: environment.name };
     },
     async removeProject({ projectId, expectedName }) {
       // Re-read before deleting: the dialog confirmed against a name, and a

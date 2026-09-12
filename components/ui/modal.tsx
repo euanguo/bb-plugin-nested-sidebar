@@ -9,6 +9,40 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 
 /**
+ * A dialog this plugin left in a state where it cannot close itself.
+ *
+ * Verified in Chromium, and the exact reason a "stuck empty box" is possible at
+ * all: once a `<dialog>` has been through `showModal()` and is then detached
+ * and re-attached without `close()` being called in between, three things
+ * happen at once — the element stays `open`, it is *no longer* in the top
+ * layer, and Escape therefore never reaches it again. It renders as an ordinary
+ * visible box with no backdrop that nothing can dismiss.
+ *
+ * The plugin itself no longer produces that state: the dialog is only mounted
+ * while open, and is promoted unconditionally. But a dialog already in the top
+ * layer survives the app bundle being swapped out under it during a plugin
+ * reload, and its owner is then gone — so the shell stays on screen with nobody
+ * left to close it. Clearing any of our dialogs that is not the one we are
+ * about to render is what stops that from outliving the reload.
+ */
+function discardOrphanDialogs(keep: HTMLDialogElement | null): void {
+  const dialogs = document.querySelectorAll<HTMLDialogElement>(
+    "dialog[data-nest-modal]",
+  );
+  for (const dialog of dialogs) {
+    // The dialog being rendered right now is mounted before this effect runs,
+    // so it is in the document too — it is the one instance that must stay.
+    if (dialog === keep) continue;
+    try {
+      dialog.close();
+    } catch {
+      // Not open: nothing to close.
+    }
+    dialog.remove();
+  }
+}
+
+/**
  * A modal dialog the user can always get out of.
  *
  * Every escape hatch is wired unconditionally, on purpose: Escape is native to
@@ -46,6 +80,13 @@ export function Modal({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const bodyRef = useRef<HTMLDivElement>(null);
+
+  // A shell left behind by a previous bundle must not outlive this one; see
+  // discardOrphanDialogs for the mechanism this defends against.
+  useEffect(() => {
+    if (!open) return;
+    discardOrphanDialogs(dialogRef.current);
+  }, [open]);
 
   /**
    * Only ever open the freshly-mounted dialog.

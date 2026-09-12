@@ -40,6 +40,8 @@ import {
   sortByCreatedAtDescending,
   visibleInboxThreads,
 } from "@/lib/inbox";
+import { familyStatus } from "@/lib/family-status";
+import { worstKind } from "@/lib/rollup";
 import {
   applyRootSelection,
   filterProjectThreadGroups,
@@ -77,6 +79,7 @@ import {
   type NewThreadSeed,
 } from "@/components/inbox/new-thread-dialog";
 import { GroupManagerDialog } from "@/components/inbox/group-manager-dialog";
+import { RenameGroupDialog } from "@/components/inbox/rename-group-dialog";
 import { useGroups } from "@/hooks/use-groups";
 import {
   groupScopeKey,
@@ -110,6 +113,10 @@ export function ThreadInbox({
   const groupsApi = useGroups();
   const [groupScope, setGroupScope] = useState<GroupScope>({ kind: "all" });
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+  /** The group a tab's pencil asked to rename, when the strip is the entry. */
+  const [groupRename, setGroupRename] = useState<
+    { groupId: string; name: string } | null
+  >(null);
   const [newThreadSeed, setNewThreadSeed] = useState<NewThreadSeed | null>(null);
   const inboxRef = useRef<HTMLDivElement>(null);
   const selectionAnchorRootId = useRef<string | null>(null);
@@ -227,21 +234,53 @@ export function ThreadInbox({
       unfilteredProjectGroups.filter((group) =>
         projectInScope(scope, groupsApi.assignment, validGroupIds, group.project.id),
       ).length;
+    // Each tab shows the worst state anywhere beneath it, folded from the same
+    // rollups the tree rows use, so the strip and the tree never disagree about
+    // whether a scope has anything running.
+    const kindFor = (scope: GroupScope) => {
+      const scoped = unfilteredProjectGroups.filter((group) =>
+        projectInScope(
+          scope,
+          groupsApi.assignment,
+          validGroupIds,
+          group.project.id,
+        ),
+      );
+      if (scoped.length === 0) return null;
+      return worstKind(
+        scoped.flatMap((group) =>
+          group.families.map((family) =>
+            familyStatus([family.root, ...family.children], now).kind,
+          ),
+        ),
+      );
+    };
     const groupTabs: GroupTab[] = [
-      { scope: { kind: "all" }, label: "All", count: countFor({ kind: "all" }) },
-      ...groupsApi.groups.map((group) => ({
-        scope: { kind: "group", groupId: group.id } as GroupScope,
-        label: group.name,
-        count: countFor({ kind: "group", groupId: group.id }),
-      })),
+      {
+        scope: { kind: "all" },
+        label: "All",
+        count: countFor({ kind: "all" }),
+        statusKind: kindFor({ kind: "all" }),
+      },
+      ...groupsApi.groups.map((group) => {
+        const scope: GroupScope = { kind: "group", groupId: group.id };
+        return {
+          scope,
+          label: group.name,
+          count: countFor(scope),
+          statusKind: kindFor(scope),
+        };
+      }),
     ];
     // "Ungrouped" is a real destination, but only once groups exist: with
     // none, it would duplicate "All" and read as a second, empty list.
     if (groupsApi.groups.length > 0) {
+      const scope: GroupScope = { kind: "ungrouped" };
       groupTabs.push({
-        scope: { kind: "ungrouped" },
+        scope,
         label: "Ungrouped",
-        count: countFor({ kind: "ungrouped" }),
+        count: countFor(scope),
+        statusKind: kindFor(scope),
       });
     }
 
@@ -742,6 +781,47 @@ export function ThreadInbox({
       .catch((error) => setReorderAnnouncement(errorMessage(error)));
   };
 
+  /** Rename a group from its row. The store publishes, the tree re-reads. */
+  const renameGroup = (groupId: string, name: string) => {
+    void rpc
+      .call("renameGroup", { groupId, name })
+      .then(() => groupsApi.refresh())
+      .catch((error) => setReorderAnnouncement(errorMessage(error)));
+  };
+
+  /**
+   * Move a group one slot through the explicit order the store persists.
+   * `reorderGroups` wants the whole list, so the new order is built here and
+   * sent complete rather than as a delta.
+   */
+  const moveGroup = (groupId: string, delta: -1 | 1) => {
+    const ids = groupsApi.groups.map((group) => group.id);
+    const from = ids.indexOf(groupId);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(to, 0, groupId);
+    void rpc
+      .call("reorderGroups", { groupIds: next })
+      .then(() => groupsApi.refresh())
+      .catch((error) => setReorderAnnouncement(errorMessage(error)));
+  };
+
+  /** A project renamed from its row menu; bb owns the name, we forward it. */
+  const renameProject = (projectId: string, name: string) => {
+    void rpc
+      .call("renameProject", { projectId, name })
+      .catch((error) => setReorderAnnouncement(errorMessage(error)));
+  };
+
+  /** A worktree alias. bb stores it on the environment, so it survives regroups. */
+  const renameWorktree = (environmentId: string, name: string) => {
+    void rpc
+      .call("renameEnvironment", { environmentId, name })
+      .catch((error) => setReorderAnnouncement(errorMessage(error)));
+  };
+
   const treeHandlers: TreeRowHandlers = {
     providerInfoById,
     activeThreadId,
@@ -763,6 +843,9 @@ export function ThreadInbox({
     projectReorderDisabledReason: reorderDisabledReason,
     onProjectReorder: reorderProjectByDrag,
     onProjectKeyboardMove: reorderProjectByKeyboard,
+    onGroupMove: moveGroup,
+    onRenameProject: renameProject,
+    onRenameWorktree: renameWorktree,
   };
 
   return (
@@ -782,6 +865,9 @@ export function ThreadInbox({
           activeKey={groupScopeKey(groupScope)}
           onSelect={setGroupScope}
           onManage={() => setGroupManagerOpen(true)}
+          onEdit={(groupId, name) =>
+            setGroupRename({ groupId, name })
+          }
         >
           {selectionMode ? null : (
             <FilterMenu value={filterPreset} onChange={setFilterPreset} />
@@ -933,6 +1019,7 @@ export function ThreadInbox({
                   next: reorderProjectByKeyboard,
                   drop: reorderProjectDrop,
                 }}
+                onRenameGroup={renameGroup}
               />
             ))}
             {showParkedShelves ? (
@@ -983,13 +1070,22 @@ export function ThreadInbox({
         }}
       />
 
-      <GroupManagerDialog
-        open={groupManagerOpen}
-        groups={groupsApi.groups}
-        onClose={() => setGroupManagerOpen(false)}
+    <GroupManagerDialog
+      open={groupManagerOpen}
+      groups={groupsApi.groups}
+      onClose={() => setGroupManagerOpen(false)}
+    />
+
+    {groupRename === null ? null : (
+      <RenameGroupDialog
+        groupId={groupRename.groupId}
+        currentName={groupRename.name}
+        onCancel={() => setGroupRename(null)}
+        onRenamed={() => setGroupRename(null)}
       />
-    </div>
-  );
+    )}
+  </div>
+);
 }
 
 function ParkedShelf({

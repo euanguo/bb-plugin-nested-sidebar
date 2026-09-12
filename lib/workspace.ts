@@ -20,6 +20,14 @@ export interface WorkspaceRef {
   /** Stable within one project: an environment id, or a sentinel. */
   readonly key: string;
   readonly label: string;
+  /**
+   * The user's own name for this worktree, when they set one. Shown *beside*
+   * the branch rather than instead of it: an alias is a label the user typed,
+   * and the branch is the fact that tells them whether it was typed correctly.
+   */
+  readonly alias: string | null;
+  /** The branch this worktree is on, if bb knows it. */
+  readonly branch: string | null;
   /** The thread's environment id, when it has one. Used to reuse a worktree. */
   readonly environmentId: string | null;
 }
@@ -28,6 +36,8 @@ const NO_WORKSPACE: WorkspaceRef = {
   kind: "none",
   key: "__no_workspace__",
   label: "No workspace",
+  alias: null,
+  branch: null,
   environmentId: null,
 };
 
@@ -35,6 +45,8 @@ const MAIN_CHECKOUT: WorkspaceRef = {
   kind: "main",
   key: "__main__",
   label: "main",
+  alias: null,
+  branch: null,
   environmentId: null,
 };
 
@@ -53,12 +65,17 @@ export function workspaceRefOf(thread: PluginSidebarThread): WorkspaceRef {
   if (!isWorktreeKind(environment.workspaceDisplayKind)) return MAIN_CHECKOUT;
 
   const branch = environment.branchName?.trim();
-  const name = environment.name?.trim();
-  const label = branch || name || "worktree";
+  const alias = environment.name?.trim();
+  // The alias leads, because it is what the user called this worktree and what
+  // they will scan for; the branch is the ground truth. Either alone still
+  // labels the row, so a worktree with neither is never nameless.
+  const label = alias || branch || "worktree";
   return {
     kind: "worktree",
     key: environment.id ?? label,
     label,
+    alias: alias || null,
+    branch: branch || null,
     environmentId: environment.id,
   };
 }

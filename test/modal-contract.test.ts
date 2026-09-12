@@ -14,6 +14,22 @@ const inbox = await readFile(
   new URL("../components/inbox/thread-inbox.tsx", import.meta.url),
   "utf8",
 );
+const menu = await readFile(
+  new URL("../components/ui/menu.tsx", import.meta.url),
+  "utf8",
+);
+const hoverCard = await readFile(
+  new URL("../components/ui/hover-card.tsx", import.meta.url),
+  "utf8",
+);
+const select = await readFile(
+  new URL("../components/ui/select.tsx", import.meta.url),
+  "utf8",
+);
+const portalScope = await readFile(
+  new URL("../lib/portal-scope.ts", import.meta.url),
+  "utf8",
+);
 
 describe("modal escape hatches", () => {
   it("never gates closing on content being ready", () => {
@@ -49,5 +65,28 @@ describe("modal escape hatches", () => {
     // leave a permanent dead strip on the right when nothing is scrollable.
     assert.doesNotMatch(inbox, /scrollbarGutter/);
     assert.match(inbox, /min-h-0 flex-1 overflow-y-auto pl-1\.5 pr-3 pb-2/);
+  });
+
+  it("discards an orphaned dialog instead of leaving it on screen", () => {
+    // A dialog that was shown, then detached without close(), stays open and
+    // leaves the top layer — visible, backdrop-less, and deaf to Escape. The
+    // sweep is what stops one from outliving the bundle that made it.
+    assert.match(modal, /dialog\[data-nest-modal\]/);
+    assert.match(modal, /function discardOrphanDialogs/);
+    assert.match(modal, /if \(dialog === keep\) continue;/);
+    assert.match(modal, /dialog\.remove\(\)/);
+  });
+
+  it("portals floating surfaces into an open dialog, not past it", () => {
+    // A native modal paints in the top layer, so a body-portaled popover cannot
+    // appear above it at any z-index. Overlays therefore move into the dialog
+    // while one is open, and stay on the body otherwise.
+    assert.match(portalScope, /dialog\[data-nest-modal\]\[open\]/);
+    assert.match(portalScope, /export function useOverlayPortalContainer/);
+    assert.match(portalScope, /useLayoutEffect/);
+    for (const source of [menu, hoverCard]) {
+      assert.match(source, /container=\{container\}/);
+    }
+    assert.match(select, /container=\{useOverlayPortalContainer\(\)\}/);
   });
 });

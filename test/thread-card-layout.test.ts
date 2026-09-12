@@ -43,7 +43,7 @@ describe("compact root card contract", () => {
       metadataStart,
     );
     const disclosureStart = rootSource.indexOf(
-      "{childThreads.length > 0 && preferences.showChildCount ? (",
+      "childThreads.length > 0 &&",
       metadataStart,
     );
 

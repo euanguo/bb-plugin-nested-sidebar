@@ -1,4 +1,4 @@
-import { useId, useState, type DragEvent } from "react";
+import { useId, useRef, useState, type DragEvent, type RefObject } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   type PluginSidebarThread,
@@ -8,12 +8,26 @@ import { cn } from "@/lib/utils";
 import { ThreadCard } from "@/components/inbox/thread-card";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { RollupJump } from "@/components/inbox/rollup-badge";
+import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
+import {
+  RowActionButton,
+  RowActions,
+  RowMenuTrigger,
+  useRowReveal,
+} from "@/components/inbox/row-actions";
+import {
+  Menu,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+} from "@/components/ui/menu";
 import type { LifecycleApi } from "@/hooks/use-lifecycle";
 import type { ThreadFamily } from "@/lib/inbox";
 import type { WorkspaceNode } from "@/lib/tree";
 import type { RootSelectionIntent } from "@/lib/thread-management";
 import { BULK_PROTECTION_LABELS, bulkEligibility } from "@/lib/thread-management";
 import type { NestPreferences } from "@/lib/preferences";
+import { renameIntent } from "@/lib/groups";
 
 export interface TreeRowHandlers {
   readonly providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
@@ -45,6 +59,12 @@ export interface TreeRowHandlers {
     projectId: string,
     direction: -1 | 1,
   ) => void;
+  /** Move a group through the explicit order the store persists. */
+  readonly onGroupMove?: (groupId: string, delta: -1 | 1) => void;
+  /** Rename a project from a row menu; opens bb's own name field. */
+  readonly onRenameProject: (projectId: string, name: string) => void;
+  /** Rename a worktree's environment — the alias the row shows beside its branch. */
+  readonly onRenameWorktree: (environmentId: string, name: string) => void;
 }
 
 export interface FamilyReorderInput {
@@ -92,32 +112,85 @@ export function WorkspaceGroup({
 }) {
   const actions = useSidebarThreadActions();
   const [expanded, setExpanded] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const reveal = useRowReveal();
   const listId = useId();
+  const renameInput = useRef<HTMLInputElement>(null);
   const threadCount = node.families.reduce(
     (total, family) => total + 1 + family.children.length,
     0,
   );
 
+  const label = node.ref.label;
+  const branch = node.ref.branch;
+  const alias = node.ref.alias;
+  // The alias leads the row and the branch follows it, so a mistyped alias is
+  // caught by the branch sitting right next to it rather than by opening
+  // something. When there is no alias the branch alone is the row.
+  const showBranch = alias !== null && branch !== null && alias !== branch;
+
+  const rows: InfoCardRow[] = [
+    { label: "Kind", value: node.ref.kind === "worktree" ? "Worktree" : node.ref.kind === "main" ? "Checkout" : "No workspace" },
+    { label: "Project", value: projectName },
+    { label: "Threads", value: String(threadCount) },
+    ...(alias === null ? [] : [{ label: "Alias", value: alias }]),
+    ...(branch === null ? [] : [{ label: "Branch", value: branch, mono: true, copy: true }]),
+    ...(node.ref.environmentId === null
+      ? []
+      : [{ label: "Env ID", value: node.ref.environmentId, mono: true, copy: true }]),
+  ];
+
   return (
     <section aria-label={node.ref.label}>
-      <div className="group/ws flex h-7 w-full items-center gap-1.5 rounded-md pl-4 pr-1.5 hover:bg-sidebar-accent/50">
+      <InfoCard
+        trigger={
+      <div
+        {...reveal.handlers}
+        className="group/ws flex h-7 w-full items-center gap-1.5 rounded-md pl-4 pr-1.5 hover:bg-sidebar-accent/50"
+      >
+        {renaming && node.ref.environmentId !== null ? (
+          <WorkspaceNameField
+            inputRef={renameInput}
+            initial={alias ?? branch ?? ""}
+            fallback={label}
+            ariaLabel={`Rename worktree ${label}`}
+            onCommit={(draft) => {
+              const next = renameIntent(draft, alias ?? "");
+              setRenaming(false);
+              if (next !== null && node.ref.environmentId !== null) {
+                handlers.onRenameWorktree(node.ref.environmentId, next);
+              }
+            }}
+            onCancel={() => setRenaming(false)}
+          />
+        ) : (
         <button
           type="button"
           aria-expanded={expanded}
           aria-controls={listId}
           onClick={() => setExpanded((open) => !open)}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          title={node.ref.label}
+          title={showBranch ? `${label} → ${branch}` : label}
         >
           <Icon
             name="GitBranch"
             className="size-3 shrink-0 text-muted-foreground/60"
             aria-hidden
           />
-          <span className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground">
-            {node.ref.label}
+          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+            {/* The alias reads as a name, so it is not monospaced; the branch
+                is an identifier, so it is. */}
+            <span className="min-w-0 truncate text-xs text-foreground/80">
+              {label}
+            </span>
+            {showBranch ? (
+              <span className="min-w-0 truncate font-mono text-2xs text-muted-foreground/70">
+                {branch}
+              </span>
+            ) : null}
           </span>
         </button>
+        )}
         <RollupJump
           rollup={node.rollup}
           onJump={(threadId) => {
@@ -129,30 +202,60 @@ export function WorkspaceGroup({
         <span className="shrink-0 tabular-nums text-2xs text-muted-foreground/60">
           {threadCount}
         </span>
-        <button
-          type="button"
-          aria-label={`New thread in ${node.ref.label}`}
-          title={`New thread in ${node.ref.label}`}
-          onClick={() =>
-            handlers.onNewThreadInWorkspace({ node, projectId, projectName })
-          }
-          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-sidebar-accent hover:text-foreground group-hover/ws:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <Icon name="Add" className="size-3" aria-hidden />
-        </button>
-        <button
-          type="button"
-          aria-label={`${expanded ? "Collapse" : "Expand"} ${node.ref.label}`}
-          onClick={() => setExpanded((open) => !open)}
-          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/70 hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <Icon
-            name="ChevronDown"
-            className={cn("size-3 transition-transform", expanded && "rotate-180")}
-            aria-hidden
+        <RowActions>
+          {/* Starting a thread in *this* worktree is the reason to be here, so
+              it keeps its own button beside the menu. */}
+          <RowActionButton
+            label={`New thread in ${label}`}
+            icon="Add"
+            onClick={() =>
+              handlers.onNewThreadInWorkspace({ node, projectId, projectName })
+            }
           />
-        </button>
+          <Menu
+            label={`Actions for ${label}`}
+            trigger={
+              <RowMenuTrigger
+                label={`Actions for ${label}`}
+                chevron
+                expanded={expanded}
+                revealed={reveal.revealed}
+              />
+            }
+          >
+            <MenuItem
+              icon="Add"
+              label="New thread here"
+              onSelect={() =>
+                handlers.onNewThreadInWorkspace({ node, projectId, projectName })
+              }
+            />
+            <MenuItem
+              icon="ChevronDown"
+              label={expanded ? "Collapse" : "Expand"}
+              onSelect={() => setExpanded((open) => !open)}
+            />
+            {node.ref.environmentId === null ? (
+              <MenuItem
+                icon="Edit"
+                label="Rename worktree…"
+                disabled
+                onSelect={() => undefined}
+              />
+            ) : (
+              <MenuItem
+                icon="Edit"
+                label="Rename worktree…"
+                onSelect={() => setRenaming(true)}
+              />
+            )}
+          </Menu>
+        </RowActions>
       </div>
+        }
+        label={label}
+        rows={rows}
+      />
       {expanded ? (
         <ul id={listId} className="flex flex-col gap-0.5">
           {node.families.map((family) => (
@@ -259,6 +362,71 @@ export function FlatFamilies({
         />
       ))}
     </ul>
+  );
+}
+
+/**
+ * The worktree alias editor.
+ *
+ * Commits on a mounted-field basis only: a plain function component whose
+ * input is autofocused and whose Enter/blur/Escape rules mirror the group
+ * name field, so the two levels rename the same way.
+ */
+function WorkspaceNameField({
+  inputRef,
+  initial,
+  fallback,
+  ariaLabel,
+  onCommit,
+  onCancel,
+}: {
+  inputRef?: RefObject<HTMLInputElement | null>;
+  initial: string;
+  /** Shown as help text; the alias the user types replaces what is shown. */
+  fallback: string;
+  ariaLabel: string;
+  onCommit: (draft: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const [done, setDone] = useState(false);
+  const finish = (commit: boolean) => {
+    if (done) return;
+    setDone(true);
+    if (commit) onCommit(value);
+    else onCancel();
+  };
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+      <Icon
+        name="Edit"
+        className="size-3 shrink-0 text-muted-foreground/60"
+        aria-hidden
+      />
+      <input
+        ref={inputRef}
+        autoFocus
+        value={value}
+        maxLength={120}
+        aria-label={ariaLabel}
+        placeholder={fallback}
+        onChange={(event) => setValue(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            finish(true);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            finish(false);
+          }
+        }}
+        onBlur={() => finish(true)}
+        className={cn(
+          "h-6 min-w-0 flex-1 rounded border border-border bg-background px-1.5 text-xs",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        )}
+      />
+    </span>
   );
 }
 

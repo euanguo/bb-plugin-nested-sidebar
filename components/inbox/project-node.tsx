@@ -22,6 +22,7 @@ import {
   RowMenuTrigger,
   useRowReveal,
 } from "@/components/inbox/row-actions";
+import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import {
   FlatFamilies,
@@ -91,7 +92,18 @@ export function ProjectNode({
     onNewThreadInWorkspace,
   };
 
-  return (
+  const infoRows: InfoCardRow[] = [
+    { label: "Kind", value: node.project.isPersonal ? "Personal" : "Project" },
+    { label: "Threads", value: String(threadCount) },
+    // Only meaningful once the level is actually drawn, which is exactly when
+    // it is worth mentioning.
+    ...(node.showWorkspaces
+      ? [{ label: "Worktrees", value: String(node.workspaces.length) }]
+      : []),
+    { label: "Project ID", value: node.project.id, mono: true, copy: true },
+  ];
+
+  const header = (
     <section
       aria-label={node.project.name}
       data-nest-project={node.project.id}
@@ -147,7 +159,10 @@ export function ProjectNode({
         });
       }}
     >
-      <div className="group/project relative flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent/60">
+      <div
+        {...reveal.handlers}
+        className="group/project relative flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent/60"
+      >
         <button
           type="button"
           draggable={projectReorder.enabled}
@@ -270,6 +285,8 @@ export function ProjectNode({
       ) : null}
     </section>
   );
+
+  return <InfoCard trigger={header} label={node.project.name} rows={infoRows} />;
 }
 
 /**

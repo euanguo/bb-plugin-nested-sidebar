@@ -95,6 +95,7 @@ export function NestSettingsSection() {
         {preferences.density === "compact" ? "Compact" : "Comfortable"} rows ·
         {preferences.rowLayout === "one-line" ? "one line" : "two lines"} ·
         {preferences.statusDisplay === "dot" ? "dot" : "icon"} status ·
+        details {preferences.rowDetails === "hover" ? "on hover" : "in the row"} ·
         children {preferences.defaultChildrenExpanded ? "expanded" : "collapsed"} ·
         child counts {preferences.showChildCount ? "shown" : "hidden"} · branch{" "}
         {preferences.showThreadLocation ? "shown" : "hidden"} · providers{" "}

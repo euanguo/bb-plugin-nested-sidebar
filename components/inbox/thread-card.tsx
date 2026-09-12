@@ -3,6 +3,7 @@ import {
   useMemo,
   useState,
   type DragEvent,
+  type ReactNode,
 } from "react";
 import {
   experimental_useSidebarThreadPullRequest as useSidebarThreadPullRequest,
@@ -13,6 +14,16 @@ import {
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { RowContextMenu } from "@/components/inbox/row-context-menu";
+import {
+  Menu,
+  MenuItem,
+  MenuSeparator,
+} from "@/components/ui/menu";
+import {
+  RowMenuTrigger,
+  useRowReveal,
+} from "@/components/inbox/row-actions";
+import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import {
   ProviderGlyph,
   type ProviderGlyphInfo,
@@ -83,9 +94,18 @@ export function ThreadCard({
   preferences: NestPreferences;
 }) {
   const actions = useSidebarThreadActions();
+  const reveal = useRowReveal();
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
   const { pullRequest } = useSidebarThreadPullRequest(thread.id);
   const childListId = useId();
+  /**
+   * When details live on hover, the row is a single column: title plus status,
+   * nothing else. Everything suppressed here is still reachable from the hover
+   * card, including the child count's own disclosure, which keeps its button in
+   * the card rather than on the row.
+   */
+  const detailsOnHover = preferences.rowDetails === "hover";
+  const showRowDetails = !detailsOnHover;
   const [expandedOverride, setExpandedOverride] = useState<boolean | null>(
     null,
   );
@@ -138,11 +158,23 @@ export function ThreadCard({
             !familyIsActive && layout !== null && "bg-sidebar-accent/25",
           )}
         >
+          {/* The card hangs off the row itself, not the whole family: a card on
+              the outer element would also open while the pointer was on a child
+              thread below it. */}
+          <ThreadInfoCard
+            thread={thread}
+            childThreads={childThreads}
+            pullRequest={pullRequest}
+            providerInfoById={providerInfoById}
+            now={now}
+            detailsOnHover={detailsOnHover}
+          >
           <div
             data-nest-root-card=""
+            {...reveal.handlers}
             className={cn(
               "group/root relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 rounded-lg px-2",
-              preferences.rowLayout === "one-line"
+              preferences.rowLayout === "one-line" || detailsOnHover
                 ? "grid-rows-[1.25rem]"
                 : "grid-rows-[1rem_1rem] gap-y-0.5",
               preferences.density === "compact"
@@ -280,7 +312,7 @@ export function ThreadCard({
             <div
               className={cn(
                 "pointer-events-none relative col-start-2 min-w-0",
-                preferences.rowLayout === "one-line"
+                preferences.rowLayout === "one-line" || detailsOnHover
                   ? "row-start-1 flex min-w-0 items-center gap-1.5"
                   : "row-span-2",
               )}
@@ -289,7 +321,8 @@ export function ThreadCard({
                 data-nest-root-title-row=""
                 className={cn(
                   "flex h-4 min-w-0 items-center gap-1.5",
-                  preferences.rowLayout === "one-line" && "flex-1",
+                  (preferences.rowLayout === "one-line" || detailsOnHover) &&
+                    "flex-1",
                 )}
               >
                 <span
@@ -317,11 +350,12 @@ export function ThreadCard({
                 {/* One-line layout: the branch rides beside the title, so the
                     row costs a single line of height. */}
                 {preferences.rowLayout === "one-line" &&
+                showRowDetails &&
                 preferences.showThreadLocation ? (
                   <ThreadLocation thread={thread} />
                 ) : null}
               </div>
-              {preferences.rowLayout === "two-line" ? (
+              {preferences.rowLayout === "two-line" && showRowDetails ? (
                 <div
                   data-nest-root-detail-row=""
                   className={cn(
@@ -341,7 +375,7 @@ export function ThreadCard({
             <div
               className={cn(
                 "relative z-10 col-start-3 flex shrink-0 items-end",
-                preferences.rowLayout === "one-line"
+                preferences.rowLayout === "one-line" || detailsOnHover
                   ? "row-start-1 flex-row gap-1.5"
                   : "row-span-2 flex-col gap-0.5",
                 selectionMode && "pointer-events-none",
@@ -354,11 +388,11 @@ export function ThreadCard({
                   canPark && !selectionMode && "group-hover/root:hidden",
                 )}
               >
-                {preferences.showRelativeTime ? (
+                {preferences.showRelativeTime && showRowDetails ? (
                   <ThreadStatusLabel thread={thread} now={now} />
                 ) : null}
               </span>
-              {canPark && !selectionMode ? (
+              {canPark && !selectionMode && showRowDetails ? (
                 <span className="hidden h-4 items-center gap-0.5 group-hover/root:flex">
                   <ParkButton
                     label="Snooze until tomorrow"
@@ -381,13 +415,17 @@ export function ThreadCard({
                 data-nest-root-metadata=""
                 className="flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"
               >
-                {preferences.showPullRequestMetadata && pullRequest ? (
+                {showRowDetails &&
+                preferences.showPullRequestMetadata &&
+                pullRequest ? (
                   <PullRequestMetadata
                     pullRequest={pullRequest}
                     interactive={!selectionMode}
                   />
                 ) : null}
-                {childThreads.length > 0 && preferences.showChildCount ? (
+                {showRowDetails &&
+                childThreads.length > 0 &&
+                preferences.showChildCount ? (
                   <button
                     type="button"
                     aria-label={
@@ -439,16 +477,34 @@ export function ThreadCard({
                       {childDisclosureLabel}
                     </span>
                   </button>
-                ) : preferences.showProviderIcons ? (
+                ) : showRowDetails && preferences.showProviderIcons ? (
                   <ProviderGlyph
                     providerId={thread.providerId}
                     provider={providerInfoById.get(thread.providerId)}
                     className="size-3 opacity-75"
                   />
                 ) : null}
+                {/* The row's own menu. It shares the trailing cluster with the
+                    status slot, so the row keeps one line in hover mode. */}
+                {selectionMode ? null : (
+                  <ThreadMenu
+                    thread={thread}
+                    expanded={expanded}
+                    childCount={childThreads.length}
+                    canToggleChildren={childThreads.length > 0}
+                    revealed={reveal.revealed}
+                    onToggleChildren={() =>
+                      setExpandedOverride(!expanded)
+                    }
+                    onSettle={onSettle}
+                    onSnooze={onSnooze}
+                    canPark={canPark}
+                  />
+                )}
               </div>
             </div>
           </div>
+          </ThreadInfoCard>
 
           {expanded ? (
             <ul
@@ -485,6 +541,199 @@ export function ThreadCard({
   );
 }
 
+/**
+ * The hover card for a thread.
+ *
+ * It is always built, but only *attached* as a card when details live on
+ * hover. In row mode the fields are already visible, so wrapping the row in
+ * another surface would be noise; in hover mode this is the only way to reach
+ * them, which is what lets the row itself be a single column.
+ */
+function ThreadInfoCard({
+  thread,
+  childThreads,
+  pullRequest,
+  providerInfoById,
+  now,
+  detailsOnHover,
+  children,
+}: {
+  thread: PluginSidebarThread;
+  childThreads: readonly PluginSidebarThread[];
+  pullRequest: ReturnType<typeof useSidebarThreadPullRequest>["pullRequest"];
+  providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
+  now: number;
+  detailsOnHover: boolean;
+  children: ReactNode;
+}) {
+  const rows = threadInfoRows({
+    thread,
+    childThreads,
+    pullRequest,
+    providerInfoById,
+    now,
+  });
+  if (!detailsOnHover) return <>{children}</>;
+  return (
+    <InfoCard trigger={children} label={threadDisplayTitle(thread)} rows={rows} />
+  );
+}
+
+/**
+ * Everything a thread row suppresses: the machine it runs on, its branch, its
+ * provider, its PR, its age, and its children. Built unconditionally because
+ * the same list backs the hover card in either layout.
+ */
+function threadInfoRows({
+  thread,
+  childThreads,
+  pullRequest,
+  providerInfoById,
+  now,
+}: {
+  thread: PluginSidebarThread;
+  childThreads: readonly PluginSidebarThread[];
+  pullRequest: ReturnType<typeof useSidebarThreadPullRequest>["pullRequest"];
+  providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
+  now: number;
+}): InfoCardRow[] {
+  const environment = thread.environment;
+  const providerName = providerInfoById.get(thread.providerId)?.displayName;
+  const rows: InfoCardRow[] = [
+    { label: "Thread ID", value: thread.id, mono: true, copy: true },
+  ];
+  if (environment !== null) {
+    if (environment.branchName !== null && environment.branchName.trim() !== "") {
+      rows.push({
+        label: "Branch",
+        value: environment.branchName,
+        mono: true,
+        copy: true,
+      });
+    }
+    if (environment.name !== null && environment.name.trim() !== "") {
+      rows.push({ label: "Worktree", value: environment.name });
+    }
+    if (environment.id !== null) {
+      rows.push({
+        label: "Env ID",
+        value: environment.id,
+        mono: true,
+        copy: true,
+      });
+    }
+  }
+  if (thread.host !== null) {
+    rows.push({ label: "Runs on", value: thread.host.name });
+  }
+  if (providerName !== undefined) {
+    rows.push({ label: "Provider", value: providerName });
+  }
+  rows.push({ label: "Updated", value: relativeTimeLabel(thread.updatedAt, now) });
+  if (childThreads.length > 0) {
+    rows.push({ label: "Children", value: String(childThreads.length) });
+  }
+  if (pullRequest !== undefined && pullRequest !== null) {
+    rows.push({
+      label: "Pull request",
+      value: `#${pullRequest.number} ${pullRequest.title}`,
+    });
+  }
+  return rows;
+}
+
+/**
+ * The thread's own menu.
+ *
+ * The right-click menu still exists and still holds the full set; this is the
+ * discoverable twin of it, because a context menu is not an entrance. The
+ * chevron reads as a disclosure at rest and as dots once the row is hovered,
+ * matching every other level.
+ */
+function ThreadMenu({
+  thread,
+  expanded,
+  childCount,
+  canToggleChildren,
+  revealed,
+  onToggleChildren,
+  onSettle,
+  onSnooze,
+  canPark,
+}: {
+  thread: PluginSidebarThread;
+  expanded: boolean;
+  childCount: number;
+  canToggleChildren: boolean;
+  revealed: boolean;
+  onToggleChildren: () => void;
+  onSettle: () => void;
+  onSnooze: (snoozedUntil: number) => void;
+  canPark: boolean;
+}) {
+  const actions = useSidebarThreadActions();
+  const tomorrow = () => {
+    const preset = resolveSnoozePresets(new Date()).find(
+      (candidate) => candidate.id === "tomorrow",
+    );
+    if (preset !== undefined) onSnooze(preset.snoozedUntil);
+  };
+  return (
+    <Menu
+      label={`Actions for ${threadDisplayTitle(thread)}`}
+      trigger={
+        <RowMenuTrigger
+          label={`Actions for ${threadDisplayTitle(thread)}`}
+          revealed={revealed}
+        />
+      }
+    >
+      {canToggleChildren ? (
+        <MenuItem
+          icon="ChevronDown"
+          label={`${expanded ? "Hide" : "Show"} ${childCount} child${childCount === 1 ? "" : "ren"}`}
+          onSelect={onToggleChildren}
+        />
+      ) : null}
+      <MenuItem
+        icon="ArrowRight"
+        label="Open in split"
+        onSelect={() => actions.open(thread.id, { split: true })}
+      />
+      <MenuSeparator />
+      <MenuItem
+        icon={thread.isUnread ? "Eye" : "CircleQuestion"}
+        label={thread.isUnread ? "Mark read" : "Mark unread"}
+        onSelect={() => void actions.setRead(thread.id, thread.isUnread)}
+      />
+      <MenuItem
+        icon="Pin"
+        label={thread.isPinned ? "Unpin" : "Pin"}
+        onSelect={() => void actions.setPinned(thread.id, !thread.isPinned)}
+      />
+      {canPark ? (
+        <>
+          <MenuSeparator />
+          <MenuItem icon="Clock" label="Snooze until tomorrow" onSelect={tomorrow} />
+          <MenuItem icon="Archive" label="Settle thread" onSelect={onSettle} />
+        </>
+      ) : null}
+      <MenuSeparator />
+      <MenuItem
+        icon="Archive"
+        label="Archive"
+        onSelect={() => actions.archive(thread.id)}
+      />
+      <MenuItem
+        icon="Trash"
+        label="Delete…"
+        destructive
+        onSelect={() => actions.requestDelete(thread.id)}
+      />
+    </Menu>
+  );
+}
+
 function ChildThreadRow({
   thread,
   provider,
@@ -504,6 +753,7 @@ function ChildThreadRow({
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
   const status = threadStatus(thread);
   const isWorking = threadIsWorking(thread);
+  const showRowDetails = preferences.rowDetails !== "hover";
 
   return (
     <RowContextMenu thread={thread}>
@@ -546,7 +796,7 @@ function ChildThreadRow({
             }}
             className="absolute inset-0 cursor-pointer rounded-md"
           />
-          {preferences.showProviderIcons ? (
+          {showRowDetails && preferences.showProviderIcons ? (
             <ProviderGlyph
               providerId={thread.providerId}
               provider={provider}
@@ -567,14 +817,15 @@ function ChildThreadRow({
               >
                 {threadDisplayTitle(thread)}
               </span>
-              {preferences.showRelativeTime ? (
+              {showRowDetails && preferences.showRelativeTime ? (
                 <span className="shrink-0 tabular-nums text-2xs text-muted-foreground/70">
                   {relativeTimeLabel(thread.updatedAt, now)}
                 </span>
               ) : null}
             </div>
-            {preferences.rowLayout === "two-line" ||
-            preferences.showThreadLocation ? (
+            {showRowDetails &&
+            (preferences.rowLayout === "two-line" ||
+              preferences.showThreadLocation) ? (
               <div className="mt-0.5 flex h-3.5 min-w-0 items-center gap-1.5 text-2xs">
                 {preferences.showThreadLocation ? (
                   <ThreadLocation thread={thread} />
