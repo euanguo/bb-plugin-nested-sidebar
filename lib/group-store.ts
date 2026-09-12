@@ -90,10 +90,9 @@ export function createGroupStore(db: Database.Database) {
       .get() as { max: number };
     const position = maxPosition.max + 1;
     db.prepare(
-      `INSERT INTO project_groups (id, name, position, updated_at)
-      VALUES (?, ?, ?, ?)`,
-    ).run(id, cleanName, position, Date.now());
-    db.prepare(`UPDATE project_groups SET icon = ? WHERE id = ?`).run(icon, id);
+      `INSERT INTO project_groups (id, name, position, updated_at, icon)
+      VALUES (?, ?, ?, ?, ?)`,
+    ).run(id, cleanName, position, Date.now(), icon);
     return { id, name: cleanName, position, icon };
   };
 
@@ -107,10 +106,15 @@ export function createGroupStore(db: Database.Database) {
       .get() as { changes: number };
     if (changes.changes === 0) return null;
     const row = db
-      .prepare(`SELECT id, name, position FROM project_groups WHERE id = ?`)
+      .prepare(`SELECT id, name, position, icon FROM project_groups WHERE id = ?`)
       .get(id) as GroupRow | undefined;
     if (row === undefined) return null;
-      return { id, name: cleanName, position: Number(row.position) || 0, icon: validGroupIcon(row.icon) ? row.icon : DEFAULT_GROUP_ICON };
+    return {
+      id,
+      name: cleanName,
+      position: Number(row.position) || 0,
+      icon: validGroupIcon(row.icon) ? row.icon : DEFAULT_GROUP_ICON,
+    };
   };
 
   /** Deleting a group releases its projects; they return to Ungrouped. */

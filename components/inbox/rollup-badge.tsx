@@ -59,7 +59,13 @@ export function RollupJump({
 }) {
   const target = rollup.leadThreadId;
   const summary = rollupSummary(rollup);
-  if (rollup.total === 0) return null;
+  if (
+    rollup.total === 0 ||
+    rollup.kind === "inactive" ||
+    rollup.kind === "stale"
+  ) {
+    return null;
+  }
   return (
     <button
       type="button"

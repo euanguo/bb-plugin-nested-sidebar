@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { ScrollStrip } from "@/components/ui/scroll-strip";
@@ -54,6 +54,9 @@ export function GroupTabs({
   children?: ReactNode;
 }) {
   const [overflowing, setOverflowing] = useState(false);
+  const tabSetKey = tabs
+    .map((tab) => `${groupScopeKey(tab.scope)}:${tab.label}`)
+    .join("|");
   // Do not feed the compact layout back into the measurement that selected it.
   // Once labels have proved that the strip is too narrow, measuring the much
   // narrower icon layout would otherwise report "fits", switch back to labels,
@@ -65,6 +68,9 @@ export function GroupTabs({
   const handleContainerResize = useCallback(() => {
     setOverflowing(false);
   }, []);
+  useEffect(() => {
+    setOverflowing(false);
+  }, [tabSetKey]);
   return (
     <div className="flex shrink-0 items-center gap-1 px-1.5 pb-1">
       <ScrollStrip
@@ -87,7 +93,7 @@ export function GroupTabs({
                 title={tab.label}
                 className={cn(
                   overflowing
-                    ? "flex size-6 items-center justify-center rounded-md px-1 text-2xs"
+                    ? "relative flex size-6 items-center justify-center rounded-md px-1 text-2xs"
                     : "flex h-6.5 max-w-[9rem] items-center gap-1.5 rounded-md px-1.5 text-2xs",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   selected
@@ -111,7 +117,12 @@ export function GroupTabs({
                   <span className="truncate">{tab.label}</span>
                 )}
                 {tab.statusKind === null ? null : (
-                  <span className="flex shrink-0 items-center">
+                  <span
+                    className={cn(
+                      "flex shrink-0 items-center",
+                      overflowing && "absolute right-0.5 top-0.5",
+                    )}
+                  >
                     <StatusDot status={familyStatusPresentation(tab.statusKind)} />
                   </span>
                 )}

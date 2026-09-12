@@ -22,7 +22,7 @@ describe("compact root card contract", () => {
     assert.match(rootSource, /data-nest-root-metadata/);
     assert.match(
       rootSource,
-      /data-nest-root-metadata=""[\s\S]*className="relative flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"/,
+      /data-nest-root-metadata=""[\s\S]*className="relative flex h-4 min-w-16 max-w-full items-center justify-end gap-1 whitespace-nowrap"/,
     );
     assert.match(rootSource, /grid-cols-\[auto_minmax\(0,1fr\)_auto\]/);
     // The skeleton is two rows by default and one row under the one-line
