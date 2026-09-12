@@ -23,7 +23,6 @@ import {
   RowMenuTrigger,
   useRowReveal,
 } from "@/components/inbox/row-actions";
-import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import {
   ProviderGlyph,
   type ProviderGlyphInfo,
@@ -161,14 +160,6 @@ export function ThreadCard({
           {/* The card hangs off the row itself, not the whole family: a card on
               the outer element would also open while the pointer was on a child
               thread below it. */}
-          <ThreadInfoCard
-            thread={thread}
-            childThreads={childThreads}
-            pullRequest={pullRequest}
-            providerInfoById={providerInfoById}
-            now={now}
-            detailsOnHover={detailsOnHover}
-          >
           <div
             data-nest-root-card=""
             {...reveal.handlers}
@@ -413,7 +404,7 @@ export function ThreadCard({
               ) : null}
               <div
                 data-nest-root-metadata=""
-                className="flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"
+                className="relative flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"
               >
                 {showRowDetails &&
                 preferences.showPullRequestMetadata &&
@@ -499,12 +490,12 @@ export function ThreadCard({
                     onSettle={onSettle}
                     onSnooze={onSnooze}
                     canPark={canPark}
+                    className="absolute right-0 top-1/2 -translate-y-1/2"
                   />
                 )}
               </div>
             </div>
           </div>
-          </ThreadInfoCard>
 
           {expanded ? (
             <ul
@@ -542,107 +533,6 @@ export function ThreadCard({
 }
 
 /**
- * The hover card for a thread.
- *
- * It is always built, but only *attached* as a card when details live on
- * hover. In row mode the fields are already visible, so wrapping the row in
- * another surface would be noise; in hover mode this is the only way to reach
- * them, which is what lets the row itself be a single column.
- */
-function ThreadInfoCard({
-  thread,
-  childThreads,
-  pullRequest,
-  providerInfoById,
-  now,
-  detailsOnHover,
-  children,
-}: {
-  thread: PluginSidebarThread;
-  childThreads: readonly PluginSidebarThread[];
-  pullRequest: ReturnType<typeof useSidebarThreadPullRequest>["pullRequest"];
-  providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
-  now: number;
-  detailsOnHover: boolean;
-  children: ReactNode;
-}) {
-  const rows = threadInfoRows({
-    thread,
-    childThreads,
-    pullRequest,
-    providerInfoById,
-    now,
-  });
-  if (!detailsOnHover) return <>{children}</>;
-  return (
-    <InfoCard trigger={children} label={threadDisplayTitle(thread)} rows={rows} />
-  );
-}
-
-/**
- * Everything a thread row suppresses: the machine it runs on, its branch, its
- * provider, its PR, its age, and its children. Built unconditionally because
- * the same list backs the hover card in either layout.
- */
-function threadInfoRows({
-  thread,
-  childThreads,
-  pullRequest,
-  providerInfoById,
-  now,
-}: {
-  thread: PluginSidebarThread;
-  childThreads: readonly PluginSidebarThread[];
-  pullRequest: ReturnType<typeof useSidebarThreadPullRequest>["pullRequest"];
-  providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
-  now: number;
-}): InfoCardRow[] {
-  const environment = thread.environment;
-  const providerName = providerInfoById.get(thread.providerId)?.displayName;
-  const rows: InfoCardRow[] = [
-    { label: "Thread ID", value: thread.id, mono: true, copy: true },
-  ];
-  if (environment !== null) {
-    if (environment.branchName !== null && environment.branchName.trim() !== "") {
-      rows.push({
-        label: "Branch",
-        value: environment.branchName,
-        mono: true,
-        copy: true,
-      });
-    }
-    if (environment.name !== null && environment.name.trim() !== "") {
-      rows.push({ label: "Worktree", value: environment.name });
-    }
-    if (environment.id !== null) {
-      rows.push({
-        label: "Env ID",
-        value: environment.id,
-        mono: true,
-        copy: true,
-      });
-    }
-  }
-  if (thread.host !== null) {
-    rows.push({ label: "Runs on", value: thread.host.name });
-  }
-  if (providerName !== undefined) {
-    rows.push({ label: "Provider", value: providerName });
-  }
-  rows.push({ label: "Updated", value: relativeTimeLabel(thread.updatedAt, now) });
-  if (childThreads.length > 0) {
-    rows.push({ label: "Children", value: String(childThreads.length) });
-  }
-  if (pullRequest !== undefined && pullRequest !== null) {
-    rows.push({
-      label: "Pull request",
-      value: `#${pullRequest.number} ${pullRequest.title}`,
-    });
-  }
-  return rows;
-}
-
-/**
  * The thread's own menu.
  *
  * The right-click menu still exists and still holds the full set; this is the
@@ -660,6 +550,7 @@ function ThreadMenu({
   onSettle,
   onSnooze,
   canPark,
+  className,
 }: {
   thread: PluginSidebarThread;
   expanded: boolean;
@@ -670,6 +561,7 @@ function ThreadMenu({
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
   canPark: boolean;
+  className?: string;
 }) {
   const actions = useSidebarThreadActions();
   const tomorrow = () => {
@@ -685,6 +577,7 @@ function ThreadMenu({
         <RowMenuTrigger
           label={`Actions for ${threadDisplayTitle(thread)}`}
           revealed={revealed}
+          className={className}
         />
       }
     >

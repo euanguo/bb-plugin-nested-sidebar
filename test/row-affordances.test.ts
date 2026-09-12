@@ -50,33 +50,34 @@ describe("row affordances across the four levels", () => {
     assert.match(treeRows, /label="New thread here"/);
   });
 
-  it("keeps rename reachable from the level it belongs to", () => {
+  it("keeps rename reachable through the central group manager", () => {
     assert.match(projectRow, /label="Rename…"/);
     // A worktree renames the environment, which is what its alias is.
     assert.match(treeRows, /label="Rename worktree…"/);
-    assert.match(groupRow, /label="Rename…"/);
+    assert.doesNotMatch(groupRow, /label="Rename…"/);
     assert.match(card, /label="Open in split"/);
   });
 
-  it("shows each group's own edit affordance before the name", () => {
-    // The pencil is part of the label, and it is only a control once revealed.
-    const icon = groupRow.indexOf('<Icon name="Edit"');
-    // The rendered label element, not name={node.name} on the editor above it.
-    const name = groupRow.indexOf(
-      "truncate text-xs font-semibold text-foreground/90",
-    );
-    assert.ok(icon >= 0 && name > icon);
-    assert.match(groupRow, /group-hover\/group:flex/);
+  it("keeps group editing in the central manager", () => {
+    assert.doesNotMatch(groupRow, /GroupNameField/);
+    assert.doesNotMatch(groupRow, /name="Edit"/);
   });
 
   it("tags each group tab with its own status so the strip can dot it", () => {
     assert.match(tabs, /statusKind: FamilyStatusKind \| null/);
     assert.match(tabs, /familyStatusPresentation\(tab\.statusKind\)/);
+    assert.doesNotMatch(tabs, /tab\.count/);
   });
 
-  it("opens a hover card from every level", () => {
-    for (const source of [groupRow, projectRow, treeRows, card]) {
+  it("opens a hover card from aggregate levels, not thread rows", () => {
+    for (const source of [groupRow, projectRow, treeRows]) {
       assert.match(source, /<InfoCard/);
     }
+    assert.doesNotMatch(card, /<InfoCard/);
+  });
+
+  it("keeps the provider at the trailing edge and overlays actions there", () => {
+    assert.match(card, /data-nest-root-metadata=""[\s\S]*className="relative flex/);
+    assert.match(card, /className="absolute right-0 top-1\/2 -translate-y-1\/2"/);
   });
 });

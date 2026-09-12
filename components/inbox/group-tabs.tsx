@@ -39,15 +39,12 @@ export function GroupTabs({
   activeKey,
   onSelect,
   onManage,
-  onEdit,
   children,
 }: {
   tabs: readonly GroupTab[];
   activeKey: string;
   onSelect: (scope: GroupScope) => void;
   onManage: () => void;
-  /** Opens rename for the group a tab points at. Absent for All/Ungrouped. */
-  onEdit: (groupId: string, name: string) => void;
   /**
    * Trailing controls for the strip. The project count and these actions used
    * to sit on their own "PROJECTS" row below the tabs, which repeated what the
@@ -66,9 +63,8 @@ export function GroupTabs({
         {tabs.map((tab) => {
           const key = groupScopeKey(tab.scope);
           const selected = key === activeKey;
-          const groupId = tab.scope.kind === "group" ? tab.scope.groupId : null;
           return (
-            <span key={key} className="group/tab relative shrink-0">
+            <span key={key} className="shrink-0">
               <button
                 type="button"
                 role="tab"
@@ -84,40 +80,12 @@ export function GroupTabs({
                 )}
               >
                 <span className="truncate">{tab.label}</span>
-                <span className="shrink-0 tabular-nums text-2xs opacity-60">
-                  {tab.count}
-                </span>
                 {tab.statusKind === null ? null : (
-                  <span
-                    // The dot is a summary, not a control: the containing tab
-                    // already handles the click, so this must not steal it.
-                    className={cn(
-                      "flex shrink-0 items-center",
-                      // Editing needs the room, so the dot steps aside rather
-                      // than making the tab jitter between two widths.
-                      groupId !== null && "group-hover/tab:hidden",
-                    )}
-                  >
+                  <span className="flex shrink-0 items-center">
                     <StatusDot status={familyStatusPresentation(tab.statusKind)} />
                   </span>
                 )}
               </button>
-              {groupId === null ? null : (
-                <button
-                  type="button"
-                  aria-label={`Rename group ${tab.label}`}
-                  title={`Rename ${tab.label}`}
-                  onClick={() => onEdit(groupId, tab.label)}
-                  className={cn(
-                    "absolute right-1 top-1/2 hidden size-5 -translate-y-1/2 items-center justify-center rounded",
-                    "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                    "group-hover/tab:flex group-focus-within/tab:flex",
-                  )}
-                >
-                  <Icon name="Edit" className="size-3" aria-hidden />
-                </button>
-              )}
             </span>
           );
         })}
