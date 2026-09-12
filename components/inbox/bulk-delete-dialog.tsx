@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef } from "react";
+import { useId } from "react";
 import { Icon } from "@/components/ui/icon";
+import { PlainDialog } from "@/components/ui/modal";
 
 export interface BulkDeletePreviewView {
   token: string | null;
@@ -31,16 +32,8 @@ export function BulkDeleteDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
 
   const shownTitles = preview?.included.slice(0, 5) ?? [];
   const remainingTitles = Math.max(
@@ -49,18 +42,14 @@ export function BulkDeleteDialog({
   );
 
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby={titleId}
-      aria-describedby={descriptionId}
-      onCancel={(event) => {
-        event.preventDefault();
+    <PlainDialog
+      open={open}
+      onClose={() => {
         if (!busy) onCancel();
       }}
-      onClose={() => {
-        if (open && !busy) onCancel();
-      }}
-      className="fixed left-1/2 top-1/2 z-50 m-0 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-xl backdrop:bg-black/50"
+      labelledBy={titleId}
+      aria-describedby={descriptionId}
+      className="w-[min(26rem,calc(100vw-2rem))]"
     >
       <div className="space-y-4 p-4">
         <div className="flex items-start gap-3">
@@ -138,7 +127,7 @@ export function BulkDeleteDialog({
           </button>
         </div>
       </div>
-    </dialog>
+    </PlainDialog>
   );
 }
 

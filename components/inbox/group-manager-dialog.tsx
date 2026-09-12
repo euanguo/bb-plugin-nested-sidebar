@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
+import { PlainDialog } from "@/components/ui/modal";
 import type { ProjectGroup } from "@/lib/groups";
 
 /**
@@ -21,19 +22,10 @@ export function GroupManagerDialog({
   groups: readonly ProjectGroup[];
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
   const rpc = useRpc<typeof nestRpcContract>();
   const [draftName, setDraftName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -67,21 +59,16 @@ export function GroupManagerDialog({
   };
 
   return (
-    <dialog
-      ref={dialogRef}
-      aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault();
+    <PlainDialog
+      open={open}
+      onClose={() => {
         if (!busy) onClose();
       }}
-      onClose={() => {
-        if (open && !busy) onClose();
-      }}
-      className="fixed left-1/2 top-1/2 z-50 m-0 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-popover p-0 text-popover-foreground shadow-xl backdrop:bg-black/50"
+      className="w-[min(28rem,calc(100vw-2rem))]"
     >
       <div className="flex flex-col gap-3 p-4">
         <div className="flex items-center gap-2">
-          <h2 id={titleId} className="flex-1 text-sm font-semibold">
+          <h2 className="flex-1 text-sm font-semibold">
             Project groups
           </h2>
           <button
@@ -191,7 +178,7 @@ export function GroupManagerDialog({
           </button>
         </form>
       </div>
-    </dialog>
+    </PlainDialog>
   );
 }
 

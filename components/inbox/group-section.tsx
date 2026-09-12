@@ -71,7 +71,7 @@ export function GroupSection({
       data-nested-group={node.groupId ?? "__ungrouped__"}
       className="mb-1"
     >
-      <div className="group/group flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent/50">
+      <div className="group/group flex h-6 w-full items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent/50">
         <button
           type="button"
           aria-expanded={expanded}
@@ -85,7 +85,7 @@ export function GroupSection({
             className="size-3.5 shrink-0 text-muted-foreground/70"
             aria-hidden
           />
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-wide text-foreground/80">
+          <span className="min-w-0 flex-1 truncate text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
             {node.name}
           </span>
         </button>

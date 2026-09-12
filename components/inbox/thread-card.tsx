@@ -21,7 +21,6 @@ import { StatusGlyph } from "@/components/inbox/status-glyph";
 import { threadStatus } from "@/components/inbox/status-slot";
 import { PullRequestMetadata } from "@/components/inbox/row-metadata";
 import {
-  FamilyStatusBadge,
   FamilyStatusIcon,
 } from "@/components/inbox/family-status";
 import { familyWaitingForAgents } from "@/lib/attention-state";
@@ -142,10 +141,13 @@ export function ThreadCard({
           <div
             data-nest-root-card=""
             className={cn(
-              "group/root relative grid grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[1rem_1rem] items-center gap-x-2 gap-y-0.5 rounded-lg px-2",
+              "group/root relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 rounded-lg px-2",
+              preferences.rowLayout === "one-line"
+                ? "grid-rows-[1.25rem]"
+                : "grid-rows-[1rem_1rem] gap-y-0.5",
               preferences.density === "compact"
-                ? "min-h-10 py-1"
-                : "min-h-12 py-1.5",
+                ? "py-0.5"
+                : "py-1",
               rootIsActive
                 ? "bg-sidebar-accent"
                 : "hover:bg-sidebar-accent/60",
@@ -248,11 +250,12 @@ export function ThreadCard({
             {selectionMode ? null : (
               <FamilyStatusIcon
                 status={familyState}
+                variant={preferences.statusDisplay}
                 className="col-start-1 row-start-1"
                 draggable={reorderEnabled}
                 reorderHelp={
                   reorderEnabled
-                    ? "Drag this status icon to reorder. Press Alt+Up or Alt+Down to move the family."
+                    ? "Drag this status marker to reorder. Press Alt+Up or Alt+Down to move the family."
                     : (reorderDisabledReason ?? "Reordering is unavailable.")
                 }
                 onDragStart={(event) => {
@@ -274,15 +277,28 @@ export function ThreadCard({
               />
             )}
 
-            <div className="pointer-events-none relative col-start-2 row-span-2 min-w-0">
+            <div
+              className={cn(
+                "pointer-events-none relative col-start-2 min-w-0",
+                preferences.rowLayout === "one-line"
+                  ? "row-start-1 flex min-w-0 items-center gap-1.5"
+                  : "row-span-2",
+              )}
+            >
               <div
                 data-nest-root-title-row=""
-                className="flex h-4 min-w-0 items-center gap-1.5"
+                className={cn(
+                  "flex h-4 min-w-0 items-center gap-1.5",
+                  preferences.rowLayout === "one-line" && "flex-1",
+                )}
               >
                 <span
                   title={threadDisplayTitle(thread)}
                   className={cn(
-                    "min-w-0 flex-1 truncate text-sm",
+                    "min-w-0 flex-1 truncate",
+                    preferences.rowLayout === "one-line"
+                      ? "text-xs"
+                      : "text-sm",
                     thread.isUnread ? "font-semibold" : "font-medium",
                     !familyState.receded
                       ? "text-foreground"
@@ -298,23 +314,36 @@ export function ThreadCard({
                     className="size-3 shrink-0 text-muted-foreground/70"
                   />
                 ) : null}
+                {/* One-line layout: the branch rides beside the title, so the
+                    row costs a single line of height. */}
+                {preferences.rowLayout === "one-line" &&
+                preferences.showThreadLocation ? (
+                  <ThreadLocation thread={thread} />
+                ) : null}
               </div>
-              <div
-                data-nest-root-detail-row=""
-                className={cn(
-                  "mt-0.5 flex h-4 min-w-0 items-center gap-1.5 text-2xs",
-                  familyState.receded
-                    ? "text-muted-foreground/55"
-                    : "text-muted-foreground",
-                )}
-              >
-                <ThreadLocation thread={thread} />
-              </div>
+              {preferences.rowLayout === "two-line" ? (
+                <div
+                  data-nest-root-detail-row=""
+                  className={cn(
+                    "mt-0.5 flex h-4 min-w-0 items-center gap-1.5 text-2xs",
+                    familyState.receded
+                      ? "text-muted-foreground/55"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {preferences.showThreadLocation ? (
+                    <ThreadLocation thread={thread} />
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div
               className={cn(
-                "relative z-10 col-start-3 row-span-2 flex shrink-0 flex-col items-end gap-0.5",
+                "relative z-10 col-start-3 flex shrink-0 items-end",
+                preferences.rowLayout === "one-line"
+                  ? "row-start-1 flex-row gap-1.5"
+                  : "row-span-2 flex-col gap-0.5",
                 selectionMode && "pointer-events-none",
               )}
             >
@@ -358,7 +387,7 @@ export function ThreadCard({
                     interactive={!selectionMode}
                   />
                 ) : null}
-                {childThreads.length > 0 ? (
+                {childThreads.length > 0 && preferences.showChildCount ? (
                   <button
                     type="button"
                     aria-label={
@@ -417,7 +446,6 @@ export function ThreadCard({
                     className="size-3 opacity-75"
                   />
                 ) : null}
-                <FamilyStatusBadge status={familyState} />
               </div>
             </div>
           </div>
@@ -495,9 +523,7 @@ function ChildThreadRow({
         <div
           className={cn(
             "group/child relative flex items-start gap-1.5 rounded-md px-1.5",
-            preferences.density === "compact"
-              ? "min-h-9 py-0.5"
-              : "min-h-10 py-1",
+            preferences.density === "compact" ? "py-0.5" : "py-1",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
             !isActive && layout !== null && "bg-sidebar-accent/25",
           )}
@@ -547,9 +573,14 @@ function ChildThreadRow({
                 </span>
               ) : null}
             </div>
-            <div className="mt-0.5 flex h-3.5 min-w-0 items-center gap-1.5 text-2xs">
-              <ThreadLocation thread={thread} />
-            </div>
+            {preferences.rowLayout === "two-line" ||
+            preferences.showThreadLocation ? (
+              <div className="mt-0.5 flex h-3.5 min-w-0 items-center gap-1.5 text-2xs">
+                {preferences.showThreadLocation ? (
+                  <ThreadLocation thread={thread} />
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </li>

@@ -1,17 +1,21 @@
-import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { familyStatusPresentation } from "@/lib/family-status";
+import { StatusCount, StatusDot } from "@/components/inbox/family-status";
+import {
+  familyStatusPresentation,
+  type FamilyStatusKind,
+} from "@/lib/family-status";
 import { rollupSummary, type StatusRollup } from "@/lib/rollup";
 
 /**
- * The folded-row status: one dot for the dominant state, then the counts that
- * are non-zero. It is deliberately the same vocabulary at every level — group,
- * project, workspace — because the point is that a folded branch reports what
- * is happening inside it the same way a single thread does.
+ * The folded-row status: one dot per non-zero state, each followed by its
+ * count, most urgent first, at every level — group, project, workspace.
  *
- * Counts are spelled out instead of relying on colour alone: with many
- * worktrees the tree is dense, and a coloured dot on a deep row is easy to
- * miss. "1 needs you" survives being skimmed; a red pixel does not.
+ * Numbers instead of words because a folded row is a summary, not a sentence:
+ * the sidebar is the scarcest surface in bb, and "2 · 1" beside two coloured
+ * dots reads faster than "2 needs you · 1 working" while costing a fraction of
+ * the width. The words survive in the tooltip and in the screen-reader label,
+ * so nothing is colour-only. When every thread underneath is quiet there is no
+ * count to show, and a single receded dot says so.
  */
 export function RollupBadge({
   rollup,
@@ -23,28 +27,23 @@ export function RollupBadge({
   if (rollup.total === 0) return null;
   const presentation = familyStatusPresentation(rollup.kind);
   const summary = rollupSummary(rollup);
-  const idle = summary.length === 0;
+  const counts = rollupCounts(rollup);
 
   return (
     <span
       className={cn("flex shrink-0 items-center gap-1", className)}
       title={`${presentation.label}${summary ? ` · ${summary}` : ""}`}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "size-1.5 rounded-full",
-          presentation.animated && "animate-pulse",
-        )}
-        style={{
-          backgroundColor: `var(--nest-status-${presentation.colorRole})`,
-          opacity: presentation.receded ? 0.55 : 1,
-        }}
-      />
-      {idle ? null : (
-        <span className="truncate text-2xs text-muted-foreground">
-          {summary}
-        </span>
+      {counts.length === 0 ? (
+        <StatusDot status={presentation} />
+      ) : (
+        counts.map((entry) => (
+          <StatusCount
+            key={entry.kind}
+            status={familyStatusPresentation(entry.kind)}
+            count={entry.count}
+          />
+        ))
       )}
       <span className="sr-only">
         {presentation.label}
@@ -52,6 +51,22 @@ export function RollupBadge({
       </span>
     </span>
   );
+}
+
+/**
+ * Non-zero counts, most urgent first, so the leftmost number is the one that
+ * matters. Mirrors the rollup priority: failed > needs you > working > unread.
+ */
+function rollupCounts(
+  rollup: StatusRollup,
+): ReadonlyArray<{ kind: FamilyStatusKind; count: number }> {
+  const ordered: ReadonlyArray<{ kind: FamilyStatusKind; count: number }> = [
+    { kind: "failed", count: rollup.failed },
+    { kind: "needs-you", count: rollup.needsYou },
+    { kind: "working", count: rollup.working },
+    { kind: "unread", count: rollup.unread },
+  ];
+  return ordered.filter((entry) => entry.count > 0);
 }
 
 /**
@@ -93,9 +108,6 @@ export function RollupJump({
       )}
     >
       <RollupBadge rollup={rollup} />
-      {target === null ? null : (
-        <Icon name="ArrowRight" className="size-3 opacity-60" aria-hidden />
-      )}
     </button>
   );
 }

@@ -30,6 +30,8 @@ import {
   CUSTOM_COLOR_DEFAULTS,
   PALETTE_PRESET_OPTIONS,
   ROW_DENSITY_OPTIONS,
+  ROW_LAYOUT_OPTIONS,
+  STATUS_DISPLAY_OPTIONS,
 } from "./lib/preferences.ts";
 import {
   PROJECT_COLOR_MIGRATION,
@@ -413,6 +415,22 @@ export default function plugin(bb: BbPluginApi) {
       options: [...ROW_DENSITY_OPTIONS],
       default: "Comfortable",
     },
+    rowLayout: {
+      type: "select",
+      label: "Thread row layout",
+      description:
+        "One line puts the branch beside the title and halves the row height.",
+      options: [...ROW_LAYOUT_OPTIONS],
+      default: "Two lines",
+    },
+    statusDisplay: {
+      type: "select",
+      label: "Thread status marker",
+      description:
+        "A dot is quieter and narrower; the status icon keeps a distinct shape per state.",
+      options: [...STATUS_DISPLAY_OPTIONS],
+      default: "Dot",
+    },
     defaultChildExpansion: {
       type: "select",
       label: "Default child expansion",
@@ -433,6 +451,17 @@ export default function plugin(bb: BbPluginApi) {
     showRelativeTime: {
       type: "boolean",
       label: "Show relative time",
+      default: true,
+    },
+    showChildCount: {
+      type: "boolean",
+      label: "Show child thread count",
+      description: "The disclosure beside a thread that has agents.",
+      default: true,
+    },
+    showThreadLocation: {
+      type: "boolean",
+      label: "Show thread branch or host",
       default: true,
     },
   });

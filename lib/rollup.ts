@@ -1,9 +1,16 @@
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import {
   familyStatus,
   type FamilyStatusKind,
   type FamilyStatusThread,
 } from "./family-status.ts";
+
+/**
+ * Everything a rollup reads: the status fields plus the id it hands back as a
+ * jump target. Narrower than the host's thread DTO on purpose — that is the
+ * whole contract, so a rollup can be computed for any list of threads without
+ * constructing a whole DTO.
+ */
+export type RollupThread = FamilyStatusThread & { readonly id: string };
 
 /**
  * What a collapsed row must still tell you.
@@ -19,6 +26,7 @@ import {
 export interface StatusRollup {
   readonly kind: FamilyStatusKind;
   readonly total: number;
+  readonly failed: number;
   readonly working: number;
   readonly needsYou: number;
   readonly unread: number;
@@ -29,6 +37,7 @@ export interface StatusRollup {
 const EMPTY: StatusRollup = {
   kind: "inactive",
   total: 0,
+  failed: 0,
   working: 0,
   needsYou: 0,
   unread: 0,
@@ -68,12 +77,16 @@ function isUnread(thread: FamilyStatusThread): boolean {
   return thread.isUnread || thread.indicator === "unread-success";
 }
 
+function isFailed(thread: FamilyStatusThread): boolean {
+  return thread.indicator === "unread-error";
+}
+
 /**
  * Fold a set of threads into one rollup. Doubles as the calculation for a
  * single thread, so a leaf row and a group header agree by construction.
  */
 export function rollupThreads(
-  threads: readonly PluginSidebarThread[],
+  threads: readonly RollupThread[],
   now: number,
 ): StatusRollup {
   if (threads.length === 0) return EMPTY;
@@ -81,10 +94,12 @@ export function rollupThreads(
   let working = 0;
   let needs = 0;
   let unread = 0;
+  let failed = 0;
   for (const thread of threads) {
     if (isWorking(thread)) working += 1;
     if (needsYou(thread)) needs += 1;
     if (isUnread(thread)) unread += 1;
+    if (isFailed(thread)) failed += 1;
   }
 
   const presentation = familyStatus(threads, now);
@@ -95,6 +110,7 @@ export function rollupThreads(
   return {
     kind: presentation.kind,
     total: threads.length,
+    failed,
     working,
     needsYou: needs,
     unread,
@@ -103,9 +119,9 @@ export function rollupThreads(
 }
 
 function leadThreadFor(
-  threads: readonly PluginSidebarThread[],
+  threads: readonly RollupThread[],
   kind: FamilyStatusKind,
-): PluginSidebarThread | undefined {
+): RollupThread | undefined {
   switch (kind) {
     case "failed":
       return threads.find((thread) => thread.indicator === "unread-error");
@@ -127,6 +143,7 @@ function leadThreadFor(
  */
 export function rollupSummary(rollup: StatusRollup): string {
   const parts: string[] = [];
+  if (rollup.failed > 0) parts.push(String(rollup.failed) + " failed");
   if (rollup.needsYou > 0) parts.push(String(rollup.needsYou) + " needs you");
   if (rollup.working > 0) parts.push(String(rollup.working) + " working");
   if (rollup.unread > 0) parts.push(String(rollup.unread) + " unread");
@@ -141,11 +158,13 @@ export function mergeRollups(rollups: readonly StatusRollup[]): StatusRollup {
   let working = 0;
   let needs = 0;
   let unread = 0;
+  let failed = 0;
   let total = 0;
   for (const rollup of present) {
     working += rollup.working;
     needs += rollup.needsYou;
     unread += rollup.unread;
+    failed += rollup.failed;
     total += rollup.total;
   }
 
@@ -155,6 +174,7 @@ export function mergeRollups(rollups: readonly StatusRollup[]): StatusRollup {
   return {
     kind,
     total,
+    failed,
     working,
     needsYou: needs,
     unread,

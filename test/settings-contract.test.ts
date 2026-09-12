@@ -49,10 +49,14 @@ describe("Nest settings contract", () => {
       "prBlockedColor",
       "prClosedColor",
       "rowDensity",
+      "rowLayout",
+      "statusDisplay",
       "defaultChildExpansion",
       "showProviderIcons",
       "showPullRequestMetadata",
       "showRelativeTime",
+      "showChildCount",
+      "showThreadLocation",
     ]) {
       assert.match(server, new RegExp(`${key}:`));
     }
