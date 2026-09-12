@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { StatusCount, StatusDot } from "@/components/inbox/family-status";
+import { StatusDot } from "@/components/inbox/family-status";
 import {
   familyStatusPresentation,
   type FamilyStatusKind,
@@ -7,15 +7,11 @@ import {
 import { rollupSummary, type StatusRollup } from "@/lib/rollup";
 
 /**
- * The folded-row status: one dot per non-zero state, each followed by its
- * count, most urgent first, at every level — group, project, workspace.
- *
- * Numbers instead of words because a folded row is a summary, not a sentence:
- * the sidebar is the scarcest surface in bb, and "2 · 1" beside two coloured
- * dots reads faster than "2 needs you · 1 working" while costing a fraction of
- * the width. The words survive in the tooltip and in the screen-reader label,
- * so nothing is colour-only. When every thread underneath is quiet there is no
- * count to show, and a single receded dot says so.
+ * The folded-row status is deliberately one dot. Counts are useful in a
+ * report, but they are not useful in this narrow navigation surface: the dot
+ * answers the only question the collapsed row needs to answer — is anything
+ * below active or waiting? The full state and counts remain in the title and
+ * accessible label, so the visual row does not spend width on them.
  */
 export function RollupBadge({
   rollup,
@@ -24,49 +20,26 @@ export function RollupBadge({
   rollup: StatusRollup;
   className?: string;
 }) {
-  if (rollup.total === 0) return null;
+  // A quiet subtree has no status signal to communicate. In particular, do
+  // not render the inactive/stale dot on every project: the dot means
+  // something below needs attention or is active, not merely that the row has
+  // children.
+  if (rollup.total === 0 || rollup.kind === "inactive" || rollup.kind === "stale") return null;
   const presentation = familyStatusPresentation(rollup.kind);
   const summary = rollupSummary(rollup);
-  const counts = rollupCounts(rollup);
 
   return (
     <span
-      className={cn("flex shrink-0 items-center gap-1", className)}
+      className={cn("flex size-3 shrink-0 items-center justify-center", className)}
       title={`${presentation.label}${summary ? ` · ${summary}` : ""}`}
     >
-      {counts.length === 0 ? (
-        <StatusDot status={presentation} />
-      ) : (
-        counts.map((entry) => (
-          <StatusCount
-            key={entry.kind}
-            status={familyStatusPresentation(entry.kind)}
-            count={entry.count}
-          />
-        ))
-      )}
+      <StatusDot status={presentation} />
       <span className="sr-only">
         {presentation.label}
         {summary ? `, ${summary}` : ""}
       </span>
     </span>
   );
-}
-
-/**
- * Non-zero counts, most urgent first, so the leftmost number is the one that
- * matters. Mirrors the rollup priority: failed > needs you > working > unread.
- */
-function rollupCounts(
-  rollup: StatusRollup,
-): ReadonlyArray<{ kind: FamilyStatusKind; count: number }> {
-  const ordered: ReadonlyArray<{ kind: FamilyStatusKind; count: number }> = [
-    { kind: "failed", count: rollup.failed },
-    { kind: "needs-you", count: rollup.needsYou },
-    { kind: "working", count: rollup.working },
-    { kind: "unread", count: rollup.unread },
-  ];
-  return ordered.filter((entry) => entry.count > 0);
 }
 
 /**

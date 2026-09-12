@@ -2,8 +2,6 @@ import { useId, useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
 } from "@get-bb/plugin-sdk/app";
-import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { nestRpcContract } from "@/server";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu";
@@ -18,7 +16,7 @@ import {
   ProjectNode as ProjectNodeView,
 } from "@/components/inbox/project-node";
 import type { GroupNode } from "@/lib/tree";
-import { renameIntent, type ProjectGroup } from "@/lib/groups";
+import type { ProjectGroup } from "@/lib/groups";
 import type {
   TreeRowHandlers,
   WorkspaceLaunch,
@@ -52,7 +50,6 @@ export function GroupSection({
   onNewThreadInWorkspace,
   projectColorOverrides,
   projectReorder,
-  onRenameGroup,
 }: {
   node: GroupNode;
   handlers: TreeRowHandlers;
@@ -71,11 +68,9 @@ export function GroupSection({
       position: "before" | "after",
     ) => void;
   };
-  onRenameGroup: (groupId: string, name: string) => void;
 }) {
   const actions = useSidebarThreadActions();
   const [expanded, setExpanded] = useState(true);
-  const [editing, setEditing] = useState(false);
   const reveal = useRowReveal();
   const listId = useId();
   const threadCount = node.projects.reduce(
@@ -95,18 +90,7 @@ export function GroupSection({
       {...reveal.handlers}
       className="group/group flex h-7 w-full items-center gap-2 rounded-md px-1.5 hover:bg-sidebar-accent/50"
     >
-      {editing && groupId !== null ? (
-        <GroupNameField
-          name={node.name}
-          onCommit={(draft) => {
-            const name = renameIntent(draft, node.name);
-            setEditing(false);
-            if (name !== null) onRenameGroup(groupId, name);
-          }}
-          onCancel={() => setEditing(false)}
-        />
-      ) : (
-        <button
+      <button
           type="button"
           aria-expanded={expanded}
           aria-controls={listId}
@@ -114,40 +98,11 @@ export function GroupSection({
           title={node.name}
           className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          {/* Before the name, not after: the pencil belongs to the label. It
-              is inert until the row is hovered, then becomes the edit entry. */}
-          <span
-            className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/70"
-            aria-hidden={!reveal.revealed}
-          >
-            <span className="group-hover/group:hidden group-focus-within/group:hidden">
-              <Icon name="Layer" className="size-3.5" aria-hidden />
-            </span>
-            <button
-              type="button"
-              tabIndex={reveal.revealed && groupId !== null ? 0 : -1}
-              aria-label={`Rename group ${node.name}`}
-              title={`Rename ${node.name}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (groupId !== null) setEditing(true);
-              }}
-              className={cn(
-                "hidden size-5 items-center justify-center rounded",
-                "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                "group-hover/group:flex group-focus-within/group:flex",
-                groupId === null && "group-hover/group:hidden",
-              )}
-            >
-              <Icon name="Edit" className="size-3.5" aria-hidden />
-            </button>
-          </span>
+          <Icon name="Layer" className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground/90">
             {node.name}
           </span>
         </button>
-      )}
       <RollupJump
         rollup={node.rollup}
         onJump={(threadId) => {
@@ -168,7 +123,6 @@ export function GroupSection({
           canMoveUp={groupId !== null && groups[0]?.id !== groupId}
           canMoveDown={groupId !== null && groups[groups.length - 1]?.id !== groupId}
           onToggleExpanded={() => setExpanded((open) => !open)}
-          onRename={() => setEditing(true)}
           onMove={(delta) => handlers.onGroupMove?.(groupId ?? "", delta)}
         />
       </RowActions>
@@ -216,53 +170,6 @@ export function GroupSection({
   );
 }
 
-/** The in-place name editor. Commits on Enter or blur, abandons on Escape. */
-function GroupNameField({
-  name,
-  onCommit,
-  onCancel,
-}: {
-  name: string;
-  onCommit: (draft: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(name);
-  // Blur and Enter both commit, and Escape commits nothing, so a single guard
-  // keeps the two commit paths from firing together.
-  const [done, setDone] = useState(false);
-  const finish = (commit: boolean) => {
-    if (done) return;
-    setDone(true);
-    if (commit) onCommit(value);
-    else onCancel();
-  };
-
-  return (
-    <input
-      autoFocus
-      value={value}
-      maxLength={60}
-      aria-label={`Rename group ${name}`}
-      onChange={(event) => setValue(event.currentTarget.value)}
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          finish(true);
-        } else if (event.key === "Escape") {
-          event.preventDefault();
-          finish(false);
-        }
-      }}
-      onBlur={() => finish(true)}
-      className={cn(
-        "h-6 min-w-0 flex-1 rounded border border-border bg-background px-1.5 text-xs",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-      )}
-    />
-  );
-}
-
 /**
  * Everything that can be done to a group, in one place.
  *
@@ -278,7 +185,6 @@ function GroupMenu({
   canMoveUp,
   canMoveDown,
   onToggleExpanded,
-  onRename,
   onMove,
 }: {
   name: string;
@@ -288,7 +194,6 @@ function GroupMenu({
   canMoveUp: boolean;
   canMoveDown: boolean;
   onToggleExpanded: () => void;
-  onRename: () => void;
   onMove: (delta: -1 | 1) => void;
 }) {
   return (
@@ -310,7 +215,6 @@ function GroupMenu({
       />
       {groupId === null ? null : (
         <>
-          <MenuItem icon="Edit" label="Rename…" onSelect={onRename} />
           <MenuSeparator />
           <MenuItem
             icon="ChevronUp"

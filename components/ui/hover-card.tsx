@@ -65,7 +65,7 @@ export function InfoCard({
   return (
     <HoverCard.Root openDelay={350} closeDelay={80}>
       <HoverCard.Trigger asChild>
-        <div className="contents">{trigger}</div>
+        <div className="block w-full min-w-0">{trigger}</div>
       </HoverCard.Trigger>
       <HoverCard.Portal container={container}>
         <HoverCard.Content

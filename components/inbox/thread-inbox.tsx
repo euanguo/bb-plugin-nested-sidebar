@@ -79,7 +79,6 @@ import {
   type NewThreadSeed,
 } from "@/components/inbox/new-thread-dialog";
 import { GroupManagerDialog } from "@/components/inbox/group-manager-dialog";
-import { RenameGroupDialog } from "@/components/inbox/rename-group-dialog";
 import { useGroups } from "@/hooks/use-groups";
 import {
   groupScopeKey,
@@ -114,9 +113,6 @@ export function ThreadInbox({
   const [groupScope, setGroupScope] = useState<GroupScope>({ kind: "all" });
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   /** The group a tab's pencil asked to rename, when the strip is the entry. */
-  const [groupRename, setGroupRename] = useState<
-    { groupId: string; name: string } | null
-  >(null);
   const [newThreadSeed, setNewThreadSeed] = useState<NewThreadSeed | null>(null);
   const inboxRef = useRef<HTMLDivElement>(null);
   const selectionAnchorRootId = useRef<string | null>(null);
@@ -247,13 +243,14 @@ export function ThreadInbox({
         ),
       );
       if (scoped.length === 0) return null;
-      return worstKind(
+      const kind = worstKind(
         scoped.flatMap((group) =>
           group.families.map((family) =>
             familyStatus([family.root, ...family.children], now).kind,
           ),
         ),
       );
+      return kind === "inactive" || kind === "stale" ? null : kind;
     };
     const groupTabs: GroupTab[] = [
       {
@@ -865,9 +862,6 @@ export function ThreadInbox({
           activeKey={groupScopeKey(groupScope)}
           onSelect={setGroupScope}
           onManage={() => setGroupManagerOpen(true)}
-          onEdit={(groupId, name) =>
-            setGroupRename({ groupId, name })
-          }
         >
           {selectionMode ? null : (
             <FilterMenu value={filterPreset} onChange={setFilterPreset} />
@@ -1019,7 +1013,6 @@ export function ThreadInbox({
                   next: reorderProjectByKeyboard,
                   drop: reorderProjectDrop,
                 }}
-                onRenameGroup={renameGroup}
               />
             ))}
             {showParkedShelves ? (
@@ -1076,14 +1069,6 @@ export function ThreadInbox({
       onClose={() => setGroupManagerOpen(false)}
     />
 
-    {groupRename === null ? null : (
-      <RenameGroupDialog
-        groupId={groupRename.groupId}
-        currentName={groupRename.name}
-        onCancel={() => setGroupRename(null)}
-        onRenamed={() => setGroupRename(null)}
-      />
-    )}
   </div>
 );
 }
