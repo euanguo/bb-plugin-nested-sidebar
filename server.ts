@@ -62,8 +62,8 @@ const migrations = [
   `ALTER TABLE thread_lifecycle ADD COLUMN archived_thread_ids TEXT`,
   PROJECT_COLOR_MIGRATION,
   GROUP_MIGRATION,
-  `ALTER TABLE project_groups ADD COLUMN icon TEXT NOT NULL DEFAULT 'Layer'`,
   GROUP_ASSIGNMENT_MIGRATION,
+  `ALTER TABLE project_groups ADD COLUMN icon TEXT NOT NULL DEFAULT 'Layer'`,
 ];
 
 export interface StoredLifecycleRow {
