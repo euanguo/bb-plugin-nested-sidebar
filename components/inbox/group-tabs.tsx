@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { groupScopeKey, type GroupScope } from "@/lib/groups";
@@ -21,11 +22,19 @@ export function GroupTabs({
   activeKey,
   onSelect,
   onManage,
+  children,
 }: {
   tabs: readonly GroupTab[];
   activeKey: string;
   onSelect: (scope: GroupScope) => void;
   onManage: () => void;
+  /**
+   * Trailing controls for the strip. The project count and these actions used
+   * to sit on their own "PROJECTS" row below the tabs, which repeated what the
+   * tab counts already say; folding them in here gives the thread list that
+   * row back.
+   */
+  children?: ReactNode;
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1 px-1.5 pb-1">
@@ -59,6 +68,9 @@ export function GroupTabs({
           );
         })}
       </div>
+      {children === undefined ? null : (
+        <span className="flex shrink-0 items-center gap-0.5">{children}</span>
+      )}
       <button
         type="button"
         aria-label="Manage groups"

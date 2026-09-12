@@ -687,6 +687,27 @@ export function ThreadInbox({
   }
 
   /**
+   * "New worktree" opens the same dialog with the environment pre-set to a
+   * fresh managed worktree.
+   *
+   * bb has no standalone "create environment" call — an environment comes into
+   * being when a thread spawns into it — so creating a worktree and creating a
+   * thread are one action by construction. The dialog is where that happens,
+   * with the branch and base still the user's to choose.
+   */
+  function seedNewWorktree(projectId: string, projectName: string) {
+    setNewThreadSeed({
+      projectId,
+      projectName,
+      environment: {
+        type: "host",
+        workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
+      },
+      originLabel: `New worktree in ${projectName}`,
+    });
+  }
+
+  /**
    * A workspace row seeds the worktree it belongs to. The environment is
    * handed to the composer as a reuse seed so the thread lands in that exact
    * worktree, while the composer's own picker stays free to change it — or to
@@ -761,42 +782,32 @@ export function ThreadInbox({
           activeKey={groupScopeKey(groupScope)}
           onSelect={setGroupScope}
           onManage={() => setGroupManagerOpen(true)}
-        />
-        <div className="flex h-8 items-center gap-2 px-2.5 pb-1 text-muted-foreground">
-          <Icon name="Folder" className="size-3.5" aria-hidden />
-          <span className="text-2xs font-semibold uppercase tracking-wider">
-            Projects
-          </span>
-          <span className="tabular-nums text-2xs text-muted-foreground/70">
-            {projectGroups.length}
-          </span>
-          <span className="ml-auto flex items-center gap-0.5">
-            {selectionMode ? null : (
-              <FilterMenu value={filterPreset} onChange={setFilterPreset} />
+        >
+          {selectionMode ? null : (
+            <FilterMenu value={filterPreset} onChange={setFilterPreset} />
+          )}
+          <button
+            type="button"
+            aria-label={
+              selectionMode ? "Thread selection active" : "Select threads"
+            }
+            title={selectionMode ? "Thread selection active" : "Select threads"}
+            disabled={selectionMode}
+            onClick={() => {
+              selectionAnchorRootId.current = null;
+              setSelectionMode(true);
+              setBulkMessage(null);
+              setBulkOutcomes([]);
+            }}
+            className={cn(
+              "flex size-6 items-center justify-center rounded-md text-muted-foreground",
+              "hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50",
+              selectionMode && "bg-primary/10 text-primary",
             )}
-            <button
-              type="button"
-              aria-label={
-                selectionMode ? "Thread selection active" : "Select threads"
-              }
-              title={selectionMode ? "Thread selection active" : "Select threads"}
-              disabled={selectionMode}
-              onClick={() => {
-                selectionAnchorRootId.current = null;
-                setSelectionMode(true);
-                setBulkMessage(null);
-                setBulkOutcomes([]);
-              }}
-              className={cn(
-                "flex size-6 items-center justify-center rounded-md text-muted-foreground",
-                "hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50",
-                selectionMode && "bg-primary/10 text-primary",
-              )}
-            >
-              <Icon name="ListTodo" className="size-3.5" aria-hidden />
-            </button>
-          </span>
-        </div>
+          >
+            <Icon name="ListTodo" className="size-3.5" aria-hidden />
+          </button>
+        </GroupTabs>
 
         {selectionMode ? (
           <div className="flex h-8 items-center gap-1 border-y border-sidebar-border/70 px-2 text-2xs">
@@ -914,6 +925,7 @@ export function ThreadInbox({
                 groups={groupsApi.groups}
                 onAssignGroup={assignGroup}
                 onNewThreadInProject={seedFromProject}
+                onNewWorktree={seedNewWorktree}
                 onNewThreadInWorkspace={seedFromWorkspace}
                 projectColorOverrides={projectColorOverrides}
                 projectReorder={{

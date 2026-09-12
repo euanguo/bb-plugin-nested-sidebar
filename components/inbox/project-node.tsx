@@ -8,6 +8,20 @@ import type { nestRpcContract } from "@/server";
 import { Modal } from "@/components/ui/modal";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MenuSub,
+} from "@/components/ui/menu";
+import {
+  RowActionButton,
+  RowActions,
+  RowMenuTrigger,
+  useRowReveal,
+} from "@/components/inbox/row-actions";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import {
   FlatFamilies,
@@ -34,6 +48,7 @@ export function ProjectNode({
   currentGroupId,
   onAssignGroup,
   onNewThreadInProject,
+  onNewWorktree,
   onNewThreadInWorkspace,
   projectColorOverrides,
   projectReorder,
@@ -44,6 +59,7 @@ export function ProjectNode({
   currentGroupId: string | null;
   onAssignGroup: (projectId: string, groupId: string | null) => void;
   onNewThreadInProject: (projectId: string, projectName: string) => void;
+  onNewWorktree: (projectId: string, projectName: string) => void;
   onNewThreadInWorkspace: (launch: WorkspaceLaunch) => void;
   projectColorOverrides: ReadonlyMap<string, string>;
   projectReorder: {
@@ -58,7 +74,7 @@ export function ProjectNode({
 }) {
   const actions = useSidebarThreadActions();
   const [expanded, setExpanded] = useState(true);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const reveal = useRowReveal();
   const listId = useId();
   const dragStarted = useRef(false);
   const badge = projectBadgePresentation(
@@ -190,6 +206,35 @@ export function ProjectNode({
         <span className="pointer-events-none relative min-w-0 flex-1 truncate text-xs font-semibold text-foreground/90">
           {node.project.name}
         </span>
+        <RowActions>
+          {/* Starting a thread is the common move, so it keeps its own button
+              rather than hiding behind the menu. */}
+          <RowActionButton
+            label={`New thread in ${node.project.name}`}
+            icon="Add"
+            onClick={() =>
+              onNewThreadInProject(node.project.id, node.project.name)
+            }
+          />
+          <ProjectMenu
+            projectId={node.project.id}
+            projectName={node.project.name}
+            groups={groups}
+            currentGroupId={currentGroupId}
+            expanded={expanded}
+            revealed={reveal.revealed}
+            onToggleExpanded={() => setExpanded((open) => !open)}
+            onNewThread={() =>
+              onNewThreadInProject(node.project.id, node.project.name)
+            }
+            onNewWorktree={() =>
+              onNewWorktree(node.project.id, node.project.name)
+            }
+            onAssignGroup={(groupId) => onAssignGroup(node.project.id, groupId)}
+          />
+        </RowActions>
+        {/* The rollup comes last so the two buttons never shift as counts come
+            and go. */}
         <RollupJump
           rollup={node.rollup}
           onJump={(threadId) => {
@@ -198,69 +243,6 @@ export function ProjectNode({
           }}
           onFallback={() => setExpanded((open) => !open)}
         />
-        {/* One slot, two readings: the disclosure chevron at rest, the action
-            menu on hover or focus. The menu holds everything you can do to a
-            project, so the row needs no third icon and no inline + button —
-            the count lives in the rollup beside it. */}
-        <div className="relative">
-          <button
-            type="button"
-            aria-label={`Actions for ${node.project.name}`}
-            aria-haspopup="menu"
-            {...(menuOpen ? { "aria-expanded": true } : {})}
-            title={
-              menuOpen
-                ? "Project actions"
-                : `${expanded ? "Collapse" : "Expand"} ${node.project.name} · hover for actions`
-            }
-            onClick={(event) => {
-              // At rest this button is the disclosure; on hover it becomes the
-              // menu. Either way a click opens the menu, which also carries
-              // the expand/collapse entry so nothing is lost.
-              event.stopPropagation();
-              if (menuOpen) {
-                setMenuOpen(false);
-                return;
-              }
-              // Hovering is how the menu is reached with a pointer; a keyboard
-              // activation goes straight to it, so focus users can reach every
-              // action without simulating a hover.
-              setMenuOpen(true);
-            }}
-            className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <Icon
-              name="ChevronDown"
-              className={cn(
-                "size-3 transition-transform group-hover/project:hidden group-focus-within/project:hidden",
-                expanded && "rotate-180",
-              )}
-              aria-hidden
-            />
-            <Icon
-              name="More"
-              className="hidden size-3 group-hover/project:block group-focus-within/project:block"
-              aria-hidden
-            />
-          </button>
-          {menuOpen ? (
-            <ProjectMenu
-              projectId={node.project.id}
-              projectName={node.project.name}
-              groups={groups}
-              currentGroupId={currentGroupId}
-              expanded={expanded}
-              onToggleExpanded={() => setExpanded((open) => !open)}
-              onNewThread={() =>
-                onNewThreadInProject(node.project.id, node.project.name)
-              }
-              onAssignGroup={(groupId) =>
-                onAssignGroup(node.project.id, groupId)
-              }
-              onClose={() => setMenuOpen(false)}
-            />
-          ) : null}
-        </div>
       </div>
 
       {expanded ? (
@@ -318,138 +300,97 @@ function ProjectMenu({
   groups,
   currentGroupId,
   expanded,
+  revealed,
   onToggleExpanded,
   onNewThread,
+  onNewWorktree,
   onAssignGroup,
-  onClose,
 }: {
   projectId: string;
   projectName: string;
   groups: readonly ProjectGroup[];
   currentGroupId: string | null;
   expanded: boolean;
+  revealed: boolean;
   onToggleExpanded: () => void;
   onNewThread: () => void;
+  onNewWorktree: () => void;
   onAssignGroup: (groupId: string | null) => void;
-  onClose: () => void;
 }) {
   const navigate = useBbNavigate();
-  const [submenu, setSubmenu] = useState<"move" | null>(null);
   const [dialog, setDialog] = useState<"rename" | "remove" | null>(null);
-
-  const close = () => {
-    setSubmenu(null);
-    onClose();
-  };
 
   return (
     <>
-      <button
-        type="button"
-        aria-label="Close menu"
-        onClick={close}
-        className="fixed inset-0 z-30 cursor-default"
-      />
-      <div
-        role="menu"
-        aria-label={`${projectName} actions`}
-        className="absolute right-0 top-full z-40 mt-0.5 min-w-44 rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-lg"
+      <Menu
+        label={`Actions for ${projectName}`}
+        trigger={
+          <RowMenuTrigger
+            label={`Actions for ${projectName}`}
+            chevron
+            expanded={expanded}
+            revealed={revealed}
+          />
+        }
       >
-        {submenu === "move" ? (
-          <>
-            <MenuItem
-              icon="ChevronLeft"
-              label="Back"
-              onSelect={() => setSubmenu(null)}
+        <MenuItem
+          icon="Add"
+          label="New thread"
+          onSelect={onNewThread}
+        />
+        <MenuItem
+          icon="GitBranch"
+          label="New worktree…"
+          onSelect={onNewWorktree}
+        />
+        <MenuSeparator />
+        <MenuItem
+          icon="ChevronDown"
+          label={expanded ? "Collapse" : "Expand"}
+          onSelect={onToggleExpanded}
+        />
+        <MenuItem
+          icon="Edit"
+          label="Rename…"
+          onSelect={() => setDialog("rename")}
+        />
+        {/* Membership is a rarer decision than acting on the project itself,
+            so it lives one level down instead of crowding this list. */}
+        <MenuSub icon="FolderTree" label="Move to group">
+          {groups.map((group) => (
+            <MenuCheckboxItem
+              key={group.id}
+              label={group.name}
+              checked={group.id === currentGroupId}
+              onSelect={() => onAssignGroup(group.id)}
             />
-            <div className="my-1 h-px bg-border/70" />
-            <p className="px-2 py-1 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Move to group
-            </p>
-            {groups.map((group) => (
-              <MenuItem
-                key={group.id}
-                icon="FolderTree"
-                label={group.name}
-                checked={group.id === currentGroupId}
-                onSelect={() => {
-                  onAssignGroup(group.id);
-                  close();
-                }}
-              />
-            ))}
-            <MenuItem
-              label="Ungrouped"
-              checked={currentGroupId === null}
-              onSelect={() => {
-                onAssignGroup(null);
-                close();
-              }}
-            />
-          </>
-        ) : (
-          <>
-            <MenuItem
-              icon="Add"
-              label="New thread"
-              onSelect={() => {
-                onNewThread();
-                close();
-              }}
-            />
-            <MenuItem
-              icon="ChevronDown"
-              label={expanded ? "Collapse" : "Expand"}
-              onSelect={() => {
-                onToggleExpanded();
-                close();
-              }}
-            />
-            <div className="my-1 h-px bg-border/70" />
-            <MenuItem
-              icon="Edit"
-              label="Rename…"
-              onSelect={() => setDialog("rename")}
-            />
-            {/* Group membership is a second-level decision, so it lives one
-                level down rather than crowding this list. */}
-            <MenuItem
-              icon="FolderTree"
-              label="Move to group"
-              hasSubmenu
-              onSelect={() => setSubmenu("move")}
-            />
-            <MenuItem
-              icon="Settings"
-              label="Project settings"
-              onSelect={() => {
-                navigate.toProject(projectId);
-                close();
-              }}
-            />
-            <div className="my-1 h-px bg-border/70" />
-            <MenuItem
-              icon="Trash"
-              label="Remove project…"
-              destructive
-              onSelect={() => setDialog("remove")}
-            />
-          </>
-        )}
-      </div>
+          ))}
+          <MenuCheckboxItem
+            label="Ungrouped"
+            checked={currentGroupId === null}
+            onSelect={() => onAssignGroup(null)}
+          />
+        </MenuSub>
+        <MenuItem
+          icon="Settings"
+          label="Project settings"
+          onSelect={() => navigate.toProject(projectId)}
+        />
+        <MenuSeparator />
+        <MenuItem
+          icon="Trash"
+          label="Remove project…"
+          destructive
+          onSelect={() => setDialog("remove")}
+        />
+      </Menu>
 
       {dialog === "rename" ? (
         <RenameProjectDialog
           projectId={projectId}
           currentName={projectName}
-          onCancel={() => {
-            setDialog(null);
-            close();
-          }}
-          onRenamed={() => {
-            setDialog(null);
-            close();
-          }}
+          onCancel={() => setDialog(null)}
+          onRenamed={() => setDialog(null)}
         />
       ) : null}
 
@@ -457,76 +398,14 @@ function ProjectMenu({
         <RemoveProjectDialog
           projectId={projectId}
           projectName={projectName}
-          onCancel={() => {
-            setDialog(null);
-            close();
-          }}
-          onRemoved={() => {
-            setDialog(null);
-            close();
-          }}
+          onCancel={() => setDialog(null)}
+          onRemoved={() => setDialog(null)}
         />
       ) : null}
     </>
   );
 }
 
-function MenuItem({
-  icon,
-  label,
-  checked = false,
-  hasSubmenu = false,
-  destructive = false,
-  onSelect,
-}: {
-  icon?: Parameters<typeof Icon>[0]["name"];
-  label: string;
-  checked?: boolean;
-  hasSubmenu?: boolean;
-  destructive?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      aria-checked={checked ? true : undefined}
-      onClick={(event) => {
-        event.stopPropagation();
-        onSelect();
-      }}
-      className={cn(
-        "flex w-full items-center gap-2 px-2 py-1 text-left text-xs",
-        "hover:bg-accent focus-visible:bg-accent focus-visible:outline-none",
-        destructive && "text-destructive",
-      )}
-    >
-      {icon === undefined ? (
-        <span aria-hidden className="size-3.5 shrink-0" />
-      ) : (
-        <Icon
-          name={icon}
-          className={cn(
-            "size-3.5 shrink-0",
-            destructive ? "text-destructive" : "text-muted-foreground",
-          )}
-          aria-hidden
-        />
-      )}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {checked ? (
-        <Icon name="Check" className="size-3.5 text-primary" aria-hidden />
-      ) : null}
-      {hasSubmenu ? (
-        <Icon
-          name="ChevronRight"
-          className="size-3.5 text-muted-foreground"
-          aria-hidden
-        />
-      ) : null}
-    </button>
-  );
-}
 
 /**
  * Renaming writes bb's own project name, so this is a thin wrapper rather than

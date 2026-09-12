@@ -63,10 +63,16 @@ describe("compact root card contract", () => {
   });
 
   it("truncates long title and branch text without shrinking metadata", () => {
-    // The title truncates at the row's own type size, which the layout picks.
-    assert.match(rootSource, /"min-w-0 flex-1 truncate"/);
+    // The title truncates at one size in both layouts, and the branch carries
+    // its own size rather than inheriting the row's (which has none).
+    assert.match(rootSource, /"min-w-0 flex-1 truncate text-xs"/);
     assert.match(rootSource, /text-xs/);
-    assert.match(rootSource, /text-sm/);
+    assert.doesNotMatch(rootSource, /text-sm/);
+    assert.match(
+      threadCardSource,
+      /gap-1 truncate text-2xs text-muted-foreground/,
+    );
+    assert.match(threadCardSource, /truncate text-2xs text-muted-foreground/);
     assert.match(threadCardSource, /className="truncate font-mono"/);
     assert.match(threadCardSource, /\{branch\}/);
     assert.match(
