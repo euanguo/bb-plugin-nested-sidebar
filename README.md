@@ -51,6 +51,16 @@ You clear the list with two email verbs: **snooze** a thread until a wake time, 
   <img src="docs/media/nest-subagents.png" alt="Expanded Nest release family with three child agents and Codex, Claude, and Codex provider marks" width="634" />
 </p>
 
+## Nest in the sidebar
+
+Two things are worth knowing before you tune it:
+
+- Rows are denser than bb's own list by design — the tree carries groups and
+  worktrees, so everything that is not the title is a dot, a count, or a
+  tooltip. Everything visible can be turned off from Settings.
+- The scroll area reserves its scrollbar width (`scrollbar-gutter: stable`), so
+  the tree does not shift sideways the moment it grows past the viewport.
+
 ## Install
 
 This fork is **not published** — it is installed from this repository as a local
@@ -130,6 +140,24 @@ that exact environment. The seed is a seed, not a lock -- the project picker sta
 editable, and the environment picker can still be aimed at another worktree or at
 a **newly created** one from inside the dialog. Submitting spawns the thread
 through the plugin, so it is attributed to Nest on the thread itself.
+
+### Compact rows
+
+The sidebar is the scarcest surface in bb, so a row says as little as it can
+and each of those pieces can be turned off:
+
+- **Thread row layout** — *One line* drops the branch beside the title and
+  halves the row height; *Two lines* keeps the dedicated branch line.
+- **Thread status marker** — *Dot* trades the per-state shape for a small
+  coloured dot (still animated while working, still colour-coded). The state's
+  name lives in the tooltip and the screen-reader label either way.
+- **Show child thread count** — the disclosure beside a thread with agents.
+- **Show thread branch or host** — the location line, or the inline branch in
+  one-line layout.
+
+Rollups on folded rows follow the same rule: a coloured dot plus the count
+(`● 2  ● 1`) instead of `2 needs you · 1 working`, most urgent first. The
+wording is still in the tooltip and the accessible label.
 
 ### Projects and parked shelves
 

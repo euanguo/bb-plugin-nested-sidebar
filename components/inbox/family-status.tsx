@@ -7,8 +7,68 @@ export function familyStatusColor(status: FamilyStatusPresentation): string {
   return `var(--nest-status-${status.colorRole})`;
 }
 
+/**
+ * The smallest form of a state: a coloured dot, nothing else.
+ *
+ * The colour carries the state and the tooltip spells it out, so the row can
+ * say "working" without spending the width a word costs. `title` and the label
+ * are the accessible name — the dot is decoration.
+ */
+export function StatusDot({
+  status,
+  className,
+}: {
+  status: FamilyStatusPresentation;
+  className?: string;
+}) {
+  const help = `${status.label}: ${status.description}`;
+  return (
+    <span
+      role="img"
+      aria-label={help}
+      title={help}
+      className={cn(
+        "inline-block size-1.5 shrink-0 rounded-full",
+        status.animated && "animate-pulse",
+        className,
+      )}
+      style={{
+        backgroundColor: familyStatusColor(status),
+        opacity: status.receded ? 0.6 : 1,
+      }}
+    />
+  );
+}
+
+/** A state dot followed by a bare count, for a folded row's rollup. */
+export function StatusCount({
+  status,
+  count,
+  className,
+}: {
+  status: FamilyStatusPresentation;
+  count: number;
+  className?: string;
+}) {
+  return (
+    <span
+      title={`${count} ${status.label.toLowerCase()}`}
+      className={cn("flex shrink-0 items-center gap-0.5", className)}
+    >
+      <StatusDot status={status} />
+      <span className="tabular-nums text-2xs text-muted-foreground">
+        {count}
+      </span>
+      <span className="sr-only">
+        {count} {status.label.toLowerCase()}
+      </span>
+    </span>
+  );
+}
+
 export function FamilyStatusIcon({
   status,
+  variant = "icon",
   className,
   draggable = false,
   reorderHelp,
@@ -16,6 +76,13 @@ export function FamilyStatusIcon({
   onKeyDown,
 }: {
   status: FamilyStatusPresentation;
+  /**
+   * How much room the state gets. `"icon"` draws the shape that tells a
+   * failure from a raised hand at a glance; `"dot"` trades that for a much
+   * narrower coloured dot. Both keep the same tooltip, drag handle, and
+   * keyboard reordering, so the compact form loses no behaviour.
+   */
+  variant?: "icon" | "dot";
   className?: string;
   draggable?: boolean;
   reorderHelp?: string;
@@ -43,15 +110,29 @@ export function FamilyStatusIcon({
       )}
       style={{ color: familyStatusColor(status) }}
     >
-      <Icon
-        name={status.icon}
-        aria-hidden
-        className={cn(
-          "size-3.5",
-          status.animated &&
-            (status.icon === "Loading" ? "animate-spin" : "animate-pulse"),
-        )}
-      />
+      {variant === "dot" ? (
+        <span
+          aria-hidden
+          className={cn(
+            "size-1.5 rounded-full",
+            status.animated && "animate-pulse",
+          )}
+          style={{
+            backgroundColor: familyStatusColor(status),
+            opacity: status.receded ? 0.6 : 1,
+          }}
+        />
+      ) : (
+        <Icon
+          name={status.icon}
+          aria-hidden
+          className={cn(
+            "size-3.5",
+            status.animated &&
+              (status.icon === "Loading" ? "animate-spin" : "animate-pulse"),
+          )}
+        />
+      )}
       <span
         role="tooltip"
         className="pointer-events-none absolute bottom-full left-0 z-40 mb-1 w-max max-w-56 translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/family-status:translate-y-0 group-hover/family-status:opacity-100 group-focus/family-status:translate-y-0 group-focus/family-status:opacity-100"

@@ -93,8 +93,12 @@ export function NestSettingsSection() {
       <PalettePreview title="Pull requests" items={PR_SWATCHES} preferences={preferences} />
       <p className="text-2xs text-muted-foreground">
         {preferences.density === "compact" ? "Compact" : "Comfortable"} rows ·
+        {preferences.rowLayout === "one-line" ? "one line" : "two lines"} ·
+        {preferences.statusDisplay === "dot" ? "dot" : "icon"} status ·
         children {preferences.defaultChildrenExpanded ? "expanded" : "collapsed"} ·
-        providers {preferences.showProviderIcons ? "shown" : "hidden"} · PR metadata{" "}
+        child counts {preferences.showChildCount ? "shown" : "hidden"} · branch{" "}
+        {preferences.showThreadLocation ? "shown" : "hidden"} · providers{" "}
+        {preferences.showProviderIcons ? "shown" : "hidden"} · PR metadata{" "}
         {preferences.showPullRequestMetadata ? "shown" : "hidden"} · times{" "}
         {preferences.showRelativeTime ? "shown" : "hidden"}
       </p>

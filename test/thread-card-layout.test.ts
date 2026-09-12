@@ -25,7 +25,12 @@ describe("compact root card contract", () => {
       /data-nest-root-metadata=""[\s\S]*className="flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"/,
     );
     assert.match(rootSource, /grid-cols-\[auto_minmax\(0,1fr\)_auto\]/);
+    // The skeleton is two rows by default and one row under the one-line
+    // layout, so both must stay present and selectable at runtime.
+    assert.match(rootSource, /grid-rows-\[1\.25rem\]/);
     assert.match(rootSource, /grid-rows-\[1rem_1rem\]/);
+    assert.match(rootSource, /preferences\.rowLayout === "one-line"/);
+    assert.match(rootSource, /preferences\.rowLayout === "two-line"/);
     assert.match(rootSource, /bg-sidebar-accent\/35 py-1/);
     assert.doesNotMatch(rootSource, /bg-sidebar-accent\/35 p-1/);
     assert.doesNotMatch(rootSource, /Done/);
@@ -38,12 +43,11 @@ describe("compact root card contract", () => {
       metadataStart,
     );
     const disclosureStart = rootSource.indexOf(
-      "{childThreads.length > 0 ? (",
+      "{childThreads.length > 0 && preferences.showChildCount ? (",
       metadataStart,
     );
 
     assert.ok(metadataStart >= 0);
-    assert.ok(rootSource.indexOf("<FamilyStatusBadge", metadataStart) > metadataStart);
     assert.ok(pullRequestStart > metadataStart);
     assert.ok(disclosureStart > pullRequestStart);
   });
@@ -59,20 +63,25 @@ describe("compact root card contract", () => {
   });
 
   it("truncates long title and branch text without shrinking metadata", () => {
-    assert.match(
-      rootSource,
-      /min-w-0 flex-1 truncate text-sm/,
-    );
+    // The title truncates at the row's own type size, which the layout picks.
+    assert.match(rootSource, /"min-w-0 flex-1 truncate"/);
+    assert.match(rootSource, /text-xs/);
+    assert.match(rootSource, /text-sm/);
     assert.match(threadCardSource, /className="truncate font-mono"/);
     assert.match(threadCardSource, /\{branch\}/);
     assert.match(
       rootSource,
-      /relative z-10 col-start-3 row-span-2 flex shrink-0 flex-col items-end gap-0\.5/,
+      /relative z-10 col-start-3 flex shrink-0 items-end/,
     );
+    assert.match(rootSource, /row-span-2 flex-col gap-0\.5/);
+    assert.match(rootSource, /row-start-1 flex-row gap-1\.5/);
   });
 
   it("keeps semantic, disclosure, provider, and reorder help keyboard-readable", () => {
     assert.match(rootSource, /<FamilyStatusIcon/);
+    // The marker keeps its tooltip and drag/keyboard contract in both variants.
+    assert.match(rootSource, /variant=\{preferences\.statusDisplay\}/);
+    assert.match(familyStatusSource, /variant === "dot"/);
     assert.match(rootSource, /role="tooltip"/);
     assert.match(rootSource, /reorderHelp=/);
     assert.match(familyStatusSource, /aria-keyshortcuts=/);
@@ -81,10 +90,6 @@ describe("compact root card contract", () => {
     assert.doesNotMatch(rootSource, /function ReorderHandle|group\/reorder/);
     assert.match(familyStatusSource, /w-14/);
     assert.match(familyStatusSource, /px-0/);
-    const metadataStart = rootSource.indexOf("data-nest-root-metadata");
-    const badgeStart = rootSource.indexOf("<FamilyStatusBadge", metadataStart);
-    const providerStart = rootSource.indexOf("<ProviderGlyph", metadataStart);
-    assert.ok(badgeStart > providerStart, "fixed-width status badge owns the right edge");
   });
 
   it("keeps child status and disclosure-provider help keyboard-readable", () => {

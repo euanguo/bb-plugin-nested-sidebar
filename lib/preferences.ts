@@ -7,9 +7,13 @@ export const PALETTE_PRESET_OPTIONS = [
 
 export const ROW_DENSITY_OPTIONS = ["Comfortable", "Compact"] as const;
 export const CHILD_EXPANSION_OPTIONS = ["Expanded", "Collapsed"] as const;
+export const ROW_LAYOUT_OPTIONS = ["Two lines", "One line"] as const;
+export const STATUS_DISPLAY_OPTIONS = ["Dot", "Status icon"] as const;
 
 export type PalettePreset = (typeof PALETTE_PRESET_OPTIONS)[number];
 export type RowDensity = "comfortable" | "compact";
+export type RowLayout = "two-line" | "one-line";
+export type StatusDisplay = "dot" | "icon";
 
 export const SEMANTIC_COLOR_ROLES = [
   "working",
@@ -39,10 +43,16 @@ export interface NestPreferences {
   palettePreset: PalettePreset;
   colors: SemanticPalette;
   density: RowDensity;
+  /** One line saves height; two lines keep the branch on its own line. */
+  rowLayout: RowLayout;
+  /** A dot is quieter and narrower than the state's own icon. */
+  statusDisplay: StatusDisplay;
   defaultChildrenExpanded: boolean;
   showProviderIcons: boolean;
   showPullRequestMetadata: boolean;
   showRelativeTime: boolean;
+  showChildCount: boolean;
+  showThreadLocation: boolean;
 }
 
 export const CUSTOM_COLOR_DEFAULTS = {
@@ -170,6 +180,19 @@ export function resolveNestPreferences(
       "Compact"
         ? "compact"
         : "comfortable",
+    rowLayout:
+      readOption(values?.rowLayout, ROW_LAYOUT_OPTIONS, "Two lines") ===
+      "One line"
+        ? "one-line"
+        : "two-line",
+    statusDisplay:
+      readOption(
+        values?.statusDisplay,
+        STATUS_DISPLAY_OPTIONS,
+        "Dot",
+      ) === "Status icon"
+        ? "icon"
+        : "dot",
     defaultChildrenExpanded:
       readOption(
         values?.defaultChildExpansion,
@@ -182,6 +205,8 @@ export function resolveNestPreferences(
       true,
     ),
     showRelativeTime: readBoolean(values?.showRelativeTime, true),
+    showChildCount: readBoolean(values?.showChildCount, true),
+    showThreadLocation: readBoolean(values?.showThreadLocation, true),
   };
 }
 

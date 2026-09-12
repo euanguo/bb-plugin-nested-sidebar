@@ -12,23 +12,50 @@ describe("resolveNestPreferences", () => {
     const loading = resolveNestPreferences(undefined);
     assert.equal(loading.palettePreset, "Default");
     assert.equal(loading.density, "comfortable");
+    assert.equal(loading.rowLayout, "two-line");
+    assert.equal(loading.statusDisplay, "dot");
     assert.equal(loading.defaultChildrenExpanded, true);
     assert.equal(loading.showProviderIcons, true);
     assert.equal(loading.showPullRequestMetadata, true);
     assert.equal(loading.showRelativeTime, true);
+    assert.equal(loading.showChildCount, true);
+    assert.equal(loading.showThreadLocation, true);
     assert.equal(loading.colors.working, "#34A853");
     assert.equal(loading.colors.prReady, "#34A853");
 
     const malformed = resolveNestPreferences({
       palettePreset: "Unknown",
       rowDensity: "Tiny",
+      rowLayout: "Three lines",
+      statusDisplay: "Sparkles",
       defaultChildExpansion: "Sometimes",
       showProviderIcons: "false",
     });
     assert.equal(malformed.palettePreset, "Default");
     assert.equal(malformed.density, "comfortable");
+    assert.equal(malformed.rowLayout, "two-line");
+    assert.equal(malformed.statusDisplay, "dot");
     assert.equal(malformed.defaultChildrenExpanded, true);
     assert.equal(malformed.showProviderIcons, true);
+  });
+
+  it("reads the compact row options by their declared labels", () => {
+    const oneLine = resolveNestPreferences({
+      rowLayout: "One line",
+      statusDisplay: "Status icon",
+      showChildCount: false,
+      showThreadLocation: false,
+    });
+    assert.equal(oneLine.rowLayout, "one-line");
+    assert.equal(oneLine.statusDisplay, "icon");
+    assert.equal(oneLine.showChildCount, false);
+    assert.equal(oneLine.showThreadLocation, false);
+
+    // A non-boolean is not a preference, so the default holds.
+    assert.equal(
+      resolveNestPreferences({ showChildCount: "no" }).showChildCount,
+      true,
+    );
   });
 
   it("resolves distinct high-contrast and colorblind-friendly presets", () => {

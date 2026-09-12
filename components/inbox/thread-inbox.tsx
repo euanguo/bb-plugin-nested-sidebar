@@ -883,7 +883,17 @@ export function ThreadInbox({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      {/*
+        `scrollbar-gutter: stable` reserves the scrollbar's width whether or
+        not it is showing, so the tree does not jump sideways the moment the
+        content grows past the viewport and a scrollbar appears. Padding stays
+        symmetric because the gutter is inside the padding box; without it the
+        only way to absorb the shift is an asymmetric padding tweak.
+      */}
+      <div
+        className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
+        style={{ scrollbarGutter: "stable" }}
+      >
         {status === "loading" ? null : status === "error" ? (
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
           <p role="status" className={EMPTY_STATE_CLASS}>
