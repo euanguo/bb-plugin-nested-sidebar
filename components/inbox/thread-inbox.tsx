@@ -292,6 +292,7 @@ export function ThreadInbox({
         groupOrder: groupsApi.groups.map((group) => ({
           id: group.id,
           name: group.name,
+          icon: group.icon,
         })),
       }),
       searchQuery,

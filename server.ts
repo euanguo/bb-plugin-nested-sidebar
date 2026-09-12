@@ -43,7 +43,7 @@ import {
   GROUP_MIGRATION,
   createGroupStore,
 } from "./lib/group-store.ts";
-import { MAX_GROUPS, MAX_GROUP_NAME_LENGTH } from "./lib/groups.ts";
+import { GROUP_ICON_OPTIONS, MAX_GROUPS, MAX_GROUP_NAME_LENGTH } from "./lib/groups.ts";
 import {
   MAX_PROJECT_COLOR_ROWS,
   MAX_PROJECT_ID_LENGTH,
@@ -62,6 +62,7 @@ const migrations = [
   `ALTER TABLE thread_lifecycle ADD COLUMN archived_thread_ids TEXT`,
   PROJECT_COLOR_MIGRATION,
   GROUP_MIGRATION,
+  `ALTER TABLE project_groups ADD COLUMN icon TEXT NOT NULL DEFAULT 'Layer'`,
   GROUP_ASSIGNMENT_MIGRATION,
 ];
 
@@ -180,6 +181,7 @@ export const nestRpcContract = defineRpcContract({
           id: z.string(),
           name: z.string(),
           position: z.number(),
+          icon: z.enum(GROUP_ICON_OPTIONS),
         }),
       ),
       assignment: z.record(z.string(), z.string()),
@@ -188,17 +190,20 @@ export const nestRpcContract = defineRpcContract({
   createGroup: {
     input: z.object({
       name: z.string().trim().min(1).max(MAX_GROUP_NAME_LENGTH),
+      icon: z.enum(GROUP_ICON_OPTIONS).default("Layer"),
     }),
     output: z.object({
       id: z.string(),
       name: z.string(),
       position: z.number(),
+      icon: z.enum(GROUP_ICON_OPTIONS),
     }),
   },
   renameGroup: {
     input: z.object({
       groupId: z.string().trim().min(1),
       name: z.string().trim().min(1).max(MAX_GROUP_NAME_LENGTH),
+      icon: z.enum(GROUP_ICON_OPTIONS).optional(),
     }),
     output: z.object({ ok: z.boolean() }),
   },
@@ -796,15 +801,15 @@ export default function plugin(bb: BbPluginApi) {
     async listGroups() {
       return { groups: groups.list(), assignment: groups.assignments() };
     },
-    async createGroup({ name }) {
-      const created = groups.create(`grp_${randomUUID()}`, name);
+    async createGroup({ name, icon }) {
+      const created = groups.create(`grp_${randomUUID()}`, name, icon);
       bb.realtime.publish(GROUP_CHANNEL, {});
       return created;
     },
-    async renameGroup({ groupId, name }) {
+    async renameGroup({ groupId, name, icon }) {
       // Renaming an id that is gone is not an error worth surfacing: the tree
       // the user was looking at is stale, and the publish below refreshes it.
-      const ok = groups.rename(groupId, name) !== null;
+      const ok = groups.rename(groupId, name, icon) !== null;
       if (ok) bb.realtime.publish(GROUP_CHANNEL, {});
       return { ok };
     },

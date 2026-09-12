@@ -2,6 +2,8 @@ import type Database from "better-sqlite3";
 import {
   MAX_GROUPS,
   canonicalGroupName,
+  DEFAULT_GROUP_ICON,
+  validGroupIcon,
   validGroupId,
   validGroupName,
   type GroupAssignment,
@@ -26,6 +28,7 @@ interface GroupRow {
   id: unknown;
   name: unknown;
   position: unknown;
+  icon: unknown;
 }
 
 interface MemberRow {
@@ -37,7 +40,7 @@ export function createGroupStore(db: Database.Database) {
   const list = (): ProjectGroup[] => {
     const rows = db
       .prepare(
-        `SELECT id, name, position FROM project_groups
+        `SELECT id, name, position, icon FROM project_groups
           ORDER BY position ASC, name ASC LIMIT ?`,
       )
       .all(MAX_GROUPS + 1) as GroupRow[];
@@ -48,7 +51,7 @@ export function createGroupStore(db: Database.Database) {
         typeof row.position === "number" && Number.isFinite(row.position)
           ? row.position
           : groups.length;
-      groups.push({ id: row.id, name: row.name, position });
+      groups.push({ id: row.id, name: row.name, position, icon: validGroupIcon(row.icon) ? row.icon : DEFAULT_GROUP_ICON });
       if (groups.length === MAX_GROUPS) break;
     }
     return groups;
@@ -73,9 +76,9 @@ export function createGroupStore(db: Database.Database) {
     return assignment;
   };
 
-  const create = (id: string, name: string): ProjectGroup => {
+  const create = (id: string, name: string, icon = DEFAULT_GROUP_ICON): ProjectGroup => {
     const cleanName = canonicalGroupName(name);
-    if (!validGroupId(id) || !validGroupName(cleanName)) {
+    if (!validGroupId(id) || !validGroupName(cleanName) || !validGroupIcon(icon)) {
       throw new Error("Invalid group name.");
     }
     const count = db
@@ -88,23 +91,26 @@ export function createGroupStore(db: Database.Database) {
     const position = maxPosition.max + 1;
     db.prepare(
       `INSERT INTO project_groups (id, name, position, updated_at)
-       VALUES (?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?)`,
     ).run(id, cleanName, position, Date.now());
-    return { id, name: cleanName, position };
+    db.prepare(`UPDATE project_groups SET icon = ? WHERE id = ?`).run(icon, id);
+    return { id, name: cleanName, position, icon };
   };
 
-  const rename = (id: string, name: string): ProjectGroup | null => {
+  const rename = (id: string, name: string, icon?: string): ProjectGroup | null => {
     const cleanName = canonicalGroupName(name);
-    if (!validGroupId(id) || !validGroupName(cleanName)) return null;
+    if (!validGroupId(id) || !validGroupName(cleanName) || (icon !== undefined && !validGroupIcon(icon))) return null;
+    if (icon !== undefined) db.prepare(`UPDATE project_groups SET icon = ?, name = ?, updated_at = ? WHERE id = ?`).run(icon, cleanName, Date.now(), id);
+    else db.prepare(`UPDATE project_groups SET name = ?, updated_at = ? WHERE id = ?`).run(cleanName, Date.now(), id);
     const changes = db
-      .prepare(`UPDATE project_groups SET name = ?, updated_at = ? WHERE id = ?`)
-      .run(cleanName, Date.now(), id).changes;
-    if (changes === 0) return null;
+      .prepare(`SELECT changes() AS changes`)
+      .get() as { changes: number };
+    if (changes.changes === 0) return null;
     const row = db
       .prepare(`SELECT id, name, position FROM project_groups WHERE id = ?`)
       .get(id) as GroupRow | undefined;
     if (row === undefined) return null;
-    return { id, name: cleanName, position: Number(row.position) || 0 };
+      return { id, name: cleanName, position: Number(row.position) || 0, icon: validGroupIcon(row.icon) ? row.icon : DEFAULT_GROUP_ICON };
   };
 
   /** Deleting a group releases its projects; they return to Ungrouped. */

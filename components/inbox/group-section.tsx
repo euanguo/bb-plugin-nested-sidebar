@@ -98,7 +98,7 @@ export function GroupSection({
           title={node.name}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <Icon name="Layer" className="size-3 shrink-0 text-muted-foreground/70" aria-hidden />
+          <Icon name={node.icon} className="size-3 shrink-0 text-muted-foreground/70" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-2xs font-semibold text-foreground/90">
             {node.name}
           </span>
