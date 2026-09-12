@@ -4,7 +4,7 @@ import type { nestRpcContract } from "@/server";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { PlainDialog } from "@/components/ui/modal";
-import type { ProjectGroup } from "@/lib/groups";
+import { GROUP_ICON_OPTIONS, validGroupIcon, type ProjectGroup } from "@/lib/groups";
 
 /**
  * Create, rename, reorder, and delete groups.
@@ -24,6 +24,7 @@ export function GroupManagerDialog({
 }) {
   const rpc = useRpc<typeof nestRpcContract>();
   const [draftName, setDraftName] = useState("");
+  const [draftIcon, setDraftIcon] = useState<ProjectGroup["icon"]>("Layer");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,8 +44,9 @@ export function GroupManagerDialog({
     run(async () => {
       const name = draftName.trim();
       if (name.length === 0) return;
-      await rpc.call("createGroup", { name });
+      await rpc.call("createGroup", { name, icon: draftIcon });
       setDraftName("");
+      setDraftIcon("Layer");
     });
 
   const move = (groupId: string, delta: -1 | 1) => {
@@ -105,10 +107,26 @@ export function GroupManagerDialog({
                 className="flex items-center gap-1 rounded-md px-1 py-0.5 hover:bg-accent/60"
               >
                 <Icon
-                  name="FolderTree"
+                  name={group.icon}
                   className="size-3.5 shrink-0 text-muted-foreground"
                   aria-hidden
                 />
+                <select
+                  value={group.icon}
+                  aria-label={`Icon for ${group.name}`}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const icon = event.currentTarget.value;
+                    if (validGroupIcon(icon)) {
+                      void run(() => rpc.call("renameGroup", { groupId: group.id, name: group.name, icon }));
+                    }
+                  }}
+                  className="h-6 w-20 rounded border border-border bg-background px-1 text-2xs"
+                >
+                  {GROUP_ICON_OPTIONS.map((icon) => (
+                    <option key={icon} value={icon}>{icon}</option>
+                  ))}
+                </select>
                 <GroupNameEditor
                   group={group}
                   disabled={busy}
@@ -169,6 +187,17 @@ export function GroupManagerDialog({
               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             )}
           />
+          <select
+            value={draftIcon}
+            aria-label="New group icon"
+            onChange={(event) => {
+              const icon = event.currentTarget.value;
+              if (validGroupIcon(icon)) setDraftIcon(icon);
+            }}
+            className="h-7 w-20 rounded-md border border-border bg-background px-1 text-2xs"
+          >
+            {GROUP_ICON_OPTIONS.map((icon) => <option key={icon} value={icon}>{icon}</option>)}
+          </select>
           <button
             type="submit"
             disabled={busy || draftName.trim().length === 0}

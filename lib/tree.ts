@@ -14,6 +14,7 @@ import {
   workspaceSortOrder,
   type WorkspaceRef,
 } from "./workspace.ts";
+import type { GroupIconName } from "./groups.ts";
 
 /** One workspace inside a project — a worktree, the checkout, or nothing. */
 export interface WorkspaceNode {
@@ -35,6 +36,7 @@ export interface GroupNode {
   /** Null for the implicit Ungrouped bucket. */
   readonly groupId: string | null;
   readonly name: string;
+  readonly icon: GroupIconName;
   readonly projects: ProjectNode[];
   readonly rollup: StatusRollup;
 }
@@ -59,7 +61,7 @@ export function buildTree(input: {
   /** projectId -> groupId, already validated against existing groups. */
   assignment: Readonly<Record<string, string>>;
   /** Rendered in this order; an id with no projects is dropped. */
-  groupOrder: readonly { id: string; name: string }[];
+  groupOrder: readonly { id: string; name: string; icon: GroupIconName }[];
 }): GroupNode[] {
   const { projectGroups, now, assignment, groupOrder } = input;
 
@@ -80,14 +82,14 @@ export function buildTree(input: {
     const bucket = projectsByGroup.get(group.id);
     if (bucket === undefined || bucket.length === 0) continue;
     nodes.push(
-      makeGroupNode(group.id, group.name, [...bucket].sort(byName)),
+      makeGroupNode(group.id, group.name, group.icon, [...bucket].sort(byName)),
     );
   }
 
   const ungrouped = projectsByGroup.get("__ungrouped__");
   if (ungrouped !== undefined && ungrouped.length > 0) {
     nodes.push(
-      makeGroupNode(null, "Ungrouped", [...ungrouped].sort(byName)),
+      makeGroupNode(null, "Ungrouped", "FolderTree", [...ungrouped].sort(byName)),
     );
   }
 
@@ -102,7 +104,7 @@ export function buildTree(input: {
   if (orphans.length > 0) {
     const existing = nodes.find((node) => node.groupId === null);
     const combined = [...(existing?.projects ?? []), ...orphans].sort(byName);
-    const replacement = makeGroupNode(null, "Ungrouped", combined);
+    const replacement = makeGroupNode(null, "Ungrouped", "FolderTree", combined);
     if (existing === undefined) nodes.push(replacement);
     else nodes[nodes.indexOf(existing)] = replacement;
   }
@@ -113,11 +115,13 @@ export function buildTree(input: {
 function makeGroupNode(
   groupId: string | null,
   name: string,
+  icon: GroupIconName,
   projects: ProjectNode[],
 ): GroupNode {
   return {
     groupId,
     name,
+    icon,
     projects,
     rollup: mergeRollups(projects.map((project) => project.rollup)),
   };

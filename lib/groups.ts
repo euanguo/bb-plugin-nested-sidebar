@@ -20,8 +20,24 @@ const CONTROL_CHARACTER = /[\u0000-\u001F\u007F]/;
 export interface ProjectGroup {
   readonly id: string;
   readonly name: string;
+  readonly icon: GroupIconName;
   /** Explicit user order; groups sort by this, then by name. */
   readonly position: number;
+}
+
+export const GROUP_ICON_OPTIONS = [
+  "Layer",
+  "FolderTree",
+  "GitBranch",
+  "Target",
+  "ListTodo",
+  "Pin",
+] as const;
+export type GroupIconName = (typeof GROUP_ICON_OPTIONS)[number];
+export const DEFAULT_GROUP_ICON: GroupIconName = "Layer";
+
+export function validGroupIcon(value: unknown): value is GroupIconName {
+  return typeof value === "string" && GROUP_ICON_OPTIONS.some((icon) => icon === value);
 }
 
 /**
