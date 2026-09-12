@@ -93,6 +93,7 @@ export const RowMenuTrigger = React.forwardRef<
         "relative z-10 flex size-5 shrink-0 items-center justify-center rounded",
         "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        revealed && "bg-sidebar-accent",
         className,
       )}
       {...props}
@@ -126,7 +127,12 @@ export function RowActions({
   className?: string;
 }) {
   return (
-    <span className={cn("flex shrink-0 items-center gap-0.5", className)}>
+    <span
+      className={cn(
+        "ml-auto flex w-16 shrink-0 items-center justify-end gap-0.5",
+        className,
+      )}
+    >
       {children}
     </span>
   );

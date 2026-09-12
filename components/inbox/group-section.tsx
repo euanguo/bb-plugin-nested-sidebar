@@ -103,18 +103,15 @@ export function GroupSection({
             {node.name}
           </span>
         </button>
-      <RollupJump
-        rollup={node.rollup}
-        onJump={(threadId) => {
-          actions.open(threadId);
-          handlers.onNavigate();
-        }}
-        onFallback={() => setExpanded((open) => !open)}
-      />
-      <span className="shrink-0 tabular-nums text-2xs text-muted-foreground/60">
-        {threadCount}
-      </span>
       <RowActions>
+        <RollupJump
+          rollup={node.rollup}
+          onJump={(threadId) => {
+            actions.open(threadId);
+            handlers.onNavigate();
+          }}
+          onFallback={() => setExpanded((open) => !open)}
+        />
         <GroupMenu
           name={node.name}
           groupId={groupId}

@@ -191,18 +191,15 @@ export function WorkspaceGroup({
           </span>
         </button>
         )}
-        <RollupJump
-          rollup={node.rollup}
-          onJump={(threadId) => {
-            actions.open(threadId);
-            handlers.onNavigate();
-          }}
-          onFallback={() => setExpanded((open) => !open)}
-        />
-        <span className="shrink-0 tabular-nums text-2xs text-muted-foreground/60">
-          {threadCount}
-        </span>
         <RowActions>
+          <RollupJump
+            rollup={node.rollup}
+            onJump={(threadId) => {
+              actions.open(threadId);
+              handlers.onNavigate();
+            }}
+            onFallback={() => setExpanded((open) => !open)}
+          />
           {/* Starting a thread in *this* worktree is the reason to be here, so
               it keeps its own button beside the menu. */}
           <RowActionButton
@@ -257,7 +254,7 @@ export function WorkspaceGroup({
         rows={rows}
       />
       {expanded ? (
-        <ul id={listId} className="ml-3 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
+        <ul id={listId} className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3">
           {node.families.map((family) => (
             <FamilyRow
               key={family.root.id}

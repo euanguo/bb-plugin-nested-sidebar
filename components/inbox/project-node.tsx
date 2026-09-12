@@ -222,6 +222,14 @@ export function ProjectNode({
           {node.project.name}
         </span>
         <RowActions>
+          <RollupJump
+            rollup={node.rollup}
+            onJump={(threadId) => {
+              actions.open(threadId);
+              handlers.onNavigate();
+            }}
+            onFallback={() => setExpanded((open) => !open)}
+          />
           {/* Starting a thread is the common move, so it keeps its own button
               rather than hiding behind the menu. */}
           <RowActionButton
@@ -248,16 +256,6 @@ export function ProjectNode({
             onAssignGroup={(groupId) => onAssignGroup(node.project.id, groupId)}
           />
         </RowActions>
-        {/* The rollup comes last so the two buttons never shift as counts come
-            and go. */}
-        <RollupJump
-          rollup={node.rollup}
-          onJump={(threadId) => {
-            actions.open(threadId);
-            handlers.onNavigate();
-          }}
-          onFallback={() => setExpanded((open) => !open)}
-        />
       </div>
 
       {expanded ? (

@@ -164,7 +164,7 @@ export function ThreadCard({
             data-nest-root-card=""
             {...reveal.handlers}
             className={cn(
-              "group/root relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 rounded-lg px-2",
+              "group/root relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 rounded-lg px-1.5",
               preferences.rowLayout === "one-line" || detailsOnHover
                 ? "grid-rows-[1.25rem]"
                 : "grid-rows-[1rem_1rem] gap-y-0.5",
@@ -404,7 +404,7 @@ export function ThreadCard({
               ) : null}
               <div
                 data-nest-root-metadata=""
-                className="relative flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"
+                className="relative flex h-4 min-w-16 max-w-full items-center justify-end gap-1 whitespace-nowrap"
               >
                 {showRowDetails &&
                 preferences.showPullRequestMetadata &&
