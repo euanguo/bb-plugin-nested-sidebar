@@ -31,6 +31,7 @@ export function GroupSection({
   groups,
   onAssignGroup,
   onNewThreadInProject,
+  onNewWorktree,
   onNewThreadInWorkspace,
   projectColorOverrides,
   projectReorder,
@@ -40,6 +41,7 @@ export function GroupSection({
   groups: readonly ProjectGroup[];
   onAssignGroup: (projectId: string, groupId: string | null) => void;
   onNewThreadInProject: (projectId: string, projectName: string) => void;
+  onNewWorktree: (projectId: string, projectName: string) => void;
   onNewThreadInWorkspace: (launch: WorkspaceLaunch) => void;
   projectColorOverrides: ReadonlyMap<string, string>;
   projectReorder: {
@@ -124,6 +126,7 @@ export function GroupSection({
               currentGroupId={node.groupId}
               onAssignGroup={onAssignGroup}
               onNewThreadInProject={onNewThreadInProject}
+              onNewWorktree={onNewWorktree}
               onNewThreadInWorkspace={onNewThreadInWorkspace}
               projectColorOverrides={projectColorOverrides}
               projectReorder={projectReorder}

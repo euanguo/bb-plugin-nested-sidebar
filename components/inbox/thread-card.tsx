@@ -295,10 +295,10 @@ export function ThreadCard({
                 <span
                   title={threadDisplayTitle(thread)}
                   className={cn(
-                    "min-w-0 flex-1 truncate",
-                    preferences.rowLayout === "one-line"
-                      ? "text-xs"
-                      : "text-sm",
+                    // One type size for a title in both layouts: the row is
+                    // denser than bb's own list, and a title that changes size
+                    // when the layout changes reads as a different list.
+                    "min-w-0 flex-1 truncate text-xs",
                     thread.isUnread ? "font-semibold" : "font-medium",
                     !familyState.receded
                       ? "text-foreground"
@@ -657,7 +657,10 @@ function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
     return (
       <span
         title={`Branch: ${branch}`}
-        className="flex min-w-0 flex-1 items-center gap-1 truncate text-muted-foreground"
+        // Carries its own size rather than inheriting: in the one-line layout
+        // this sits in the title row, which has no type size of its own, and an
+        // inherited 14px branch read as the largest thing on the row.
+        className="flex min-w-0 flex-1 items-center gap-1 truncate text-2xs text-muted-foreground"
       >
         <Icon
           name="GitBranch"
@@ -672,7 +675,7 @@ function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
     return (
       <span
         title={`Host: ${thread.host.name}`}
-        className="min-w-0 flex-1 truncate text-muted-foreground"
+        className="min-w-0 flex-1 truncate text-2xs text-muted-foreground"
       >
         {thread.host.name}
       </span>
