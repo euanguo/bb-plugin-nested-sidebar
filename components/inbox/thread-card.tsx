@@ -335,7 +335,7 @@ export function ThreadCard({
                   <Icon
                     name="Pin"
                     aria-label="Pinned thread"
-                    className="size-3 shrink-0 text-muted-foreground/70"
+                    className="relative z-10 size-3 shrink-0 text-muted-foreground/70"
                   />
                 ) : null}
                 {/* One-line layout: the branch rides beside the title, so the

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { ScrollStrip } from "@/components/ui/scroll-strip";
@@ -54,13 +54,21 @@ export function GroupTabs({
   children?: ReactNode;
 }) {
   const [overflowing, setOverflowing] = useState(false);
+  // Do not feed the compact layout back into the measurement that selected it.
+  // Once labels have proved that the strip is too narrow, measuring the much
+  // narrower icon layout would otherwise report "fits", switch back to labels,
+  // report "overflows", and oscillate indefinitely. The compact state resets
+  // only when the tab collection itself changes.
+  const handleOverflowChange = useCallback((next: boolean) => {
+    if (next) setOverflowing(true);
+  }, []);
   return (
     <div className="flex shrink-0 items-center gap-1 px-1.5 pb-1">
       <ScrollStrip
         role="tablist"
         aria-label="Project groups"
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
-        onOverflowChange={setOverflowing}
+        onOverflowChange={handleOverflowChange}
       >
         {tabs.map((tab) => {
           const key = groupScopeKey(tab.scope);
