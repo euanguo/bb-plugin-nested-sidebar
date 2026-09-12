@@ -9,6 +9,7 @@ import {
 import {
   experimental_useProviders as useProviders,
   experimental_useSidebarThreads as useSidebarThreads,
+  experimental_useSidebarThreadActions as useSidebarThreadActions,
   useRpc,
   useSettings,
   type PluginSidebarThread,
@@ -74,10 +75,7 @@ import {
 } from "@/lib/project-order";
 import { GroupTabs, type GroupTab } from "@/components/inbox/group-tabs";
 import { ProjectNode as ProjectNodeView } from "@/components/inbox/project-node";
-import {
-  NewThreadDialog,
-  type NewThreadSeed,
-} from "@/components/inbox/new-thread-dialog";
+
 import { GroupManagerDialog } from "@/components/inbox/group-manager-dialog";
 import { useGroups } from "@/hooks/use-groups";
 import {
@@ -113,7 +111,7 @@ export function ThreadInbox({
   const [groupScope, setGroupScope] = useState<GroupScope>({ kind: "all" });
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   /** The group a tab's pencil asked to rename, when the strip is the entry. */
-  const [newThreadSeed, setNewThreadSeed] = useState<NewThreadSeed | null>(null);
+  const sidebarActions = useSidebarThreadActions();
   const inboxRef = useRef<HTMLDivElement>(null);
   const selectionAnchorRootId = useRef<string | null>(null);
   const selectionHintId = useId();
@@ -715,12 +713,8 @@ export function ThreadInbox({
     }
   };
 
-  function seedFromProject(projectId: string, projectName: string) {
-    setNewThreadSeed({
-      projectId,
-      projectName,
-      originLabel: `Seeded from ${projectName}`,
-    });
+  function seedFromProject(projectId: string, _projectName: string) {
+    sidebarActions.openNewThread({ projectId, focusPrompt: true });
   }
 
   /**
@@ -732,16 +726,10 @@ export function ThreadInbox({
    * thread are one action by construction. The dialog is where that happens,
    * with the branch and base still the user's to choose.
    */
-  function seedNewWorktree(projectId: string, projectName: string) {
-    setNewThreadSeed({
-      projectId,
-      projectName,
-      environment: {
-        type: "host",
-        workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
-      },
-      originLabel: `New worktree in ${projectName}`,
-    });
+  function seedNewWorktree(projectId: string, _projectName: string) {
+    // The host composer owns environment creation. Its public shortcut accepts
+    // the project seed; the user can choose New Worktree in that composer.
+    sidebarActions.openNewThread({ projectId, focusPrompt: true });
   }
 
   /**
@@ -751,20 +739,8 @@ export function ThreadInbox({
    * point at a brand-new worktree instead, which this dialog never has to
    * model because the host composer already owns that control.
    */
-  function seedFromWorkspace({ node, projectId, projectName }: WorkspaceLaunch) {
-    const environment =
-      node.ref.environmentId === null
-        ? undefined
-        : ({ type: "reuse", environmentId: node.ref.environmentId } as const);
-    setNewThreadSeed({
-      projectId,
-      projectName,
-      environment,
-      originLabel:
-        environment === undefined
-          ? `Seeded from ${projectName}`
-          : `Seeded from ${projectName} → ${node.ref.label}`,
-    });
+  function seedFromWorkspace({ projectId }: WorkspaceLaunch) {
+    sidebarActions.openNewThread({ projectId, focusPrompt: true });
   }
 
   /**
@@ -1053,15 +1029,6 @@ export function ThreadInbox({
         busy={bulkBusy}
         onCancel={() => setBulkPreview(null)}
         onConfirm={() => void confirmSelectedDeletion()}
-      />
-
-      <NewThreadDialog
-        seed={newThreadSeed}
-        onClose={() => setNewThreadSeed(null)}
-        onCreated={(threadId) => {
-          setNewThreadSeed(null);
-          if (threadId !== null) onNavigate();
-        }}
       />
 
     <GroupManagerDialog
