@@ -118,8 +118,12 @@ describe("Nest settings contract", () => {
     assert.match(card, /preferences\.density === "compact"/);
     assert.match(card, /defaultExpanded: preferences\.defaultChildrenExpanded/);
     assert.match(card, /preferences\.showProviderIcons/);
-    assert.match(card, /preferences\.showPullRequestMetadata && pullRequest/);
+    assert.match(card, /preferences\.showPullRequestMetadata/);
     assert.match(card, /preferences\.showRelativeTime/);
+    // Non-essential fields are gated on the placement preference, which is what
+    // makes a single-column row possible without losing them.
+    assert.match(card, /preferences\.rowDetails === "hover"/);
+    assert.match(card, /const showRowDetails = !detailsOnHover/);
   });
 
   it("uses a semantic full-row selection target and keeps navigation separate", () => {

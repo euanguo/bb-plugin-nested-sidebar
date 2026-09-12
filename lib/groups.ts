@@ -54,6 +54,23 @@ export function canonicalGroupName(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
+/**
+ * The name a rename should store, or null when there is nothing to store.
+ *
+ * Shared by the inline editor on the group row and the manager dialog so the
+ * two entry points cannot drift: an empty or unchanged draft is not a rename,
+ * and everything else is normalised the same way the server normalises it.
+ */
+export function renameIntent(
+  draft: string,
+  currentName: string,
+): string | null {
+  const name = canonicalGroupName(draft);
+  if (name.length === 0) return null;
+  if (name === currentName) return null;
+  return name;
+}
+
 export function sortGroups(groups: readonly ProjectGroup[]): ProjectGroup[] {
   return [...groups].sort(
     (left, right) =>

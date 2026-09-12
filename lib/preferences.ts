@@ -9,11 +9,14 @@ export const ROW_DENSITY_OPTIONS = ["Comfortable", "Compact"] as const;
 export const CHILD_EXPANSION_OPTIONS = ["Expanded", "Collapsed"] as const;
 export const ROW_LAYOUT_OPTIONS = ["Two lines", "One line"] as const;
 export const STATUS_DISPLAY_OPTIONS = ["Dot", "Status icon"] as const;
+export const ROW_DETAIL_OPTIONS = ["In the row", "On hover"] as const;
 
 export type PalettePreset = (typeof PALETTE_PRESET_OPTIONS)[number];
 export type RowDensity = "comfortable" | "compact";
 export type RowLayout = "two-line" | "one-line";
 export type StatusDisplay = "dot" | "icon";
+/** Where a thread row's non-essential fields live. */
+export type RowDetailPlacement = "row" | "hover";
 
 export const SEMANTIC_COLOR_ROLES = [
   "working",
@@ -47,6 +50,13 @@ export interface NestPreferences {
   rowLayout: RowLayout;
   /** A dot is quieter and narrower than the state's own icon. */
   statusDisplay: StatusDisplay;
+  /**
+   * `row` keeps the branch, provider, PR, age, and child count on the row;
+   * `hover` moves all of them into the row's hover card, which is what makes a
+   * single-column row possible. The row keeps its status and its title either
+   * way, so nothing that needs you can be hidden.
+   */
+  rowDetails: RowDetailPlacement;
   defaultChildrenExpanded: boolean;
   showProviderIcons: boolean;
   showPullRequestMetadata: boolean;
@@ -193,6 +203,11 @@ export function resolveNestPreferences(
       ) === "Status icon"
         ? "icon"
         : "dot",
+    rowDetails:
+      readOption(values?.rowDetails, ROW_DETAIL_OPTIONS, "In the row") ===
+      "On hover"
+        ? "hover"
+        : "row",
     defaultChildrenExpanded:
       readOption(
         values?.defaultChildExpansion,

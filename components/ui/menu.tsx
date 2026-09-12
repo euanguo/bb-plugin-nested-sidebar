@@ -2,7 +2,10 @@ import * as React from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { usePortalScopeProps } from "@/lib/portal-scope";
+import {
+  useOverlayPortalContainer,
+  usePortalScopeProps,
+} from "@/lib/portal-scope";
 
 /**
  * The plugin's stacking ladder, in one place.
@@ -48,10 +51,11 @@ export function Menu({
   children: React.ReactNode;
 }) {
   const scope = usePortalScopeProps();
+  const container = useOverlayPortalContainer();
   return (
     <DropdownMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
+      <DropdownMenu.Portal container={container}>
         <DropdownMenu.Content
           {...scope}
           aria-label={label}
@@ -152,6 +156,7 @@ export function MenuSub({
   children: React.ReactNode;
 }) {
   const scope = usePortalScopeProps();
+  const container = useOverlayPortalContainer();
   return (
     <DropdownMenu.Sub>
       <DropdownMenu.SubTrigger
@@ -177,7 +182,7 @@ export function MenuSub({
           aria-hidden
         />
       </DropdownMenu.SubTrigger>
-      <DropdownMenu.Portal>
+      <DropdownMenu.Portal container={container}>
         <DropdownMenu.SubContent
           {...scope}
           aria-label={label}
