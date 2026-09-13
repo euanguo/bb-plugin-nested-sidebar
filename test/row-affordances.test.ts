@@ -74,10 +74,12 @@ describe("row affordances across the four levels", () => {
       assert.match(source, /<InfoCard/);
     }
     assert.doesNotMatch(card, /<InfoCard/);
+    assert.match(projectRow, /<InfoCard trigger={projectRow}/);
   });
 
   it("keeps the provider at the trailing edge and overlays actions there", () => {
     assert.match(card, /data-nest-root-metadata=""[\s\S]*className="relative flex/);
-    assert.match(card, /className="absolute right-0 top-1\/2 -translate-y-1\/2"/);
+    assert.match(card, /ROW_MENU_OVERLAY_CLASS/);
+    assert.match(card, /function ChildThreadRow[\s\S]*useRowReveal()/);
   });
 });

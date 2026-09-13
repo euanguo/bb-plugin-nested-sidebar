@@ -22,7 +22,7 @@ describe("compact root card contract", () => {
     assert.match(rootSource, /data-nest-root-metadata/);
     assert.match(
       rootSource,
-      /data-nest-root-metadata=""[\s\S]*className="relative flex h-4 min-w-16 max-w-full items-center justify-end gap-1 whitespace-nowrap"/,
+      /data-nest-root-metadata=""[\s\S]*className="relative flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"/,
     );
     assert.match(rootSource, /grid-cols-\[auto_minmax\(0,1fr\)_auto\]/);
     // The skeleton is two rows by default and one row under the one-line
@@ -62,7 +62,7 @@ describe("compact root card contract", () => {
     assert.doesNotMatch(childSource, /PullRequestMetadata/);
   });
 
-  it("truncates long title and branch text without shrinking metadata", () => {
+  it("truncates long title and branch text without reserving hover actions", () => {
     // The title truncates at one size in both layouts, and the branch carries
     // its own size rather than inheriting the row's (which has none).
     assert.match(rootSource, /"min-w-0 flex-1 truncate text-xs"/);
@@ -79,6 +79,7 @@ describe("compact root card contract", () => {
       rootSource,
       /relative z-10 col-start-3 flex shrink-0 items-end/,
     );
+    assert.match(threadCardSource, /ROW_MENU_OVERLAY_CLASS/);
     assert.match(rootSource, /row-span-2 flex-col gap-0\.5/);
     assert.match(rootSource, /row-start-1 flex-row gap-1\.5/);
   });

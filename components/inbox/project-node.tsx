@@ -103,66 +103,11 @@ export function ProjectNode({
     { label: "Project ID", value: node.project.id, mono: true, copy: true },
   ];
 
-  const header = (
-    <section
-      aria-label={node.project.name}
-      data-nest-project={node.project.id}
-      className="mt-1 first:mt-0"
-      onDragOver={(event) => {
-        // A project row is a drop target for another project header, and for a
-        // thread family dragged in from anywhere in the group.
-        const types = event.dataTransfer.types;
-        const projectDrag = types.includes("application/x-nest-project");
-        const familyDrag = types.includes("application/x-nest-family");
-        if (!projectDrag && !familyDrag) return;
-        if (projectDrag && !projectReorder.enabled) return;
-        if (familyDrag && !handlers.reorderEnabled) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-      }}
-      onDrop={(event) => {
-        const bounds = event.currentTarget.firstElementChild?.getBoundingClientRect();
-        const position =
-          bounds && event.clientY >= bounds.top + bounds.height / 2
-            ? "after"
-            : "before";
-
-        const projectRaw = event.dataTransfer.getData(
-          "application/x-nest-project",
-        );
-        if (projectRaw.length > 0) {
-          const dragged = parseDraggedProject(projectRaw);
-          if (dragged === null || !projectReorder.enabled) return;
-          event.preventDefault();
-          event.stopPropagation();
-          projectReorder.drop(dragged.projectId, node.project.id, position);
-          return;
-        }
-
-        // A family dropped on the project header lands at the top or bottom of
-        // the project's own family list — the same gesture as dropping it on
-        // the first or last row, without needing to aim at a row.
-        const dragged = parseDraggedFamily(
-          event.dataTransfer.getData("application/x-nest-family"),
-        );
-        if (dragged === null || !handlers.reorderEnabled) return;
-        const target = node.families.at(position === "before" ? 0 : -1);
-        if (target === undefined) return;
-        event.preventDefault();
-        event.stopPropagation();
-        handlers.onReorder({
-          sourceProjectId: dragged.projectId,
-          sourceRootId: dragged.rootId,
-          targetProjectId: node.project.id,
-          targetRootId: target.root.id,
-          position,
-        });
-      }}
+  const projectRow = (
+    <div
+      {...reveal.handlers}
+      className="group/project relative flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent/60"
     >
-      <div
-        {...reveal.handlers}
-        className="group/project relative flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent/60"
-      >
         <button
           type="button"
           draggable={projectReorder.enabled}
@@ -256,8 +201,66 @@ export function ProjectNode({
             onAssignGroup={(groupId) => onAssignGroup(node.project.id, groupId)}
           />
         </RowActions>
-      </div>
+    </div>
+  );
 
+  return (
+    <section
+      aria-label={node.project.name}
+      data-nest-project={node.project.id}
+      className="mt-1 first:mt-0"
+      onDragOver={(event) => {
+        // A project row is a drop target for another project header, and for a
+        // thread family dragged in from anywhere in the group.
+        const types = event.dataTransfer.types;
+        const projectDrag = types.includes("application/x-nest-project");
+        const familyDrag = types.includes("application/x-nest-family");
+        if (!projectDrag && !familyDrag) return;
+        if (projectDrag && !projectReorder.enabled) return;
+        if (familyDrag && !handlers.reorderEnabled) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => {
+        const bounds = event.currentTarget.firstElementChild?.getBoundingClientRect();
+        const position =
+          bounds && event.clientY >= bounds.top + bounds.height / 2
+            ? "after"
+            : "before";
+
+        const projectRaw = event.dataTransfer.getData(
+          "application/x-nest-project",
+        );
+        if (projectRaw.length > 0) {
+          const dragged = parseDraggedProject(projectRaw);
+          if (dragged === null || !projectReorder.enabled) return;
+          event.preventDefault();
+          event.stopPropagation();
+          projectReorder.drop(dragged.projectId, node.project.id, position);
+          return;
+        }
+
+        // A family dropped on the project header lands at the top or bottom of
+        // the project's own family list — the same gesture as dropping it on
+        // the first or last row, without needing to aim at a row.
+        const dragged = parseDraggedFamily(
+          event.dataTransfer.getData("application/x-nest-family"),
+        );
+        if (dragged === null || !handlers.reorderEnabled) return;
+        const target = node.families.at(position === "before" ? 0 : -1);
+        if (target === undefined) return;
+        event.preventDefault();
+        event.stopPropagation();
+        handlers.onReorder({
+          sourceProjectId: dragged.projectId,
+          sourceRootId: dragged.rootId,
+          targetProjectId: node.project.id,
+          targetRootId: target.root.id,
+          position,
+        });
+      }}
+    >
+      <InfoCard trigger={projectRow} label={node.project.name} rows={infoRows} />
       {expanded ? (
         node.showWorkspaces ? (
           <div id={listId} className="mt-0.5 flex flex-col gap-0.5">
@@ -283,8 +286,6 @@ export function ProjectNode({
       ) : null}
     </section>
   );
-
-  return <InfoCard trigger={header} label={node.project.name} rows={infoRows} />;
 }
 
 /**

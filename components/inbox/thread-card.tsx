@@ -20,6 +20,7 @@ import {
   MenuSeparator,
 } from "@/components/ui/menu";
 import {
+  ROW_MENU_OVERLAY_CLASS,
   RowMenuTrigger,
   useRowReveal,
 } from "@/components/inbox/row-actions";
@@ -404,7 +405,7 @@ export function ThreadCard({
               ) : null}
               <div
                 data-nest-root-metadata=""
-                className="relative flex h-4 min-w-16 max-w-full items-center justify-end gap-1 whitespace-nowrap"
+                className="relative flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"
               >
                 {showRowDetails &&
                 preferences.showPullRequestMetadata &&
@@ -475,26 +476,23 @@ export function ThreadCard({
                     className="size-3 opacity-75"
                   />
                 ) : null}
-                {/* The row's own menu. It shares the trailing cluster with the
-                    status slot, so the row keeps one line in hover mode. */}
-                {selectionMode ? null : (
-                  <ThreadMenu
-                    thread={thread}
-                    expanded={expanded}
-                    childCount={childThreads.length}
-                    canToggleChildren={childThreads.length > 0}
-                    revealed={reveal.revealed}
-                    onToggleChildren={() =>
-                      setExpandedOverride(!expanded)
-                    }
-                    onSettle={onSettle}
-                    onSnooze={onSnooze}
-                    canPark={canPark}
-                    className="absolute right-0 top-1/2 -translate-y-1/2"
-                  />
-                )}
               </div>
             </div>
+
+            {selectionMode ? null : (
+              <ThreadMenu
+                thread={thread}
+                expanded={expanded}
+                childCount={childThreads.length}
+                canToggleChildren={childThreads.length > 0}
+                revealed={reveal.revealed}
+                onToggleChildren={() => setExpandedOverride(!expanded)}
+                onSettle={onSettle}
+                onSnooze={onSnooze}
+                canPark={canPark}
+                className={ROW_MENU_OVERLAY_CLASS}
+              />
+            )}
           </div>
 
           {expanded ? (
@@ -536,9 +534,9 @@ export function ThreadCard({
  * The thread's own menu.
  *
  * The right-click menu still exists and still holds the full set; this is the
- * discoverable twin of it, because a context menu is not an entrance. The
- * chevron reads as a disclosure at rest and as dots once the row is hovered,
- * matching every other level.
+ * discoverable twin of it, because a context menu is not an entrance.
+ * Aggregate rows keep their disclosure chevron in normal flow; thread rows
+ * have no stable trailing control, so their menu trigger is an overlay.
  */
 function ThreadMenu({
   thread,
@@ -644,6 +642,7 @@ function ChildThreadRow({
 }) {
   const actions = useSidebarThreadActions();
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
+  const reveal = useRowReveal();
   const status = threadStatus(thread);
   const isWorking = threadIsWorking(thread);
   const showRowDetails = preferences.rowDetails !== "hover";
@@ -664,6 +663,7 @@ function ChildThreadRow({
           }
         />
         <div
+          {...reveal.handlers}
           className={cn(
             "group/child relative flex items-start gap-1.5 rounded-md px-1.5",
             preferences.density === "compact" ? "py-0.5" : "py-1",
@@ -726,6 +726,18 @@ function ChildThreadRow({
               </div>
             ) : null}
           </div>
+          <ThreadMenu
+            thread={thread}
+            expanded={false}
+            childCount={0}
+            canToggleChildren={false}
+            revealed={reveal.revealed}
+            onToggleChildren={() => undefined}
+            onSettle={() => undefined}
+            onSnooze={() => undefined}
+            canPark={false}
+            className={ROW_MENU_OVERLAY_CLASS}
+          />
         </div>
       </li>
     </RowContextMenu>
