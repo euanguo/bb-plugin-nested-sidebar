@@ -20,7 +20,6 @@ import {
   MenuSeparator,
 } from "@/components/ui/menu";
 import {
-  ROW_MENU_OVERLAY_CLASS,
   RowMenuTrigger,
   useRowReveal,
 } from "@/components/inbox/row-actions";
@@ -139,6 +138,19 @@ export function ThreadCard({
   const childDisclosureLabel = `${expanded ? "Hide" : "Show"} ${childThreads.length} child${childThreads.length === 1 ? " thread" : " threads"}${childProviderNames ? `; providers: ${childProviderNames}` : ""}`;
   const rootIsActive = thread.id === activeThreadId;
   const familyState = familyStatus([thread, ...childThreads], now);
+  const hasRootMetadata =
+    thread.isPinned ||
+    (showRowDetails &&
+      ((preferences.showPullRequestMetadata && pullRequest != null) ||
+        (childThreads.length > 0 && preferences.showChildCount) ||
+        preferences.showProviderIcons));
+  const showRootParkActions =
+    canPark && !selectionMode && showRowDetails && reveal.revealed;
+  const showRootTime =
+    !showRootParkActions && preferences.showRelativeTime && showRowDetails;
+  const showRootMenu = !selectionMode && reveal.revealed;
+  const showRootRail =
+    showRootParkActions || showRootTime || showRootMenu || hasRootMetadata;
 
   return (
     <RowContextMenu thread={thread}>
@@ -165,10 +177,10 @@ export function ThreadCard({
             data-nest-root-card=""
             {...reveal.handlers}
             className={cn(
-              "group/root relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 rounded-lg px-1.5",
+              "group/root relative flex min-w-0 items-center gap-x-2 rounded-lg px-1.5",
               preferences.rowLayout === "one-line" || detailsOnHover
-                ? "grid-rows-[1.25rem]"
-                : "grid-rows-[1rem_1rem] gap-y-0.5",
+                ? "min-h-5"
+                : "min-h-10",
               preferences.density === "compact"
                 ? "py-0.5"
                 : "py-1",
@@ -263,7 +275,7 @@ export function ThreadCard({
                   });
                 }}
                 className={cn(
-                  "relative z-10 col-start-1 row-start-1 size-4 shrink-0 cursor-pointer rounded border accent-primary transition-colors",
+                  "relative z-10 size-4 shrink-0 cursor-pointer rounded border accent-primary transition-colors",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   selectionDisabledReason !== null &&
                     "cursor-not-allowed opacity-35",
@@ -275,7 +287,6 @@ export function ThreadCard({
               <FamilyStatusIcon
                 status={familyState}
                 variant={preferences.statusDisplay}
-                className="col-start-1 row-start-1"
                 draggable={reorderEnabled}
                 reorderHelp={
                   reorderEnabled
@@ -303,10 +314,10 @@ export function ThreadCard({
 
             <div
               className={cn(
-                "pointer-events-none relative col-start-2 min-w-0",
+                "pointer-events-none relative min-w-0 flex-1",
                 preferences.rowLayout === "one-line" || detailsOnHover
-                  ? "row-start-1 flex min-w-0 items-center gap-1.5"
-                  : "row-span-2",
+                  ? "flex items-center gap-1.5"
+                  : "self-stretch py-0.5",
               )}
             >
               <div
@@ -332,13 +343,6 @@ export function ThreadCard({
                 >
                   {threadDisplayTitle(thread)}
                 </span>
-                {thread.isPinned ? (
-                  <Icon
-                    name="Pin"
-                    aria-label="Pinned thread"
-                    className="relative z-10 size-3 shrink-0 text-muted-foreground/70"
-                  />
-                ) : null}
                 {/* One-line layout: the branch rides beside the title, so the
                     row costs a single line of height. */}
                 {preferences.rowLayout === "one-line" &&
@@ -364,28 +368,18 @@ export function ThreadCard({
               ) : null}
             </div>
 
-            <div
-              className={cn(
-                "relative z-10 col-start-3 flex shrink-0 items-end",
-                preferences.rowLayout === "one-line" || detailsOnHover
-                  ? "row-start-1 flex-row gap-1.5"
-                  : "row-span-2 flex-col gap-0.5",
-                selectionMode && "pointer-events-none",
-              )}
-            >
-              <span
-                data-nest-root-time=""
+            {showRootRail ? (
+              <div
                 className={cn(
-                  "flex h-4 items-center justify-end",
-                  canPark && !selectionMode && "group-hover/root:hidden",
+                  "relative z-10 flex shrink-0 items-center",
+                  preferences.rowLayout === "one-line" || detailsOnHover
+                    ? "flex-row gap-1.5"
+                    : "flex-col gap-0.5",
+                  selectionMode && "pointer-events-none",
                 )}
               >
-                {preferences.showRelativeTime && showRowDetails ? (
-                  <ThreadStatusLabel thread={thread} now={now} />
-                ) : null}
-              </span>
-              {canPark && !selectionMode && showRowDetails ? (
-                <span className="hidden h-4 items-center gap-0.5 group-hover/root:flex">
+              {showRootParkActions ? (
+                <span data-nest-root-time="" className="flex h-4 items-center gap-0.5">
                   <ParkButton
                     label="Snooze until tomorrow"
                     icon="Clock"
@@ -402,11 +396,41 @@ export function ThreadCard({
                     onActivate={onSettle}
                   />
                 </span>
+              ) : showRootTime ? (
+                <span data-nest-root-time="" className="flex h-4 items-center justify-end">
+                  <ThreadStatusLabel thread={thread} now={now} />
+                </span>
               ) : null}
-              <div
-                data-nest-root-metadata=""
-                className="relative flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"
-              >
+              {showRootMenu ? (
+                <ThreadMenu
+                  thread={thread}
+                  expanded={expanded}
+                  childCount={childThreads.length}
+                  canToggleChildren={childThreads.length > 0}
+                  revealed={reveal.revealed}
+                  onToggleChildren={() => setExpandedOverride(!expanded)}
+                  onSettle={onSettle}
+                  onSnooze={onSnooze}
+                  canPark={canPark}
+                />
+              ) : null}
+              {hasRootMetadata ? (
+                <div
+                  data-nest-root-metadata=""
+                  className="flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap leading-none"
+                >
+                {thread.isPinned ? (
+                  <span
+                    className="flex size-3.5 shrink-0 items-center justify-center"
+                    title="Pinned thread"
+                  >
+                    <Icon
+                      name="Pin"
+                      aria-label="Pinned thread"
+                      className="size-3 text-muted-foreground/70"
+                    />
+                  </span>
+                ) : null}
                 {showRowDetails &&
                 preferences.showPullRequestMetadata &&
                 pullRequest ? (
@@ -476,23 +500,10 @@ export function ThreadCard({
                     className="size-3 opacity-75"
                   />
                 ) : null}
+                </div>
+              ) : null}
               </div>
-            </div>
-
-            {selectionMode ? null : (
-              <ThreadMenu
-                thread={thread}
-                expanded={expanded}
-                childCount={childThreads.length}
-                canToggleChildren={childThreads.length > 0}
-                revealed={reveal.revealed}
-                onToggleChildren={() => setExpandedOverride(!expanded)}
-                onSettle={onSettle}
-                onSnooze={onSnooze}
-                canPark={canPark}
-                className={ROW_MENU_OVERLAY_CLASS}
-              />
-            )}
+            ) : null}
           </div>
 
           {expanded ? (
@@ -548,7 +559,6 @@ function ThreadMenu({
   onSettle,
   onSnooze,
   canPark,
-  className,
 }: {
   thread: PluginSidebarThread;
   expanded: boolean;
@@ -559,7 +569,6 @@ function ThreadMenu({
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
   canPark: boolean;
-  className?: string;
 }) {
   const actions = useSidebarThreadActions();
   const tomorrow = () => {
@@ -575,7 +584,6 @@ function ThreadMenu({
         <RowMenuTrigger
           label={`Actions for ${threadDisplayTitle(thread)}`}
           revealed={revealed}
-          className={className}
         />
       }
     >
@@ -646,6 +654,10 @@ function ChildThreadRow({
   const status = threadStatus(thread);
   const isWorking = threadIsWorking(thread);
   const showRowDetails = preferences.rowDetails !== "hover";
+  const showChildMenu = reveal.revealed;
+  const showChildTime = showRowDetails && preferences.showRelativeTime;
+  const showChildProvider = showRowDetails && preferences.showProviderIcons;
+  const showChildRail = showChildMenu || showChildTime || showChildProvider;
 
   return (
     <RowContextMenu thread={thread}>
@@ -665,7 +677,7 @@ function ChildThreadRow({
         <div
           {...reveal.handlers}
           className={cn(
-            "group/child relative flex items-start gap-1.5 rounded-md px-1.5",
+            "group/child relative flex min-w-0 items-center gap-1.5 rounded-md px-1.5",
             preferences.density === "compact" ? "py-0.5" : "py-1",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
             !isActive && layout !== null && "bg-sidebar-accent/25",
@@ -689,14 +701,7 @@ function ChildThreadRow({
             }}
             className="absolute inset-0 cursor-pointer rounded-md"
           />
-          {showRowDetails && preferences.showProviderIcons ? (
-            <ProviderGlyph
-              providerId={thread.providerId}
-              provider={provider}
-              className="relative mt-0.5"
-            />
-          ) : null}
-          <ThreadStateGlyph thread={thread} className="relative mt-0.5" />
+          <ThreadStateGlyph thread={thread} />
           <div className="pointer-events-none relative min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
               <span
@@ -710,11 +715,6 @@ function ChildThreadRow({
               >
                 {threadDisplayTitle(thread)}
               </span>
-              {showRowDetails && preferences.showRelativeTime ? (
-                <span className="shrink-0 tabular-nums text-2xs text-muted-foreground/70">
-                  {relativeTimeLabel(thread.updatedAt, now)}
-                </span>
-              ) : null}
             </div>
             {showRowDetails &&
             (preferences.rowLayout === "two-line" ||
@@ -726,18 +726,34 @@ function ChildThreadRow({
               </div>
             ) : null}
           </div>
-          <ThreadMenu
-            thread={thread}
-            expanded={false}
-            childCount={0}
-            canToggleChildren={false}
-            revealed={reveal.revealed}
-            onToggleChildren={() => undefined}
-            onSettle={() => undefined}
-            onSnooze={() => undefined}
-            canPark={false}
-            className={ROW_MENU_OVERLAY_CLASS}
-          />
+          {showChildRail ? (
+            <div className="relative z-10 flex shrink-0 items-center gap-1.5 leading-none">
+            {showChildMenu ? (
+              <ThreadMenu
+                thread={thread}
+                expanded={false}
+                childCount={0}
+                canToggleChildren={false}
+                revealed={reveal.revealed}
+                onToggleChildren={() => undefined}
+                onSettle={() => undefined}
+                onSnooze={() => undefined}
+                canPark={false}
+              />
+            ) : null}
+            {showChildTime ? (
+              <span className="flex h-4 items-center tabular-nums text-2xs text-muted-foreground/70">
+                {relativeTimeLabel(thread.updatedAt, now)}
+              </span>
+            ) : null}
+            {showChildProvider ? (
+              <ProviderGlyph
+                providerId={thread.providerId}
+                provider={provider}
+              />
+            ) : null}
+            </div>
+          ) : null}
         </div>
       </li>
     </RowContextMenu>

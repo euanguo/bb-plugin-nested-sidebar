@@ -18,8 +18,26 @@ describe("trailing rail layout", () => {
     assert.doesNotMatch(slimRow, /STATUS_SLOT_CLASS/);
   });
 
-  it("uses one shared overlay placement for hover-only row menus", () => {
-    assert.match(rowActions, /ROW_MENU_OVERLAY_CLASS/);
-    assert.match(threadCard, /ROW_MENU_OVERLAY_CLASS/);
+  it("keeps hover-only menus out of the resting row flow", () => {
+    assert.doesNotMatch(rowActions, /ROW_MENU_OVERLAY_CLASS/);
+    assert.doesNotMatch(threadCard, /ROW_MENU_OVERLAY_CLASS/);
+    assert.match(threadCard, /showRootRail \? \(/);
+  });
+
+  it("keeps stable trailing glyphs after the hover menu in one flex rail", () => {
+    const metadataStart = threadCard.indexOf('data-nest-root-metadata=""');
+    const rootMenuStart = threadCard.lastIndexOf("<ThreadMenu", metadataStart);
+    assert.ok(metadataStart >= 0);
+    assert.ok(rootMenuStart >= 0);
+    assert.ok(rootMenuStart < metadataStart);
+    assert.ok(
+      threadCard.indexOf('name="Pin"', metadataStart) > metadataStart,
+    );
+    assert.ok(
+      threadCard.includes(
+        '"pointer-events-none relative min-w-0 flex-1",',
+      ),
+    );
+    assert.match(threadCard, /relative z-10 flex shrink-0 items-center/);
   });
 });

@@ -263,6 +263,7 @@ export function ThreadInbox({
           scope,
           label: group.name,
           count: countFor(scope),
+          icon: group.icon,
           statusKind: kindFor(scope),
         };
       }),

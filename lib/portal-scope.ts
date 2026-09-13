@@ -43,8 +43,13 @@ export function usePortalScopeProps(): {
 export function useOverlayPortalContainer(): HTMLElement | undefined {
   const [container, setContainer] = useState<HTMLElement>();
   useLayoutEffect(() => {
+    // React runs child layout effects before the Modal's own effect calls
+    // showModal(), so the freshly-mounted dialog may not have its `open`
+    // attribute yet. The mounted dialog is still the correct top-layer
+    // container; waiting for `[open]` leaves the first (and often only)
+    // Popover render portaled to body, underneath the native dialog.
     const dialog = document.querySelector<HTMLDialogElement>(
-      "dialog[data-nest-modal][open]",
+      "dialog[data-nest-modal]",
     );
     setContainer(dialog ?? undefined);
   }, []);

@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@/components/ui/icon";
+import { GroupIcon } from "@/components/ui/group-icon";
 import { cn } from "@/lib/utils";
 import { ScrollStrip } from "@/components/ui/scroll-strip";
 import { StatusDot } from "@/components/inbox/family-status";
 import { familyStatusPresentation, type FamilyStatusKind } from "@/lib/family-status";
-import { groupScopeKey, type GroupScope } from "@/lib/groups";
+import { groupScopeKey, type GroupIconName, type GroupScope } from "@/lib/groups";
 
 export interface GroupTab {
   readonly scope: GroupScope;
   readonly label: string;
   readonly count: number;
+  readonly icon?: GroupIconName;
   /**
    * The worst state anywhere under this tab, or null when nothing is under it.
    * A dot only — the tab strip answers "is anything moving" at a glance, and a
@@ -102,17 +104,23 @@ export function GroupTabs({
                 )}
               >
                 {overflowing ? (
-                  <Icon
-                    name={
-                      tab.scope.kind === "all"
-                        ? "Eye"
-                        : tab.scope.kind === "ungrouped"
-                          ? "FolderTree"
-                          : "Layer"
-                    }
-                    className="size-3.5"
-                    aria-hidden
-                  />
+                  tab.icon === undefined ? (
+                    <Icon
+                      name={
+                        tab.scope.kind === "all"
+                          ? "Eye"
+                          : "FolderTree"
+                      }
+                      className="size-3.5"
+                      aria-hidden
+                    />
+                  ) : (
+                    <GroupIcon
+                      name={tab.icon}
+                      className="size-3.5"
+                      ariaHidden
+                    />
+                  )
                 ) : (
                   <span className="truncate">{tab.label}</span>
                 )}
