@@ -7,6 +7,7 @@ import {
   ArrowRight01Icon,
   ArrowTurnBackwardIcon,
   ArrowUp01Icon,
+  Cancel01Icon,
   CancelCircleIcon,
   CheckListIcon,
   CheckmarkSquare02Icon,
@@ -76,6 +77,7 @@ const ICON_MAP = {
   Terminal: ComputerTerminal01Icon,
   UserRoundPlus: UserAdd01Icon,
   Workflow: WorkflowCircle03Icon,
+  X: Cancel01Icon,
 } as const satisfies Record<string, IconSvgElement>;
 
 export type IconName = keyof typeof ICON_MAP;

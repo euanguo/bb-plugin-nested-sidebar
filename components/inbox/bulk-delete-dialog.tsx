@@ -48,7 +48,7 @@ export function BulkDeleteDialog({
         if (!busy) onCancel();
       }}
       labelledBy={titleId}
-      aria-describedby={descriptionId}
+      describedBy={descriptionId}
       className="w-[min(26rem,calc(100vw-2rem))]"
     >
       <div className="space-y-4 p-4">
