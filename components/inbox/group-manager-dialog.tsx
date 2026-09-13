@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import * as Popover from "@radix-ui/react-popover";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { GroupIcon } from "@/components/ui/group-icon";
@@ -7,9 +6,10 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { Modal } from "@/components/ui/modal";
 import {
-  useOverlayPortalContainer,
-  usePortalScopeProps,
-} from "@/lib/portal-scope";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   GROUP_ICON_OPTIONS,
   groupIconLabel,
@@ -231,8 +231,6 @@ function IconPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(INITIAL_ICON_LIMIT);
-  const scope = usePortalScopeProps();
-  const container = useOverlayPortalContainer();
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = useMemo(
     () =>
@@ -253,31 +251,28 @@ function IconPicker({
   }, [open]);
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-      <button
-        type="button"
-        aria-label={label}
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-        className="flex h-7 min-w-24 items-center gap-1 rounded-md border border-border bg-background px-1.5 text-2xs text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
-      >
-        <GroupIcon name={value} className="size-3.5 shrink-0" ariaHidden />
-        <span className="min-w-0 flex-1 truncate text-left">{groupIconLabel(value)}</span>
-        <Icon name="ChevronDown" className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-      </button>
-      </Popover.Trigger>
-      <Popover.Portal container={container}>
-        <Popover.Content
-          {...scope}
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          collisionPadding={8}
-          aria-label={label + " picker"}
-          className="z-[70] w-[min(28rem,calc(100vw-3rem))] rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-lg"
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          disabled={disabled}
+          className="flex h-7 min-w-24 items-center gap-1 rounded-md border border-border bg-background px-1.5 text-2xs text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
         >
+          <GroupIcon name={value} className="size-3.5 shrink-0" ariaHidden />
+          <span className="min-w-0 flex-1 truncate text-left">{groupIconLabel(value)}</span>
+          <Icon name="ChevronDown" className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+        aria-label={label + " picker"}
+        mobileTitle={label + " picker"}
+        className="z-[70] max-h-[min(70vh,28rem)] w-[min(28rem,calc(100vw-3rem))] overflow-hidden rounded-lg border-border bg-popover p-2 text-popover-foreground shadow-lg"
+      >
           <div className="flex items-center gap-1.5">
             <input
               autoFocus
@@ -324,9 +319,8 @@ function IconPicker({
               Show more ({(filtered.length - visible.length).toLocaleString()} remaining)
             </button>
           ) : null}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -7,6 +7,7 @@ const inbox = await readFile(new URL("../components/inbox/thread-inbox.tsx", imp
 const menu = await readFile(new URL("../components/ui/menu.tsx", import.meta.url), "utf8");
 const hoverCard = await readFile(new URL("../components/ui/hover-card.tsx", import.meta.url), "utf8");
 const select = await readFile(new URL("../components/ui/select.tsx", import.meta.url), "utf8");
+const groupManager = await readFile(new URL("../components/inbox/group-manager-dialog.tsx", import.meta.url), "utf8");
 const portalScope = await readFile(new URL("../lib/portal-scope.ts", import.meta.url), "utf8");
 
 describe("modal and overlay contracts", () => {
@@ -15,18 +16,22 @@ describe("modal and overlay contracts", () => {
     assert.doesNotMatch(inbox, /<NewThreadDialog/);
   });
 
-  it("keeps modal escape hatches and orphan cleanup", () => {
-    assert.match(modal, /onCancel=\{/);
+  it("uses the official BB dialog instead of a native dialog", () => {
+    assert.match(modal, /from "@\/components\/ui\/dialog"/);
+    assert.match(modal, /<Dialog[\s\S]*<DialogContent/);
     assert.match(modal, /aria-label="Close"/);
-    assert.match(modal, /function discardOrphanDialogs/);
-    assert.match(modal, /dialog\.remove\(\)/);
+    assert.doesNotMatch(modal, /<dialog/);
+    assert.doesNotMatch(modal, /showModal\(\)/);
   });
 
-  it("keeps floating surfaces above native modals", () => {
-    assert.match(portalScope, /dialog\[data-nest-modal\]/);
-    assert.doesNotMatch(portalScope, /dialog\[data-nest-modal\]\[open\]/);
+  it("keeps floating surfaces in the official portal path", () => {
+    assert.match(groupManager, /from "@\/components\/ui\/popover"/);
+    assert.doesNotMatch(groupManager, /@radix-ui\/react-popover/);
+    assert.doesNotMatch(groupManager, /useOverlayPortalContainer/);
+    assert.doesNotMatch(groupManager, /Popover\.Portal/);
     assert.match(menu, /container=\{container\}/);
     assert.match(hoverCard, /container=\{container\}/);
     assert.match(select, /container=\{useOverlayPortalContainer\(\)\}/);
+    assert.match(portalScope, /data-bb-portaled-overlay/);
   });
 });

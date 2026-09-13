@@ -88,7 +88,7 @@ describe("row affordances across the four levels", () => {
   it("renders icon previews directly instead of blank deferred placeholders", () => {
     assert.match(groupManager, /<IconPicker/);
     assert.doesNotMatch(groupManager, /GroupIcon name=\{icon\} className="size-4" ariaHidden defer/);
-    assert.match(groupManager, /<Popover.Content/);
+    assert.match(groupManager, /<PopoverContent/);
     assert.ok(groupManager.includes('aria-label={label + " picker"}'));
   });
 });
