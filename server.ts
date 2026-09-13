@@ -43,12 +43,21 @@ import {
   GROUP_MIGRATION,
   createGroupStore,
 } from "./lib/group-store.ts";
-import { GROUP_ICON_OPTIONS, MAX_GROUPS, MAX_GROUP_NAME_LENGTH } from "./lib/groups.ts";
+import {
+  DEFAULT_GROUP_ICON,
+  MAX_GROUPS,
+  MAX_GROUP_NAME_LENGTH,
+  validGroupIcon,
+} from "./lib/groups.ts";
 import { nestMigrations } from "./lib/migrations.ts";
 import {
   MAX_PROJECT_COLOR_ROWS,
   MAX_PROJECT_ID_LENGTH,
 } from "./lib/project-colors.ts";
+
+const groupIconSchema = z.string().refine(validGroupIcon, {
+  message: "Unknown group icon.",
+});
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -182,7 +191,7 @@ export const nestRpcContract = defineRpcContract({
           id: z.string(),
           name: z.string(),
           position: z.number(),
-          icon: z.enum(GROUP_ICON_OPTIONS),
+          icon: groupIconSchema,
         }),
       ),
       assignment: z.record(z.string(), z.string()),
@@ -191,20 +200,20 @@ export const nestRpcContract = defineRpcContract({
   createGroup: {
     input: z.object({
       name: z.string().trim().min(1).max(MAX_GROUP_NAME_LENGTH),
-      icon: z.enum(GROUP_ICON_OPTIONS).default("Layer"),
+      icon: groupIconSchema.default(DEFAULT_GROUP_ICON),
     }),
     output: z.object({
       id: z.string(),
       name: z.string(),
       position: z.number(),
-      icon: z.enum(GROUP_ICON_OPTIONS),
+      icon: groupIconSchema,
     }),
   },
   renameGroup: {
     input: z.object({
       groupId: z.string().trim().min(1),
       name: z.string().trim().min(1).max(MAX_GROUP_NAME_LENGTH),
-      icon: z.enum(GROUP_ICON_OPTIONS).optional(),
+      icon: groupIconSchema.optional(),
     }),
     output: z.object({ ok: z.boolean() }),
   },

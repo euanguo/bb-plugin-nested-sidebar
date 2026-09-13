@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
 } from "@get-bb/plugin-sdk/app";
-import { Icon } from "@/components/ui/icon";
+import { GroupIcon } from "@/components/ui/group-icon";
 import { cn } from "@/lib/utils";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { InfoCard, InfoRow } from "@/components/ui/hover-card";
@@ -98,7 +98,11 @@ export function GroupSection({
           title={node.name}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <Icon name={node.icon} className="size-3 shrink-0 text-muted-foreground/70" aria-hidden />
+          <GroupIcon
+            name={node.icon}
+            className="size-3 shrink-0 text-muted-foreground/70"
+            ariaHidden
+          />
           <span className="min-w-0 flex-1 truncate text-2xs font-semibold text-foreground/90">
             {node.name}
           </span>

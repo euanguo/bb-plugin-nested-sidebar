@@ -118,13 +118,6 @@ export const RowMenuTrigger = React.forwardRef<
   );
 });
 
-/**
- * Placement for actions that are useful on hover but should not reserve a
- * trailing column while the row is at rest. The row itself must be relative.
- */
-export const ROW_MENU_OVERLAY_CLASS =
-  "absolute right-1.5 top-1/2 -translate-y-1/2";
-
 /** The trailing cluster: an optional primary action, then the menu trigger. */
 export function RowActions({
   children,

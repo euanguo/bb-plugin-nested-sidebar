@@ -11,6 +11,25 @@
  * threads underneath it and must never be stored where it can go stale.
  */
 
+import {
+  GROUP_ICON_OPTIONS,
+  DEFAULT_GROUP_ICON,
+  canonicalGroupIcon,
+  groupIconLabel,
+  normalizeGroupIconName,
+  validGroupIcon,
+  type GroupIconName,
+} from "./group-icons.ts";
+export {
+  GROUP_ICON_OPTIONS,
+  DEFAULT_GROUP_ICON,
+  canonicalGroupIcon,
+  groupIconLabel,
+  normalizeGroupIconName,
+  validGroupIcon,
+} from "./group-icons.ts";
+export type { GroupIconName } from "./group-icons.ts";
+
 export const MAX_GROUPS = 100;
 export const MAX_GROUP_NAME_LENGTH = 60;
 export const MAX_GROUP_ID_LENGTH = 100;
@@ -23,21 +42,6 @@ export interface ProjectGroup {
   readonly icon: GroupIconName;
   /** Explicit user order; groups sort by this, then by name. */
   readonly position: number;
-}
-
-export const GROUP_ICON_OPTIONS = [
-  "Layer",
-  "FolderTree",
-  "GitBranch",
-  "Target",
-  "ListTodo",
-  "Pin",
-] as const;
-export type GroupIconName = (typeof GROUP_ICON_OPTIONS)[number];
-export const DEFAULT_GROUP_ICON: GroupIconName = "Layer";
-
-export function validGroupIcon(value: unknown): value is GroupIconName {
-  return typeof value === "string" && GROUP_ICON_OPTIONS.some((icon) => icon === value);
 }
 
 /**

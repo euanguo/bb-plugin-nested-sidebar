@@ -22,13 +22,13 @@ describe("compact root card contract", () => {
     assert.match(rootSource, /data-nest-root-metadata/);
     assert.match(
       rootSource,
-      /data-nest-root-metadata=""[\s\S]*className="relative flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap"/,
+      /data-nest-root-metadata=""[\s\S]*className="flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap leading-none"/,
     );
-    assert.match(rootSource, /grid-cols-\[auto_minmax\(0,1fr\)_auto\]/);
+    assert.match(rootSource, /relative flex min-w-0 items-center gap-x-2/);
     // The skeleton is two rows by default and one row under the one-line
     // layout, so both must stay present and selectable at runtime.
-    assert.match(rootSource, /grid-rows-\[1\.25rem\]/);
-    assert.match(rootSource, /grid-rows-\[1rem_1rem\]/);
+    assert.match(rootSource, /min-h-5/);
+    assert.match(rootSource, /min-h-10/);
     assert.match(rootSource, /preferences\.rowLayout === "one-line"/);
     assert.match(rootSource, /preferences\.rowLayout === "two-line"/);
     assert.match(rootSource, /bg-sidebar-accent\/35 py-1/);
@@ -77,11 +77,19 @@ describe("compact root card contract", () => {
     assert.match(threadCardSource, /\{branch\}/);
     assert.match(
       rootSource,
-      /relative z-10 col-start-3 flex shrink-0 items-end/,
+      /relative z-10 flex shrink-0 items-center/,
     );
-    assert.match(threadCardSource, /ROW_MENU_OVERLAY_CLASS/);
-    assert.match(rootSource, /row-span-2 flex-col gap-0\.5/);
-    assert.match(rootSource, /row-start-1 flex-row gap-1\.5/);
+    assert.doesNotMatch(threadCardSource, /ROW_MENU_OVERLAY_CLASS/);
+    assert.match(rootSource, /flex-col gap-0\.5/);
+    assert.match(rootSource, /flex-row gap-1\.5/);
+    assert.match(rootSource, /showRowDetails && reveal\.revealed/);
+  });
+
+  it("does not mount an empty trailing rail when a row has no tail content", () => {
+    assert.match(rootSource, /const showRootRail =/);
+    assert.ok(rootSource.includes("showRootRail ? ("));
+    assert.match(childSource, /const showChildRail =/);
+    assert.ok(childSource.includes("showChildRail ? ("));
   });
 
   it("keeps semantic, disclosure, provider, and reorder help keyboard-readable", () => {

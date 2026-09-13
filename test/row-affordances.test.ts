@@ -10,6 +10,7 @@ const projectRow = await read("project-node.tsx");
 const treeRows = await read("tree-rows.tsx");
 const card = await read("thread-card.tsx");
 const tabs = await read("group-tabs.tsx");
+const groupManager = await read("group-manager-dialog.tsx");
 
 /**
  * The four levels have to behave the same way, because they are one tree. These
@@ -77,9 +78,17 @@ describe("row affordances across the four levels", () => {
     assert.match(projectRow, /<InfoCard trigger={projectRow}/);
   });
 
-  it("keeps the provider at the trailing edge and overlays actions there", () => {
-    assert.match(card, /data-nest-root-metadata=""[\s\S]*className="relative flex/);
-    assert.match(card, /ROW_MENU_OVERLAY_CLASS/);
+  it("keeps the provider at the trailing edge and inserts actions in flow", () => {
+    assert.match(card, /data-nest-root-metadata=""[\s\S]*className="flex h-4/);
+    assert.doesNotMatch(card, /ROW_MENU_OVERLAY_CLASS/);
+    assert.match(card, /showRootRail \? \(/);
     assert.match(card, /function ChildThreadRow[\s\S]*useRowReveal()/);
+  });
+
+  it("renders icon previews directly instead of blank deferred placeholders", () => {
+    assert.match(groupManager, /<IconPicker/);
+    assert.doesNotMatch(groupManager, /GroupIcon name=\{icon\} className="size-4" ariaHidden defer/);
+    assert.match(groupManager, /<Popover.Content/);
+    assert.ok(groupManager.includes('aria-label={label + " picker"}'));
   });
 });

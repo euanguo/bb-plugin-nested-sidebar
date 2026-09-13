@@ -23,7 +23,8 @@ describe("modal and overlay contracts", () => {
   });
 
   it("keeps floating surfaces above native modals", () => {
-    assert.match(portalScope, /dialog\[data-nest-modal\]\[open\]/);
+    assert.match(portalScope, /dialog\[data-nest-modal\]/);
+    assert.doesNotMatch(portalScope, /dialog\[data-nest-modal\]\[open\]/);
     assert.match(menu, /container=\{container\}/);
     assert.match(hoverCard, /container=\{container\}/);
     assert.match(select, /container=\{useOverlayPortalContainer\(\)\}/);

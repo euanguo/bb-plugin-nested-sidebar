@@ -3,6 +3,7 @@ import {
   MAX_GROUPS,
   canonicalGroupName,
   DEFAULT_GROUP_ICON,
+  canonicalGroupIcon,
   validGroupIcon,
   validGroupId,
   validGroupName,
@@ -51,7 +52,12 @@ export function createGroupStore(db: Database.Database) {
         typeof row.position === "number" && Number.isFinite(row.position)
           ? row.position
           : groups.length;
-      groups.push({ id: row.id, name: row.name, position, icon: validGroupIcon(row.icon) ? row.icon : DEFAULT_GROUP_ICON });
+      groups.push({
+        id: row.id,
+        name: row.name,
+        position,
+        icon: canonicalGroupIcon(row.icon),
+      });
       if (groups.length === MAX_GROUPS) break;
     }
     return groups;
@@ -81,6 +87,7 @@ export function createGroupStore(db: Database.Database) {
     if (!validGroupId(id) || !validGroupName(cleanName) || !validGroupIcon(icon)) {
       throw new Error("Invalid group name.");
     }
+    const canonicalIcon = canonicalGroupIcon(icon);
     const count = db
       .prepare(`SELECT COUNT(*) AS count FROM project_groups`)
       .get() as { count: number };
@@ -92,14 +99,15 @@ export function createGroupStore(db: Database.Database) {
     db.prepare(
       `INSERT INTO project_groups (id, name, position, updated_at, icon)
       VALUES (?, ?, ?, ?, ?)`,
-    ).run(id, cleanName, position, Date.now(), icon);
-    return { id, name: cleanName, position, icon };
+    ).run(id, cleanName, position, Date.now(), canonicalIcon);
+    return { id, name: cleanName, position, icon: canonicalIcon };
   };
 
   const rename = (id: string, name: string, icon?: string): ProjectGroup | null => {
     const cleanName = canonicalGroupName(name);
     if (!validGroupId(id) || !validGroupName(cleanName) || (icon !== undefined && !validGroupIcon(icon))) return null;
-    if (icon !== undefined) db.prepare(`UPDATE project_groups SET icon = ?, name = ?, updated_at = ? WHERE id = ?`).run(icon, cleanName, Date.now(), id);
+    const canonicalIcon = icon === undefined ? undefined : canonicalGroupIcon(icon);
+    if (canonicalIcon !== undefined) db.prepare(`UPDATE project_groups SET icon = ?, name = ?, updated_at = ? WHERE id = ?`).run(canonicalIcon, cleanName, Date.now(), id);
     else db.prepare(`UPDATE project_groups SET name = ?, updated_at = ? WHERE id = ?`).run(cleanName, Date.now(), id);
     const changes = db
       .prepare(`SELECT changes() AS changes`)
@@ -113,7 +121,7 @@ export function createGroupStore(db: Database.Database) {
       id,
       name: cleanName,
       position: Number(row.position) || 0,
-      icon: validGroupIcon(row.icon) ? row.icon : DEFAULT_GROUP_ICON,
+      icon: canonicalGroupIcon(row.icon),
     };
   };
 
