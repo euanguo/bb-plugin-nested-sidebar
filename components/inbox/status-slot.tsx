@@ -8,13 +8,13 @@ import { relativeTimeLabel } from "@/lib/relative-time";
 import { threadIsWorking } from "@/lib/inbox";
 
 /**
- * The row's trailing slot: one fixed width, right-aligned, on every row.
+ * The row's trailing slot for content that is actually rendered.
  *
- * Fixed rather than intrinsic because status labels range from "7m" to
- * "Needs you". The width keeps the title and actions from moving as state
- * changes.
+ * Hover-only actions use an overlay instead. Keeping this slot intrinsic means
+ * a row with one status glyph or one age label does not reserve the width of a
+ * hypothetical action cluster.
  */
-export const STATUS_SLOT_CLASS = "flex w-16 shrink-0 items-center justify-end";
+export const STATUS_SLOT_CLASS = "flex shrink-0 items-center justify-end";
 
 /**
  * The box every trailing glyph sits in, whatever its artwork measures.
