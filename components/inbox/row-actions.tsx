@@ -54,7 +54,7 @@ export function RowActionButton({
       }}
       className={cn(
         "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-md",
-        "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+        "text-muted-foreground transition-colors hover:text-foreground",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         className,
       )}
@@ -93,9 +93,9 @@ export const RowMenuTrigger = React.forwardRef<
       data-bb-icon-button=""
       className={cn(
         "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-md",
-        "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+        "text-muted-foreground transition-colors hover:text-foreground",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        revealed && "bg-sidebar-accent",
+        revealed && "text-foreground",
         className,
       )}
       {...props}

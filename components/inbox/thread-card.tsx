@@ -455,7 +455,7 @@ export function ThreadCard({
                     }}
                     className={cn(
                       "group/children relative flex h-4 items-center gap-0.5 rounded px-0.5 text-2xs font-medium text-muted-foreground",
-                      "hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                      "transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                       selectionMode && "pointer-events-none",
                       childNeedsAttention && "text-primary",
                     )}
