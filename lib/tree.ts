@@ -213,4 +213,49 @@ function threadTitle(thread: PluginSidebarThread): string {
   return thread.title?.trim() || thread.titleFallback?.trim() || "";
 }
 
+/** Where one thread sits, in the keys each level's disclosure is stored under. */
+export interface ThreadAncestors {
+  /** Null for the implicit Ungrouped bucket. */
+  readonly groupId: string | null;
+  readonly projectId: string;
+  readonly workspaceKey: string;
+  /** The family root this thread belongs to; the thread itself at the root. */
+  readonly rootId: string;
+}
+
+/**
+ * The branch of the tree that leads to one thread, or null when it is not
+ * drawn.
+ *
+ * This is what lets the sidebar put the user back where they were. bb restores
+ * the route, but a route naming a thread inside a collapsed project would leave
+ * the user staring at a closed row with no sign of the thread they just came
+ * from. Revealing the ancestors is the difference between restoring a URL and
+ * restoring a place.
+ */
+export function threadAncestors(
+  nodes: readonly GroupNode[],
+  threadId: string,
+): ThreadAncestors | null {
+  for (const group of nodes) {
+    for (const project of group.projects) {
+      for (const workspace of project.workspaces) {
+        for (const family of workspace.families) {
+          const holdsThread =
+            family.root.id === threadId ||
+            family.children.some((child) => child.id === threadId);
+          if (!holdsThread) continue;
+          return {
+            groupId: group.groupId,
+            projectId: project.project.id,
+            workspaceKey: workspace.ref.key,
+            rootId: family.root.id,
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export { sortByCreatedAtDescending };

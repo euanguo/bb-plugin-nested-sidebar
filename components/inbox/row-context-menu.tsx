@@ -1,59 +1,84 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import {
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
-  type PluginSidebarThread,
-} from "@get-bb/plugin-sdk/app";
+import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
+import { useThreadMenuActions } from "@/components/inbox/thread-menu-items";
 
 /**
  * This sidebar's own right-click menu.
  *
  * The plugin API ships no menu component on purpose, so a replaced sidebar
- * owns this surface. Every item below is one call on
- * `experimental_useSidebarThreadActions`, and the destructive one is
- * `requestDelete`, which opens BB's confirmation rather than deleting a
- * subtree silently.
+ * owns this surface. The items come from `useThreadMenuActions`, the same hook
+ * the row's own dropdown uses, so the two entrances to a thread can never
+ * drift apart. The destructive item is `requestDelete`, which opens BB's
+ * confirmation rather than deleting a subtree silently.
  */
 export function RowContextMenu({
   thread,
+  expanded = false,
+  childCount = 0,
+  canToggleChildren = false,
+  onToggleChildren,
+  onSettle,
+  onSnooze,
+  canPark = false,
+  onUnarchive,
+  splitAvailable = false,
   children,
 }: {
   thread: PluginSidebarThread;
+  /** Disclosure state, when the row has children to toggle. */
+  expanded?: boolean;
+  childCount?: number;
+  canToggleChildren?: boolean;
+  onToggleChildren?: () => void;
+  onSettle?: () => void;
+  onSnooze?: (snoozedUntil: number) => void;
+  canPark?: boolean;
+  /** Restore an archived thread; the plugin's lifecycle owns the inverse. */
+  onUnarchive?: () => void;
+  /** Whether the thread can open in a split pane. */
+  splitAvailable?: boolean;
   children: ReactNode;
 }) {
-  const actions = useSidebarThreadActions();
+  const { items, dialog } = useThreadMenuActions({
+    thread,
+    expanded,
+    childCount,
+    canToggleChildren,
+    onToggleChildren: onToggleChildren ?? (() => undefined),
+    onSettle: onSettle ?? (() => undefined),
+    onSnooze: onSnooze ?? (() => undefined),
+    canPark,
+    onUnarchive,
+    splitAvailable,
+  });
 
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content
-          aria-label="Thread actions"
-          className="z-50 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
-        >
-          <Item onSelect={() => actions.open(thread.id, { split: true })}>
-            Open in split
-          </Item>
-          <Separator />
-          <Item
-            onSelect={() => void actions.setRead(thread.id, thread.isUnread)}
+    <>
+      <ContextMenu.Root>
+        <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+        <ContextMenu.Portal>
+          <ContextMenu.Content
+            aria-label="Thread actions"
+            className="z-50 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
           >
-            {thread.isUnread ? "Mark read" : "Mark unread"}
-          </Item>
-          <Item
-            onSelect={() => void actions.setPinned(thread.id, !thread.isPinned)}
-          >
-            {thread.isPinned ? "Unpin" : "Pin"}
-          </Item>
-          <Separator />
-          <Item onSelect={() => actions.archive(thread.id)}>Archive</Item>
-          <Item destructive onSelect={() => actions.requestDelete(thread.id)}>
-            Delete
-          </Item>
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
-    </ContextMenu.Root>
+            {items.map((item) => (
+              <Fragment key={item.key}>
+                {item.separatorBefore ? <Separator /> : null}
+                <Item
+                  destructive={item.destructive ?? false}
+                  onSelect={item.onSelect}
+                >
+                  {item.label}
+                </Item>
+              </Fragment>
+            ))}
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
+      </ContextMenu.Root>
+      {dialog}
+    </>
   );
 }
 

@@ -1,10 +1,12 @@
 import { useId, useState } from "react";
+import { Modal } from "@/components/ui/modal";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
 } from "@get-bb/plugin-sdk/app";
 import { GroupIcon } from "@/components/ui/group-icon";
 import { cn } from "@/lib/utils";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu";
+import { copyWithAnnouncement } from "@/lib/clipboard";
 import { InfoCard, InfoRow } from "@/components/ui/hover-card";
 import {
   RowMenuTrigger,
@@ -12,11 +14,14 @@ import {
   useRowReveal,
 } from "@/components/inbox/row-actions";
 import { RollupJump } from "@/components/inbox/rollup-badge";
+import { useNestViewState } from "@/components/inbox/view-state-context";
+import { UNGROUPED_SCOPE_KEY } from "@/lib/view-state";
 import {
   ProjectNode as ProjectNodeView,
 } from "@/components/inbox/project-node";
 import type { GroupNode } from "@/lib/tree";
 import type { ProjectGroup } from "@/lib/groups";
+import { renameIntent } from "@/lib/groups";
 import type {
   TreeRowHandlers,
   WorkspaceLaunch,
@@ -70,7 +75,12 @@ export function GroupSection({
   };
 }) {
   const actions = useSidebarThreadActions();
-  const [expanded, setExpanded] = useState(true);
+  const viewState = useNestViewState();
+  /** Ungrouped is a real bucket, so it needs a key of its own to collapse under. */
+  const groupKey = node.groupId ?? UNGROUPED_SCOPE_KEY;
+  const expanded = !viewState.isGroupCollapsed(groupKey);
+  const setExpanded = (open: boolean) =>
+    viewState.setGroupCollapsed(groupKey, !open);
   const reveal = useRowReveal();
   const listId = useId();
   const threadCount = node.projects.reduce(
@@ -94,7 +104,7 @@ export function GroupSection({
           type="button"
           aria-expanded={expanded}
           aria-controls={listId}
-          onClick={() => setExpanded((open) => !open)}
+          onClick={() => setExpanded(!expanded)}
           title={node.name}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
@@ -114,7 +124,7 @@ export function GroupSection({
             actions.open(threadId);
             handlers.onNavigate();
           }}
-          onFallback={() => setExpanded((open) => !open)}
+            onFallback={() => setExpanded(!expanded)}
         />
         <GroupMenu
           name={node.name}
@@ -123,8 +133,10 @@ export function GroupSection({
           revealed={reveal.revealed}
           canMoveUp={groupId !== null && groups[0]?.id !== groupId}
           canMoveDown={groupId !== null && groups[groups.length - 1]?.id !== groupId}
-          onToggleExpanded={() => setExpanded((open) => !open)}
+          onToggleExpanded={() => setExpanded(!expanded)}
           onMove={(delta) => handlers.onGroupMove?.(groupId ?? "", delta)}
+          onRename={(name) => handlers.onRenameGroup(groupId ?? "", name)}
+          onRemove={() => handlers.onRemoveGroup(groupId ?? "")}
         />
       </RowActions>
     </div>
@@ -187,6 +199,8 @@ function GroupMenu({
   canMoveDown,
   onToggleExpanded,
   onMove,
+  onRename,
+  onRemove,
 }: {
   name: string;
   groupId: string | null;
@@ -196,8 +210,12 @@ function GroupMenu({
   canMoveDown: boolean;
   onToggleExpanded: () => void;
   onMove: (delta: -1 | 1) => void;
+  onRename: (name: string) => void;
+  onRemove: () => void;
 }) {
+  const [renaming, setRenaming] = useState(false);
   return (
+    <>
     <Menu
       label={`Actions for ${name}`}
       trigger={
@@ -218,6 +236,19 @@ function GroupMenu({
         <>
           <MenuSeparator />
           <MenuItem
+            icon="Edit"
+            label="Rename…"
+            onSelect={() => setRenaming(true)}
+          />
+          <MenuItem
+            icon="IdCard"
+            label="Copy group ID"
+            onSelect={() => {
+              void copyWithAnnouncement(groupId, "Group ID");
+            }}
+          />
+          <MenuSeparator />
+          <MenuItem
             icon="ChevronUp"
             label="Move up"
             disabled={!canMoveUp}
@@ -229,8 +260,105 @@ function GroupMenu({
             disabled={!canMoveDown}
             onSelect={() => onMove(1)}
           />
+          <MenuSeparator />
+          <MenuItem
+            icon="Trash"
+            label="Remove group"
+            destructive
+            onSelect={onRemove}
+          />
         </>
       )}
     </Menu>
+    {renaming && groupId !== null ? (
+      <RenameGroupDialog
+        groupId={groupId}
+        currentName={name}
+        onCancel={() => setRenaming(false)}
+        onRenamed={(next) => {
+          setRenaming(false);
+          onRename(next);
+        }}
+      />
+    ) : null}
+    </>
+  );
+}
+
+/**
+ * Rename a group from its own row menu.
+ *
+ * The same `renameIntent` rule the inline editor and the manager dialog use, so
+ * all three entry points agree on what counts as a rename: an empty or
+ * unchanged draft is not one.
+ */
+function RenameGroupDialog({
+  groupId,
+  currentName,
+  onCancel,
+  onRenamed,
+}: {
+  groupId: string;
+  currentName: string;
+  onCancel: () => void;
+  onRenamed: (name: string) => void;
+}) {
+  const [value, setValue] = useState(currentName);
+  const trimmed = value.trim();
+
+  const submit = () => {
+    const next = renameIntent(trimmed, currentName);
+    if (next === null) {
+      onCancel();
+      return;
+    }
+    onRenamed(next);
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onCancel}
+      icon="Edit"
+      title="Rename group"
+      width="26rem"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-7 rounded-md px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={trimmed.length === 0}
+            onClick={submit}
+            className="h-7 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
+          >
+            Rename
+          </button>
+        </div>
+      }
+    >
+      <label className="grid gap-1 text-2xs text-muted-foreground">
+        Group name
+        <input
+          autoFocus
+          value={value}
+          maxLength={60}
+          aria-label={`Rename ${currentName}`}
+          onChange={(event) => setValue(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              submit();
+            }
+          }}
+          className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+      </label>
+    </Modal>
   );
 }

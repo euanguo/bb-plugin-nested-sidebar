@@ -75,6 +75,22 @@ import {
 } from "@/lib/project-order";
 import { GroupTabs, type GroupTab } from "@/components/inbox/group-tabs";
 import { ProjectNode as ProjectNodeView } from "@/components/inbox/project-node";
+import {
+  NestViewStateProvider,
+  type NestViewStateApi,
+} from "@/components/inbox/view-state-context";
+import {
+  ALL_SCOPE_KEY,
+  UNGROUPED_SCOPE_KEY,
+  readViewState,
+  resolveGroupScope,
+  withId,
+  writeViewState,
+  type NestViewState,
+} from "@/lib/view-state";
+import {
+  COPY_ANNOUNCEMENT_EVENT,
+} from "@/lib/clipboard";
 
 import { GroupManagerDialog } from "@/components/inbox/group-manager-dialog";
 import { useGroups } from "@/hooks/use-groups";
@@ -84,7 +100,7 @@ import {
   type GroupAssignment,
   type GroupScope,
 } from "@/lib/groups";
-import { buildTree, searchTree } from "@/lib/tree";
+import { buildTree, searchTree, threadAncestors } from "@/lib/tree";
 import type { WorkspaceLaunch, TreeRowHandlers } from "@/components/inbox/tree-rows";
 
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
@@ -108,12 +124,31 @@ export function ThreadInbox({
   );
   const { overrides: projectColorOverrides } = useProjectColors();
   const groupsApi = useGroups();
-  const [groupScope, setGroupScope] = useState<GroupScope>({ kind: "all" });
+  /**
+   * The remembered view, read once at mount and written on every change.
+   *
+   * bb restores the route but nothing about the tree's shape, so without this
+   * a reload drops the user back on "All" with everything expanded. The whole
+   * record is one object on purpose: a single write keeps the scope, the
+   * filter, and every collapsed id consistent, so a crash between two writes
+   * cannot leave a filter from one session over a scope from another.
+   */
+  const [viewState, setViewState] = useState<NestViewState>(readViewState);
+  const groupScope: GroupScope = useMemo(
+    () =>
+      resolveGroupScope(
+        viewState.scope,
+        new Set(groupsApi.groups.map((group) => group.id)),
+      ),
+    [groupsApi.groups, viewState.scope],
+  );
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   /** The group a tab's pencil asked to rename, when the strip is the entry. */
   const sidebarActions = useSidebarThreadActions();
   const inboxRef = useRef<HTMLDivElement>(null);
   const selectionAnchorRootId = useRef<string | null>(null);
+  /** The thread whose ancestors have already been opened for this session. */
+  const revealedThreadRef = useRef<string | null>(null);
   const selectionHintId = useId();
   const [nowMinute, setNowMinute] = useState(() =>
     Math.floor(Date.now() / 60_000),
@@ -136,14 +171,29 @@ export function ThreadInbox({
     [hostThreads, settledThreads],
   );
   const lifecycle = useLifecycle(threads);
-  const [showSnoozed, setShowSnoozed] = useState(false);
-  const [showSettled, setShowSettled] = useState(false);
-  const [filterPreset, setFilterPreset] =
-    useState<ThreadFilterPreset>("all");
+  const showSnoozed = viewState.snoozedOpen;
+  const showSettled = viewState.settledOpen;
+  const filterPreset = viewState.filter;
   const [selectionMode, setSelectionMode] = useState(false);
   const [familyOrder, setFamilyOrder] = useState(readFamilyOrder);
   const [projectOrder, setProjectOrder] = useState(readProjectOrder);
   const [reorderAnnouncement, setReorderAnnouncement] = useState("");
+  /**
+   * Copy feedback from the row menus, which live too far below this surface to
+   * hand a callback through. The live region stays here, where it is announced
+   * once for the whole tree.
+   */
+  const [copyAnnouncement, setCopyAnnouncement] = useState("");
+  useEffect(() => {
+    const onAnnounce = (event: Event) => {
+      if (event instanceof CustomEvent && typeof event.detail === "string") {
+        setCopyAnnouncement(event.detail);
+      }
+    };
+    window.addEventListener(COPY_ANNOUNCEMENT_EVENT, onAnnounce);
+    return () =>
+      window.removeEventListener(COPY_ANNOUNCEMENT_EVENT, onAnnounce);
+  }, []);
   const [selectedRootIds, setSelectedRootIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -154,6 +204,92 @@ export function ThreadInbox({
   const [bulkOutcomes, setBulkOutcomes] = useState<
     Array<{ id: string; message: string; failed: boolean }>
   >([]);
+
+  /**
+   * One write path for the remembered view.
+   *
+   * The setter takes a patch rather than a whole state so callers never have to
+   * spread the record themselves — that is how a scope change would silently
+   * drop a collapse. The write is best-effort: a browser refusing storage
+   * leaves the session working, just without persistence.
+   */
+  const patchViewState = (patch: Partial<NestViewState>) => {
+    setViewState((current) => {
+      const next = { ...current, ...patch };
+      writeViewState(next);
+      return next;
+    });
+  };
+
+  const viewStateApi: NestViewStateApi = useMemo(
+    () => ({
+      isGroupCollapsed: (groupId) =>
+        viewState.collapsedGroups.includes(groupId),
+      setGroupCollapsed: (groupId, collapsed) =>
+        patchViewState({
+          collapsedGroups: withId(
+            viewState.collapsedGroups,
+            groupId,
+            collapsed,
+          ),
+        }),
+      isProjectCollapsed: (projectId) =>
+        viewState.collapsedProjects.includes(projectId),
+      setProjectCollapsed: (projectId, collapsed) =>
+        patchViewState({
+          collapsedProjects: withId(
+            viewState.collapsedProjects,
+            projectId,
+            collapsed,
+          ),
+        }),
+      isWorkspaceExpanded: (workspaceKey) =>
+        viewState.expandedWorkspaces.includes(workspaceKey),
+      setWorkspaceExpanded: (workspaceKey, expanded) =>
+        patchViewState({
+          expandedWorkspaces: withId(
+            viewState.expandedWorkspaces,
+            workspaceKey,
+            expanded,
+          ),
+        }),
+      familyOverride: (rootId) => {
+        if (viewState.collapsedFamilies.includes(rootId)) return false;
+        if (viewState.expandedFamilies.includes(rootId)) return true;
+        return null;
+      },
+      setFamilyOverride: (rootId, expanded) => {
+        if (expanded === null) {
+          patchViewState({
+            expandedFamilies: withId(viewState.expandedFamilies, rootId, false),
+            collapsedFamilies: withId(
+              viewState.collapsedFamilies,
+              rootId,
+              false,
+            ),
+          });
+          return;
+        }
+        patchViewState({
+          expandedFamilies: withId(viewState.expandedFamilies, rootId, expanded),
+          collapsedFamilies: withId(
+            viewState.collapsedFamilies,
+            rootId,
+            !expanded,
+          ),
+        });
+      },
+    }),
+    [viewState],
+  );
+
+  /** The scope key the strip highlights, derived back from the resolved scope. */
+  const activeScopeKey =
+    groupScope.kind === "all"
+      ? ALL_SCOPE_KEY
+      : groupScope.kind === "ungrouped"
+        ? UNGROUPED_SCOPE_KEY
+        : groupScope.groupId;
 
   const providerInfoById = useMemo<
     ReadonlyMap<string, ProviderGlyphInfo>
@@ -330,6 +466,81 @@ export function ThreadInbox({
     selectionMode,
     threads,
   ]);
+
+  /**
+   * Put the user back where they were.
+   *
+   * bb restores the route, so the open thread is known before this list draws.
+   * If that thread sits inside a collapsed group, project, workspace, or family
+   * — or under a scope tab that excludes it — the restored route would point at
+   * a row the user cannot see. Opening the path back to it is what turns a
+   * restored URL into a restored place.
+   *
+   * The update is idempotent: once every ancestor is open and the scope
+   * contains the thread, the functional update returns the same object and
+   * React skips the re-render, so this cannot loop against the tree it just
+   * changed.
+   */
+  useEffect(() => {
+    if (activeThreadId === null) return;
+    // Only when the open thread actually changes. Re-running on every tree
+    // change would immediately undo a collapse the user just made on the row
+    // they are working in, which is the opposite of remembering their view.
+    if (revealedThreadRef.current === activeThreadId) return;
+    revealedThreadRef.current = activeThreadId;
+    const ancestors = threadAncestors(treeNodes, activeThreadId);
+    if (ancestors === null) {
+      // The thread is not on screen yet — the host list is still loading, or
+      // the thread is filtered out. Leave the marker unset so the reveal runs
+      // again once the tree can answer.
+      revealedThreadRef.current = null;
+      return;
+    }
+    const groupKey = ancestors.groupId ?? UNGROUPED_SCOPE_KEY;
+    setViewState((current) => {
+      const validGroupIds = new Set(groupsApi.groups.map((group) => group.id));
+      const scoped = projectInScope(
+        resolveGroupScope(current.scope, validGroupIds),
+        groupsApi.assignment,
+        validGroupIds,
+        ancestors.projectId,
+      );
+      const collapsedGroups = current.collapsedGroups.filter(
+        (id) => id !== groupKey,
+      );
+      const collapsedProjects = current.collapsedProjects.filter(
+        (id) => id !== ancestors.projectId,
+      );
+      const expandedWorkspaces = current.expandedWorkspaces.includes(
+        ancestors.workspaceKey,
+      )
+        ? current.expandedWorkspaces
+        : [...current.expandedWorkspaces, ancestors.workspaceKey];
+      const collapsedFamilies = current.collapsedFamilies.filter(
+        (id) => id !== ancestors.rootId,
+      );
+      const scope = scoped ? current.scope : groupKey;
+      if (
+        scope === current.scope &&
+        collapsedGroups.length === current.collapsedGroups.length &&
+        collapsedProjects.length === current.collapsedProjects.length &&
+        expandedWorkspaces.length === current.expandedWorkspaces.length &&
+        collapsedFamilies.length === current.collapsedFamilies.length
+      ) {
+        return current;
+      }
+      const next = {
+        ...current,
+        scope,
+        collapsedGroups,
+        collapsedProjects,
+        expandedWorkspaces,
+        collapsedFamilies,
+      };
+      writeViewState(next);
+      return next;
+    });
+  }, [activeThreadId, groupsApi.assignment, groupsApi.groups, treeNodes]);
 
   useEffect(() => {
     setSelectedRootIds((current) => {
@@ -765,6 +976,18 @@ export function ThreadInbox({
   };
 
   /**
+   * Delete a group from its row. bb's own section menu removes without a
+   * second dialog because a section is not its contents; a group here releases
+   * its projects to Ungrouped rather than deleting them, so the same applies.
+   */
+  const removeGroup = (groupId: string) => {
+    void rpc
+      .call("deleteGroup", { groupId })
+      .then(() => groupsApi.refresh())
+      .catch((error) => setReorderAnnouncement(errorMessage(error)));
+  };
+
+  /**
    * Move a group one slot through the explicit order the store persists.
    * `reorderGroups` wants the whole list, so the new order is built here and
    * sent complete rather than as a delta.
@@ -819,11 +1042,14 @@ export function ThreadInbox({
     onProjectReorder: reorderProjectByDrag,
     onProjectKeyboardMove: reorderProjectByKeyboard,
     onGroupMove: moveGroup,
+    onRenameGroup: renameGroup,
+    onRemoveGroup: removeGroup,
     onRenameProject: renameProject,
     onRenameWorktree: renameWorktree,
   };
 
   return (
+    <NestViewStateProvider value={viewStateApi}>
     <div
       ref={inboxRef}
       data-nest-palette={preferences.palettePreset}
@@ -834,15 +1060,23 @@ export function ThreadInbox({
       <output className="sr-only" aria-live="polite" aria-atomic="true">
         {reorderAnnouncement}
       </output>
+      <output className="sr-only" aria-live="polite" aria-atomic="true">
+        {copyAnnouncement}
+      </output>
       <div className="shrink-0">
         <GroupTabs
           tabs={groupTabs}
-          activeKey={groupScopeKey(groupScope)}
-          onSelect={setGroupScope}
+          activeKey={activeScopeKey}
+          onSelect={(scope) =>
+            patchViewState({ scope: groupScopeKey(scope) })
+          }
           onManage={() => setGroupManagerOpen(true)}
         >
           {selectionMode ? null : (
-            <FilterMenu value={filterPreset} onChange={setFilterPreset} />
+            <FilterMenu
+              value={filterPreset}
+              onChange={(filter) => patchViewState({ filter })}
+            />
           )}
           <button
             type="button"
@@ -1002,7 +1236,9 @@ export function ThreadInbox({
                   label="Snoozed"
                   threads={snoozed}
                   expanded={showSnoozed}
-                  onToggle={() => setShowSnoozed((open) => !open)}
+                  onToggle={() =>
+                    patchViewState({ snoozedOpen: !showSnoozed })
+                  }
                   shelf="snoozed"
                   activeThreadId={activeThreadId}
                   lifecycle={lifecycle}
@@ -1014,7 +1250,9 @@ export function ThreadInbox({
                   threads={settled}
                   pendingCount={pendingSettled}
                   expanded={showSettled}
-                  onToggle={() => setShowSettled((open) => !open)}
+                  onToggle={() =>
+                    patchViewState({ settledOpen: !showSettled })
+                  }
                   shelf="settled"
                   activeThreadId={activeThreadId}
                   lifecycle={lifecycle}
@@ -1041,8 +1279,9 @@ export function ThreadInbox({
       onClose={() => setGroupManagerOpen(false)}
     />
 
-  </div>
-);
+    </div>
+    </NestViewStateProvider>
+  );
 }
 
 function ParkedShelf({

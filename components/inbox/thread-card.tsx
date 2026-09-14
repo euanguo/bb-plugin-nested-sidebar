@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useId,
   useMemo,
   useState,
@@ -41,6 +42,8 @@ import type { RootSelectionIntent } from "@/lib/thread-management";
 import type { NestPreferences } from "@/lib/preferences";
 import { relativeTimeLabel } from "@/lib/relative-time";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
+import { useNestViewState } from "@/components/inbox/view-state-context";
+import { useThreadMenuActions } from "@/components/inbox/thread-menu-items";
 
 export function ThreadCard({
   thread,
@@ -108,6 +111,14 @@ export function ThreadCard({
   const [expandedOverride, setExpandedOverride] = useState<boolean | null>(
     null,
   );
+  const viewState = useNestViewState();
+  /**
+   * The stored disclosure wins over the local one, and the preference is the
+   * fallback: a family the user has never touched keeps following the setting,
+   * while one they opened or closed by hand stays that way across reloads.
+   */
+  const storedOverride = viewState.familyOverride(thread.id);
+  const effectiveOverride = storedOverride ?? expandedOverride;
 
   const familyIsActive =
     thread.id === activeThreadId ||
@@ -121,9 +132,13 @@ export function ThreadCard({
   const expanded = resolveFamilyExpanded({
     childCount: childThreads.length,
     forceExpanded,
-    override: expandedOverride,
+    override: effectiveOverride,
     defaultExpanded: preferences.defaultChildrenExpanded,
   });
+  const toggleChildren = () => {
+    setExpandedOverride(!expanded);
+    viewState.setFamilyOverride(thread.id, !expanded);
+  };
   const waitingForAgents = familyWaitingForAgents(childThreads);
   const childProviderIds = useMemo(
     () => [...new Set(childThreads.map((child) => child.providerId))].slice(0, 2),
@@ -153,7 +168,17 @@ export function ThreadCard({
     showRootParkActions || showRootTime || showRootMenu || hasRootMetadata;
 
   return (
-    <RowContextMenu thread={thread}>
+    <RowContextMenu
+      thread={thread}
+      expanded={expanded}
+      childCount={childThreads.length}
+      canToggleChildren={childThreads.length > 0}
+      onToggleChildren={toggleChildren}
+      onSettle={onSettle}
+      onSnooze={onSnooze}
+      canPark={canPark}
+      splitAvailable={layout !== null}
+    >
       <li
         className="list-none"
         data-nest-family={thread.id}
@@ -403,8 +428,9 @@ export function ThreadCard({
                   expanded={expanded}
                   childCount={childThreads.length}
                   canToggleChildren={childThreads.length > 0}
+                  splitAvailable={layout !== null}
                   revealed={reveal.revealed}
-                  onToggleChildren={() => setExpandedOverride(!expanded)}
+                  onToggleChildren={toggleChildren}
                   onSettle={onSettle}
                   onSnooze={onSnooze}
                   canPark={canPark}
@@ -451,7 +477,7 @@ export function ThreadCard({
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      setExpandedOverride(!expanded);
+                      toggleChildren();
                     }}
                     className={cn(
                       "group/children relative flex h-4 items-center gap-0.5 rounded px-0.5 text-2xs font-medium text-muted-foreground",
@@ -550,6 +576,7 @@ function ThreadMenu({
   expanded,
   childCount,
   canToggleChildren,
+  splitAvailable,
   revealed,
   onToggleChildren,
   onSettle,
@@ -560,72 +587,49 @@ function ThreadMenu({
   expanded: boolean;
   childCount: number;
   canToggleChildren: boolean;
+  splitAvailable: boolean;
   revealed: boolean;
   onToggleChildren: () => void;
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
   canPark: boolean;
 }) {
-  const actions = useSidebarThreadActions();
-  const tomorrow = () => {
-    const preset = resolveSnoozePresets(new Date()).find(
-      (candidate) => candidate.id === "tomorrow",
-    );
-    if (preset !== undefined) onSnooze(preset.snoozedUntil);
-  };
+  const { items, dialog } = useThreadMenuActions({
+    thread,
+    expanded,
+    childCount,
+    canToggleChildren,
+    onToggleChildren,
+    onSettle,
+    onSnooze,
+    canPark,
+    splitAvailable,
+  });
   return (
-    <Menu
-      label={`Actions for ${threadDisplayTitle(thread)}`}
-      trigger={
-        <RowMenuTrigger
-          label={`Actions for ${threadDisplayTitle(thread)}`}
-          revealed={revealed}
-        />
-      }
-    >
-      {canToggleChildren ? (
-        <MenuItem
-          icon="ChevronDown"
-          label={`${expanded ? "Hide" : "Show"} ${childCount} child${childCount === 1 ? "" : "ren"}`}
-          onSelect={onToggleChildren}
-        />
-      ) : null}
-      <MenuItem
-        icon="ArrowRight"
-        label="Open in split"
-        onSelect={() => actions.open(thread.id, { split: true })}
-      />
-      <MenuSeparator />
-      <MenuItem
-        icon={thread.isUnread ? "Eye" : "CircleQuestion"}
-        label={thread.isUnread ? "Mark read" : "Mark unread"}
-        onSelect={() => void actions.setRead(thread.id, thread.isUnread)}
-      />
-      <MenuItem
-        icon="Pin"
-        label={thread.isPinned ? "Unpin" : "Pin"}
-        onSelect={() => void actions.setPinned(thread.id, !thread.isPinned)}
-      />
-      {canPark ? (
-        <>
-          <MenuSeparator />
-          <MenuItem icon="Clock" label="Snooze until tomorrow" onSelect={tomorrow} />
-          <MenuItem icon="Archive" label="Settle thread" onSelect={onSettle} />
-        </>
-      ) : null}
-      <MenuSeparator />
-      <MenuItem
-        icon="Archive"
-        label="Archive"
-        onSelect={() => actions.archive(thread.id)}
-      />
-      <MenuItem
-        icon="Trash"
-        label="Delete…"
-        destructive
-        onSelect={() => actions.requestDelete(thread.id)}
-      />
-    </Menu>
+    <>
+      <Menu
+        label={`Actions for ${threadDisplayTitle(thread)}`}
+        trigger={
+          <RowMenuTrigger
+            label={`Actions for ${threadDisplayTitle(thread)}`}
+            revealed={revealed}
+          />
+        }
+      >
+        {items.map((item) => (
+          <Fragment key={item.key}>
+            {item.separatorBefore ? <MenuSeparator /> : null}
+            <MenuItem
+              icon={item.icon}
+              label={item.label}
+              destructive={item.destructive ?? false}
+              onSelect={item.onSelect}
+            />
+          </Fragment>
+        ))}
+      </Menu>
+      {dialog}
+    </>
   );
 }
 
@@ -656,7 +660,7 @@ function ChildThreadRow({
   const showChildRail = showChildMenu || showChildTime || showChildProvider;
 
   return (
-    <RowContextMenu thread={thread}>
+    <RowContextMenu thread={thread} splitAvailable={layout !== null}>
       <li className="relative list-none py-px">
         <span
           aria-hidden
@@ -727,6 +731,7 @@ function ChildThreadRow({
                 expanded={false}
                 childCount={0}
                 canToggleChildren={false}
+                splitAvailable={layout !== null}
                 revealed={reveal.revealed}
                 onToggleChildren={() => undefined}
                 onSettle={() => undefined}

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { ThreadCard } from "@/components/inbox/thread-card";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { RollupJump } from "@/components/inbox/rollup-badge";
+import { useNestViewState } from "@/components/inbox/view-state-context";
 import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import {
   RowActionButton,
@@ -28,6 +29,8 @@ import type { RootSelectionIntent } from "@/lib/thread-management";
 import { BULK_PROTECTION_LABELS, bulkEligibility } from "@/lib/thread-management";
 import type { NestPreferences } from "@/lib/preferences";
 import { renameIntent } from "@/lib/groups";
+import { copyWithAnnouncement } from "@/lib/clipboard";
+import { Modal } from "@/components/ui/modal";
 
 export interface TreeRowHandlers {
   readonly providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
@@ -61,6 +64,10 @@ export interface TreeRowHandlers {
   ) => void;
   /** Move a group through the explicit order the store persists. */
   readonly onGroupMove?: (groupId: string, delta: -1 | 1) => void;
+  /** Rename a group from its row menu; the store publishes and the tree re-reads. */
+  readonly onRenameGroup: (groupId: string, name: string) => void;
+  /** Delete a group; its projects return to Ungrouped. */
+  readonly onRemoveGroup: (groupId: string) => void;
   /** Rename a project from a row menu; opens bb's own name field. */
   readonly onRenameProject: (projectId: string, name: string) => void;
   /** Rename a worktree's environment — the alias the row shows beside its branch. */
@@ -111,8 +118,14 @@ export function WorkspaceGroup({
   handlers: TreeRowHandlers;
 }) {
   const actions = useSidebarThreadActions();
-  const [expanded, setExpanded] = useState(false);
+  const viewState = useNestViewState();
+  // A workspace is collapsed by default — the level only earns its space when
+  // a project has several — so the store keeps the expanded ones instead.
+  const expanded = viewState.isWorkspaceExpanded(node.ref.key);
+  const setExpanded = (open: boolean) =>
+    viewState.setWorkspaceExpanded(node.ref.key, open);
   const [renaming, setRenaming] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const reveal = useRowReveal();
   const listId = useId();
   const renameInput = useRef<HTMLInputElement>(null);
@@ -168,7 +181,7 @@ export function WorkspaceGroup({
           type="button"
           aria-expanded={expanded}
           aria-controls={listId}
-          onClick={() => setExpanded((open) => !open)}
+          onClick={() => setExpanded(!expanded)}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           title={showBranch ? `${label} → ${branch}` : label}
         >
@@ -198,7 +211,7 @@ export function WorkspaceGroup({
               actions.open(threadId);
               handlers.onNavigate();
             }}
-            onFallback={() => setExpanded((open) => !open)}
+            onFallback={() => setExpanded(!expanded)}
           />
           {/* Starting a thread in *this* worktree is the reason to be here, so
               it keeps its own button beside the menu. */}
@@ -230,7 +243,7 @@ export function WorkspaceGroup({
             <MenuItem
               icon="ChevronDown"
               label={expanded ? "Collapse" : "Expand"}
-              onSelect={() => setExpanded((open) => !open)}
+              onSelect={() => setExpanded(!expanded)}
             />
             {node.ref.environmentId === null ? (
               <MenuItem
@@ -246,6 +259,30 @@ export function WorkspaceGroup({
                 onSelect={() => setRenaming(true)}
               />
             )}
+            {node.ref.environmentId === null ? null : (
+              <MenuItem
+                icon="IdCard"
+                label="Copy environment ID"
+                onSelect={() => {
+                  if (node.ref.environmentId !== null) {
+                    void copyWithAnnouncement(
+                      node.ref.environmentId,
+                      "Environment ID",
+                    );
+                  }
+                }}
+              />
+            )}
+            {threadCount === 0 ? null : (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  icon="Archive"
+                  label="Archive threads here"
+                  onSelect={() => setArchiving(true)}
+                />
+              </>
+            )}
           </Menu>
         </RowActions>
       </div>
@@ -253,6 +290,17 @@ export function WorkspaceGroup({
         label={label}
         rows={rows}
       />
+      {archiving ? (
+        <ArchiveWorkspaceDialog
+          label={label}
+          threadIds={node.families.map((family) => family.root.id)}
+          onCancel={() => setArchiving(false)}
+          onArchive={() => {
+            setArchiving(false);
+            for (const family of node.families) actions.archive(family.root.id);
+          }}
+        />
+      ) : null}
       {expanded ? (
         <ul id={listId} className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3">
           {node.families.map((family) => (
@@ -451,3 +499,57 @@ export function parseDraggedFamily(
 }
 
 export type { PluginSidebarThread, DragEvent };
+
+/**
+ * Confirm archiving every thread under one workspace.
+ *
+ * bb's own environment row archives its threads from the menu with no second
+ * step, but that row sits on a single environment the user just opened. Here
+ * the workspace level can hold several thread families, and the action reaches
+ * all of them at once, so it says how many before it does it.
+ */
+function ArchiveWorkspaceDialog({
+  label,
+  threadIds,
+  onCancel,
+  onArchive,
+}: {
+  label: string;
+  threadIds: readonly string[];
+  onCancel: () => void;
+  onArchive: () => void;
+}) {
+  return (
+    <Modal
+      open
+      onClose={onCancel}
+      icon="Archive"
+      title={`Archive threads in ${label}`}
+      width="28rem"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-7 rounded-md px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onArchive}
+            className="h-7 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            Archive
+          </button>
+        </div>
+      }
+    >
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        This archives {threadIds.length}{" "}
+        {threadIds.length === 1 ? "thread family" : "thread families"} and their
+        child agents. You can unarchive them from bb at any time.
+      </p>
+    </Modal>
+  );
+}

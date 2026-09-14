@@ -9,6 +9,8 @@ const groupRow = await read("group-section.tsx");
 const projectRow = await read("project-node.tsx");
 const treeRows = await read("tree-rows.tsx");
 const card = await read("thread-card.tsx");
+const threadMenu = await read("thread-menu-items.tsx");
+const contextMenu = await read("row-context-menu.tsx");
 const tabs = await read("group-tabs.tsx");
 const groupManager = await read("group-manager-dialog.tsx");
 
@@ -51,17 +53,40 @@ describe("row affordances across the four levels", () => {
     assert.match(treeRows, /label="New thread here"/);
   });
 
-  it("keeps rename reachable through the central group manager", () => {
+  it("keeps rename reachable from every level", () => {
     assert.match(projectRow, /label="Rename…"/);
     // A worktree renames the environment, which is what its alias is.
     assert.match(treeRows, /label="Rename worktree…"/);
-    assert.doesNotMatch(groupRow, /label="Rename…"/);
-    assert.match(card, /label="Open in split"/);
+    // The group row menu mirrors bb's own section menu, which offers rename
+    // and remove next to the disclosure toggle.
+    assert.match(groupRow, /label="Rename…"/);
+    assert.match(groupRow, /label="Remove group"/);
+    assert.match(card, /useThreadMenuActions/);
   });
 
-  it("keeps group editing in the central manager", () => {
+  it("keeps group editing available from the row and the manager", () => {
     assert.doesNotMatch(groupRow, /GroupNameField/);
-    assert.doesNotMatch(groupRow, /name="Edit"/);
+    assert.match(groupManager, /GroupNameEditor/);
+  });
+
+  it("gives the thread menu bb's full set on both surfaces", () => {
+    // bb's own thread menu offers open-in-split, copy link, read, pin, rename,
+    // archive, and delete. The id copy is additive; the rest must be present.
+    for (const label of [
+      "Open in split",
+      "Copy thread link",
+      "Copy thread ID",
+      "Rename…",
+      "Archive",
+      "Delete…",
+    ]) {
+      assert.match(threadMenu, new RegExp(`label: "${label}"`), label);
+    }
+    assert.match(threadMenu, /Mark read/);
+    assert.match(threadMenu, /Unpin/);
+    // One description, two surfaces: the dropdown and the right-click menu.
+    assert.match(card, /<RowContextMenu/);
+    assert.match(contextMenu, /useThreadMenuActions/);
   });
 
   it("tags each group tab with its own status so the strip can dot it", () => {
