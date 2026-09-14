@@ -851,6 +851,7 @@ export function ThreadInbox({
             }
             title={selectionMode ? "Thread selection active" : "Select threads"}
             disabled={selectionMode}
+            data-bb-icon-button=""
             onClick={() => {
               selectionAnchorRootId.current = null;
               setSelectionMode(true);
@@ -902,8 +903,9 @@ export function ThreadInbox({
               aria-label={`Delete ${selectedRootIds.size} selected thread families`}
               title="Delete selected permanently"
               disabled={selectedRootIds.size === 0 || bulkBusy}
+              data-bb-icon-button=""
               onClick={() => void previewSelectedDeletion()}
-              className="flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
+              className="flex size-6 items-center justify-center rounded-md text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
             >
               <Icon
                 name={bulkBusy ? "Loading" : "Trash"}
@@ -916,8 +918,9 @@ export function ThreadInbox({
               aria-label="Cancel thread selection"
               title="Cancel selection"
               disabled={bulkBusy}
+              data-bb-icon-button=""
               onClick={cancelSelection}
-              className="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
+              className="flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
             >
               <Icon name="CircleX" className="size-3.5" aria-hidden />
             </button>

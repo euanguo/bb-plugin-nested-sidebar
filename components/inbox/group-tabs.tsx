@@ -93,6 +93,7 @@ export function GroupTabs({
                 aria-selected={selected}
                 onClick={() => onSelect(tab.scope)}
                 title={tab.label}
+                data-bb-icon-button={overflowing ? "" : undefined}
                 className={cn(
                   overflowing
                     ? "relative flex size-6 items-center justify-center rounded-md px-1 text-2xs"
@@ -147,6 +148,7 @@ export function GroupTabs({
         aria-label="Manage groups"
         title="Manage groups"
         onClick={onManage}
+        data-bb-icon-button=""
         className={cn(
           "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground",
           "hover:bg-sidebar-accent hover:text-foreground",
