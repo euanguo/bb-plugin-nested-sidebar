@@ -65,7 +65,7 @@ describe("compact root card contract", () => {
   it("truncates long title and branch text without reserving hover actions", () => {
     // The title truncates at one size in both layouts, and the branch carries
     // its own size rather than inheriting the row's (which has none).
-    assert.match(rootSource, /"min-w-0 flex-1 truncate text-xs"/);
+    assert.match(rootSource, /"min-w-0 flex-1 truncate text-xs text-foreground"/);
     assert.match(rootSource, /text-xs/);
     assert.doesNotMatch(rootSource, /text-sm/);
     assert.match(
@@ -83,6 +83,22 @@ describe("compact root card contract", () => {
     assert.match(rootSource, /flex-col gap-0\.5/);
     assert.match(rootSource, /flex-row gap-1\.5/);
     assert.match(rootSource, /showRowDetails && reveal\.revealed/);
+  });
+
+  it("uses normal foreground text for thread titles", () => {
+    const rootTitleStart = rootSource.indexOf("title={threadDisplayTitle(thread)}");
+    const rootTitleEnd = rootSource.indexOf("</span>", rootTitleStart);
+    const rootTitle = rootSource.slice(rootTitleStart, rootTitleEnd);
+    const childTitleStart = childSource.indexOf("title={threadDisplayTitle(thread)}");
+    const childTitleEnd = childSource.indexOf("</span>", childTitleStart);
+    const childTitle = childSource.slice(childTitleStart, childTitleEnd);
+
+    assert.match(rootTitle, /text-foreground/);
+    assert.match(childTitle, /text-foreground/);
+    assert.doesNotMatch(rootTitle, /font-(medium|semibold|bold)/);
+    assert.doesNotMatch(childTitle, /font-(medium|semibold|bold)/);
+    assert.doesNotMatch(rootTitle, /text-muted-foreground/);
+    assert.doesNotMatch(childTitle, /text-muted-foreground/);
   });
 
   it("does not mount an empty trailing rail when a row has no tail content", () => {

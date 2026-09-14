@@ -334,11 +334,7 @@ export function ThreadCard({
                     // One type size for a title in both layouts: the row is
                     // denser than bb's own list, and a title that changes size
                     // when the layout changes reads as a different list.
-                    "min-w-0 flex-1 truncate text-xs",
-                    thread.isUnread ? "font-semibold" : "font-medium",
-                    !familyState.receded
-                      ? "text-foreground"
-                      : "text-muted-foreground/65",
+                    "min-w-0 flex-1 truncate text-xs text-foreground",
                   )}
                 >
                   {threadDisplayTitle(thread)}
@@ -707,10 +703,7 @@ function ChildThreadRow({
               <span
                 title={threadDisplayTitle(thread)}
                 className={cn(
-                  "min-w-0 flex-1 truncate text-xs",
-                  thread.isUnread
-                    ? "font-semibold text-foreground"
-                    : "text-muted-foreground",
+                  "min-w-0 flex-1 truncate text-xs text-foreground",
                 )}
               >
                 {threadDisplayTitle(thread)}
