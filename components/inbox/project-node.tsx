@@ -16,6 +16,7 @@ import {
   MenuSeparator,
   MenuSub,
 } from "@/components/ui/menu";
+import { copyWithAnnouncement } from "@/lib/clipboard";
 import {
   RowActionButton,
   RowActions,
@@ -24,6 +25,7 @@ import {
 } from "@/components/inbox/row-actions";
 import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import { RollupJump } from "@/components/inbox/rollup-badge";
+import { useNestViewState } from "@/components/inbox/view-state-context";
 import {
   FlatFamilies,
   WorkspaceGroup,
@@ -74,7 +76,10 @@ export function ProjectNode({
   };
 }) {
   const actions = useSidebarThreadActions();
-  const [expanded, setExpanded] = useState(true);
+  const viewState = useNestViewState();
+  const expanded = !viewState.isProjectCollapsed(node.project.id);
+  const setExpanded = (open: boolean) =>
+    viewState.setProjectCollapsed(node.project.id, !open);
   const reveal = useRowReveal();
   const listId = useId();
   const dragStarted = useRef(false);
@@ -121,7 +126,7 @@ export function ProjectNode({
               event.preventDefault();
               return;
             }
-            setExpanded((open) => !open);
+            setExpanded(!expanded);
           }}
           onDragStart={(event) => {
             if (!projectReorder.enabled) {
@@ -173,7 +178,7 @@ export function ProjectNode({
               actions.open(threadId);
               handlers.onNavigate();
             }}
-            onFallback={() => setExpanded((open) => !open)}
+            onFallback={() => setExpanded(!expanded)}
           />
           {/* Starting a thread is the common move, so it keeps its own button
               rather than hiding behind the menu. */}
@@ -191,7 +196,7 @@ export function ProjectNode({
             currentGroupId={currentGroupId}
             expanded={expanded}
             revealed={reveal.revealed}
-            onToggleExpanded={() => setExpanded((open) => !open)}
+            onToggleExpanded={() => setExpanded(!expanded)}
             onNewThread={() =>
               onNewThreadInProject(node.project.id, node.project.name)
             }
@@ -391,6 +396,13 @@ function ProjectMenu({
           icon="Settings"
           label="Project settings"
           onSelect={() => navigate.toProject(projectId)}
+        />
+        <MenuItem
+          icon="IdCard"
+          label="Copy project ID"
+          onSelect={() => {
+            void copyWithAnnouncement(projectId, "Project ID");
+          }}
         />
         <MenuSeparator />
         <MenuItem

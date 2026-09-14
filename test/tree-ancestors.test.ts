@@ -1,0 +1,92 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { threadAncestors, type GroupNode } from "../lib/tree.ts";
+import type { ThreadFamily } from "../lib/inbox.ts";
+import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
+
+function thread(id: string): PluginSidebarThread {
+  return {
+    id,
+    projectId: "proj_1",
+    title: id,
+    titleFallback: null,
+    parentThreadId: null,
+    sectionId: null,
+    originKind: null,
+    originPluginId: null,
+    providerId: "openai",
+    hasPendingInteraction: false,
+    activity: {
+      workflows: 0,
+      backgroundAgents: 0,
+      backgroundCommands: 0,
+      planMode: 0,
+      goals: 0,
+    },
+    indicator: "none",
+    indicatorLabel: null,
+    isUnread: false,
+    isPinned: false,
+    isArchived: false,
+    environment: null,
+    host: null,
+    createdAt: 0,
+    updatedAt: 0,
+    lastReadAt: null,
+    latestAttentionAt: 0,
+  };
+}
+
+function family(rootId: string, childIds: readonly string[]): ThreadFamily {
+  return { root: thread(rootId), children: childIds.map(thread) };
+}
+
+const nodes: GroupNode[] = [
+  {
+    groupId: "grp_a",
+    name: "Alpha",
+    icon: "LayerIcon",
+    rollup: null as never,
+    projects: [
+      {
+        project: { id: "proj_1", name: "One", isPersonal: false },
+        families: [family("thr_root", ["thr_child"])],
+        showWorkspaces: false,
+        rollup: null as never,
+        workspaces: [
+          {
+            ref: {
+              kind: "worktree",
+              key: "env_1",
+              label: "feature",
+              alias: null,
+              branch: "feature",
+              environmentId: "env_1",
+            },
+            families: [family("thr_root", ["thr_child"])],
+            rollup: null as never,
+          },
+        ],
+      },
+    ],
+  },
+];
+
+describe("threadAncestors", () => {
+  it("names every level a thread is nested under", () => {
+    assert.deepEqual(threadAncestors(nodes, "thr_child"), {
+      groupId: "grp_a",
+      projectId: "proj_1",
+      workspaceKey: "env_1",
+      rootId: "thr_root",
+    });
+  });
+
+  it("resolves a root thread to its own family", () => {
+    assert.equal(threadAncestors(nodes, "thr_root")?.rootId, "thr_root");
+  });
+
+  it("returns null for a thread the tree does not draw", () => {
+    assert.equal(threadAncestors(nodes, "thr_missing"), null);
+  });
+});

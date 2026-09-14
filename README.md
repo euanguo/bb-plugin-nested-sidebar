@@ -107,6 +107,10 @@ the folder button there to create, rename, reorder, and delete groups. Deleting 
 group only releases its projects back to Ungrouped -- it never removes a project
 or a thread.
 
+The folder button opens the manager; a group's own row menu carries the same
+decisions for the row you are looking at -- **Rename…**, **Copy group ID**,
+**Move up** / **Move down**, and **Remove group**.
+
 The strip is a **scope selector, not a second tree**: choosing a group narrows
 what the tree below draws, and projects are still the first level inside it.
 **Ungrouped** only appears once groups exist; with none, it would just duplicate
@@ -121,6 +125,9 @@ Worktree rows are labelled by branch (falling back to the environment name) and
 are collapsed by default, because with many worktrees the point is to make them
 navigable rather than to show them all at once. A child agent never splits from
 its parent: families hang under the workspace of their **root**.
+
+A worktree row's menu starts a thread there, renames the worktree, copies its
+environment ID, and archives every thread family under it.
 
 ### Status that bubbles up
 
@@ -154,6 +161,7 @@ everything you can do to a project:
 - **Move to group** -- a second-level menu, since membership is a rarer decision
   than acting on the project itself
 - Project settings
+- Copy project ID
 - Remove project… (asks you to type the name; deletion is recursive)
 
 ### Compact rows
@@ -227,11 +235,27 @@ a direct route back up.
 ### The rest
 
 - Collapsible project and agent groups.
-- Right-click for open in split, mark read/unread, pin, archive, delete.
+- Right-click for the full thread menu: open in split, copy thread link, copy
+  thread ID, mark read/unread, pin, rename, archive, delete.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
 - Status-icon reordering is separate from BB's card-to-split drag target and
   adds no extra row icon.
 - bb's search, its thread shortcuts, and modifier-click split-open all keep working.
+
+### It remembers where you were
+
+The tree's shape is persisted per browser, not just the route bb restores:
+
+- The selected group tab, the thread filter, and whether the Snoozed and
+  Settled shelves are open.
+- Which groups, projects, worktrees, and thread families you collapsed or
+  expanded by hand. Anything you have not touched still follows its default,
+  so a preference change reaches it.
+
+Opening a thread also reopens the path back to it. If the restored route points
+at a thread inside a collapsed group, project, worktree, or family — or under a
+group tab that excludes it — that branch is revealed, so a reload lands you on
+the thread itself rather than on a closed row.
 
 ## Switching from t3sidebar
 

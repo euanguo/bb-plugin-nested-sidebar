@@ -37,7 +37,7 @@ export function SlimRow({
   const title = threadDisplayTitle(thread);
 
   return (
-    <RowContextMenu thread={thread}>
+    <RowContextMenu thread={thread} onUnarchive={onRestore}>
       <li className="list-none">
         <div
           className={cn(
