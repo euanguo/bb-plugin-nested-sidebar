@@ -65,7 +65,7 @@ export function SlimRow({
           <span
             className={cn(
               "pointer-events-none relative min-w-0 flex-1 truncate",
-              isActive ? "text-foreground" : "text-muted-foreground/70",
+              "text-foreground",
               "group-hover/slim:text-foreground",
             )}
           >
