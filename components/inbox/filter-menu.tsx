@@ -35,8 +35,9 @@ export function FilterMenu({
         hideChevron
         aria-label={`Filter threads: ${label}`}
         title={`Filter: ${label}`}
+        data-bb-icon-button=""
         className={cn(
-          "size-6 border-0 p-0 text-muted-foreground shadow-none",
+          "size-6 rounded-md border-0 p-0 text-muted-foreground shadow-none",
           "justify-center hover:bg-sidebar-accent hover:text-foreground",
           "focus:ring-1 focus:ring-ring",
           value !== "all" && "bg-primary/10 text-primary",
