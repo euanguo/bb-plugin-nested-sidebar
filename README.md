@@ -141,7 +141,18 @@ navigable rather than to show them all at once. A child agent never splits from
 its parent: families hang under the workspace of their **root**.
 
 A worktree row's menu starts a thread there, renames the worktree, copies its
-environment ID, archives every thread family under it, and removes it.
+path, branch and environment ID, archives every thread family under it, and
+removes it.
+
+The project's own checkout leads the project and cannot be dragged: it is where
+the project is, and it is the one row that is always there. The worktrees
+beneath it can be: drag a worktree row to sort it, or focus one and press
+Alt+Up/Alt+Down. That arrangement is stored on the server like the project and
+family ones, and unlike them it has no sort lens over it — what is stored is
+always what is drawn — so a drag only waits for the same things they do: no
+search, the All filter, and no bulk selection. A worktree the arrangement has
+never seen, one just created or created on another machine, lands after the ones
+it knows, by label, rather than at the top.
 
 **Remove worktree…** is the one destructive thing the sidebar offers, so the
 dialog is built around the fact that a row stands for three things and only one

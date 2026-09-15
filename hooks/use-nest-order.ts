@@ -11,6 +11,8 @@ export interface NestOrderApi {
   readonly projects: ManualOrderMap;
   /** Project id -> root thread ids. */
   readonly families: ManualOrderMap;
+  /** Project id -> worktree keys, in the order they are drawn. */
+  readonly workspaces: ManualOrderMap;
   readonly ready: boolean;
   reorderProjects: (
     groupId: string,
@@ -20,15 +22,22 @@ export interface NestOrderApi {
     projectId: string,
     rootIds: readonly string[],
   ) => Promise<boolean>;
+  reorderWorkspaces: (
+    projectId: string,
+    workspaceKeys: readonly string[],
+  ) => Promise<boolean>;
   refresh: () => void;
 }
 
 function isEmptyOrder(
   projects: ManualOrderMap,
   families: ManualOrderMap,
+  workspaces: ManualOrderMap,
 ): boolean {
   return (
-    Object.keys(projects).length === 0 && Object.keys(families).length === 0
+    Object.keys(projects).length === 0 &&
+    Object.keys(families).length === 0 &&
+    Object.keys(workspaces).length === 0
   );
 }
 
@@ -44,6 +53,7 @@ export function useNestOrder(): NestOrderApi {
   const rpc = useRpc<typeof nestRpcContract>();
   const [projects, setProjects] = useState<ManualOrderMap>({});
   const [families, setFamilies] = useState<ManualOrderMap>({});
+  const [workspaces, setWorkspaces] = useState<ManualOrderMap>({});
   const [ready, setReady] = useState(false);
   const [nonce, setNonce] = useState(0);
 
@@ -55,7 +65,9 @@ export function useNestOrder(): NestOrderApi {
       try {
         const result = await rpc.call("listManualOrder", {});
         if (cancelled) return;
-        if (isEmptyOrder(result.projects, result.families)) {
+        if (
+          isEmptyOrder(result.projects, result.families, result.workspaces)
+        ) {
           const seeded = await seedLegacyOrder(rpc);
           if (cancelled) return;
           if (seeded !== null) {
@@ -67,6 +79,7 @@ export function useNestOrder(): NestOrderApi {
         }
         setProjects(result.projects);
         setFamilies(result.families);
+        setWorkspaces(result.workspaces);
         setReady(true);
       } catch {
         // A failed read must not blank the tree: everything still renders, in
@@ -103,6 +116,25 @@ export function useNestOrder(): NestOrderApi {
     [rpc, refresh],
   );
 
+  const reorderWorkspaces = useCallback(
+    async (projectId: string, workspaceKeys: readonly string[]) => {
+      const next = [...workspaceKeys];
+      setWorkspaces((current) => ({ ...current, [projectId]: next }));
+      try {
+        const result = await rpc.call("reorderWorkspaces", {
+          projectId,
+          workspaceKeys: next,
+        });
+        if (!result.ok) refresh();
+        return result.ok;
+      } catch (error) {
+        refresh();
+        throw error;
+      }
+    },
+    [rpc, refresh],
+  );
+
   const reorderFamilies = useCallback(
     async (projectId: string, rootIds: readonly string[]) => {
       const next = [...rootIds];
@@ -125,9 +157,11 @@ export function useNestOrder(): NestOrderApi {
   return {
     projects,
     families,
+    workspaces,
     ready,
     reorderProjects,
     reorderFamilies,
+    reorderWorkspaces,
     refresh,
   };
 }

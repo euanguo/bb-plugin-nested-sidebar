@@ -8,12 +8,9 @@ import {
   type ThreadFamily,
 } from "./inbox.ts";
 import { rollupThreads, mergeRollups, type StatusRollup } from "./rollup.ts";
-import {
-  shouldShowWorkspaces,
-  workspaceRefOf,
-  workspaceSortOrder,
-  type WorkspaceRef,
-} from "./workspace.ts";
+import { shouldShowWorkspaces, workspaceRefOf, type WorkspaceRef } from "./workspace.ts";
+import { orderWorkspaces } from "./workspace-order.ts";
+import type { ManualOrderMap } from "./manual-order.ts";
 import type { GroupIconName } from "./groups.ts";
 
 /** One workspace inside a project — a worktree, the checkout, or nothing. */
@@ -62,14 +59,22 @@ export function buildTree(input: {
   assignment: Readonly<Record<string, string>>;
   /** Rendered in this order; an id with no projects is dropped. */
   groupOrder: readonly { id: string; name: string; icon: GroupIconName }[];
+  /** Project id -> worktree keys, the arrangement the user made. */
+  workspaceOrder: ManualOrderMap;
   /** The icon the implicit Ungrouped section carries, chosen by the user. */
   ungroupedIcon: GroupIconName;
 }): GroupNode[] {
   const { projectGroups, now, assignment, groupOrder, ungroupedIcon } = input;
+  const { workspaceOrder } = input;
 
   const projectsByGroup = new Map<string, ProjectNode[]>();
   for (const group of projectGroups) {
-    const node = buildProjectNode(group.project, group.families, now);
+    const node = buildProjectNode(
+      group.project,
+      group.families,
+      now,
+      workspaceOrder[group.project.id],
+    );
     const groupId = assignment[group.project.id] ?? "__ungrouped__";
     const bucket = projectsByGroup.get(groupId) ?? [];
     bucket.push(node);
@@ -133,6 +138,7 @@ function buildProjectNode(
   project: PluginSidebarProject,
   families: readonly ThreadFamily[],
   now: number,
+  storedWorkspaceKeys: readonly string[] | undefined,
 ): ProjectNode {
   const allThreads = families.flatMap((family) => [
     family.root,
@@ -149,21 +155,17 @@ function buildProjectNode(
     workspacesById.set(ref.key, bucket);
   }
 
-  const workspaces: WorkspaceNode[] = [...workspacesById.values()]
-    .map(({ ref, families: bucket }) => ({
+  const workspaces: WorkspaceNode[] = orderWorkspaces(
+    [...workspacesById.values()].map(({ ref, families: bucket }) => ({
       ref,
       families: bucket,
       rollup: rollupThreads(
         bucket.flatMap((family) => [family.root, ...family.children]),
         now,
       ),
-    }))
-    .sort((left, right) => {
-      const kindOrder =
-        workspaceSortOrder(left.ref.kind) - workspaceSortOrder(right.ref.kind);
-      if (kindOrder !== 0) return kindOrder;
-      return left.ref.label.localeCompare(right.ref.label);
-    });
+    })),
+    storedWorkspaceKeys,
+  );
 
   return {
     project,

@@ -400,6 +400,7 @@ export const nestRpcContract = defineRpcContract({
     output: z.object({
       projects: orderMapSchema,
       families: orderMapSchema,
+      workspaces: orderMapSchema,
     }),
   },
   reorderProjects: {
@@ -413,6 +414,18 @@ export const nestRpcContract = defineRpcContract({
     input: z.object({
       projectId: orderScopeIdSchema,
       rootIds: orderItemsSchema,
+    }),
+    output: z.object({ ok: z.boolean() }),
+  },
+  /**
+   * The worktrees of one project. The checkout is deliberately not in the list:
+   * it leads the project under every arrangement, so there is nothing to store
+   * for it and nothing that could move it.
+   */
+  reorderWorkspaces: {
+    input: z.object({
+      projectId: orderScopeIdSchema,
+      workspaceKeys: orderItemsSchema,
     }),
     output: z.object({ ok: z.boolean() }),
   },
@@ -1359,6 +1372,11 @@ export default function plugin(bb: BbPluginApi) {
     },
     async reorderFamilies({ projectId, rootIds }) {
       const ok = orders.setFamilyOrder(projectId, rootIds);
+      if (ok) bb.realtime.publish(ORDER_CHANNEL, {});
+      return { ok };
+    },
+    async reorderWorkspaces({ projectId, workspaceKeys }) {
+      const ok = orders.setWorkspaceOrder(projectId, workspaceKeys);
       if (ok) bb.realtime.publish(ORDER_CHANNEL, {});
       return { ok };
     },

@@ -2,9 +2,10 @@
  * The manual arrangement, in the plugin's own database.
  *
  * One row per scope: a group holds its projects, a project holds its root
- * threads. The ordering the user arranged is data, not a per-browser view
- * preference, so it lives beside the groups — which also means it follows the
- * user across machines and survives clearing site data.
+ * threads, and a project also holds its worktrees. The ordering the user
+ * arranged is data, not a per-browser view preference, so it lives beside the
+ * groups — which also means it follows the user across machines and survives
+ * clearing site data.
  */
 
 import type Database from "better-sqlite3";
@@ -26,7 +27,7 @@ export const MANUAL_ORDER_MIGRATION = `CREATE TABLE IF NOT EXISTS manual_order (
   PRIMARY KEY (scope_kind, scope_id)
 )`;
 
-export type OrderScopeKind = "group" | "project";
+export type OrderScopeKind = "group" | "project" | "workspace";
 
 interface OrderRow {
   scope_id: unknown;
@@ -53,9 +54,11 @@ export function createOrderStore(db: Database.Database) {
   const list = (): {
     projects: Record<string, string[]>;
     families: Record<string, string[]>;
+    workspaces: Record<string, string[]>;
   } => ({
     projects: readMap("group"),
     families: readMap("project"),
+    workspaces: readMap("workspace"),
   });
 
   const write = (
@@ -86,6 +89,18 @@ export function createOrderStore(db: Database.Database) {
   ): boolean => {
     if (!validOrderId(projectId) || !validOrderItems(rootIds)) return false;
     write("project", projectId, rootIds);
+    return true;
+  };
+
+  /** The worktrees of one project, by workspace key. */
+  const setWorkspaceOrder = (
+    projectId: string,
+    workspaceKeys: readonly string[],
+  ): boolean => {
+    if (!validOrderId(projectId) || !validOrderItems(workspaceKeys)) {
+      return false;
+    }
+    write("workspace", projectId, workspaceKeys);
     return true;
   };
 
@@ -144,9 +159,11 @@ export function createOrderStore(db: Database.Database) {
     ).run(groupId);
   };
 
+  /** A deleted project takes both of its scopes with it. */
   const removeProject = (projectId: string): void => {
     db.prepare(
-      `DELETE FROM manual_order WHERE scope_kind = 'project' AND scope_id = ?`,
+      `DELETE FROM manual_order
+        WHERE scope_id = ? AND scope_kind IN ('project', 'workspace')`,
     ).run(projectId);
   };
 
@@ -155,6 +172,7 @@ export function createOrderStore(db: Database.Database) {
     seed,
     setFamilyOrder,
     setProjectOrder,
+    setWorkspaceOrder,
     removeGroup,
     removeProject,
   };
