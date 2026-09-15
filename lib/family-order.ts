@@ -11,6 +11,7 @@ export type FamilyOrderState = Readonly<Record<string, readonly string[]>>;
 export interface FamilyOrderStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 export type FamilyMoveResult =
@@ -78,6 +79,18 @@ export function writeFamilyOrder(
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Drop the legacy browser-local order once it has been migrated to the server. */
+export function clearFamilyOrder(
+  storage: FamilyOrderStorage | null = browserStorage(),
+): void {
+  if (storage === null) return;
+  try {
+    storage.removeItem?.(FAMILY_ORDER_STORAGE_KEY);
+  } catch {
+    // Nothing to do; the server copy is already authoritative.
   }
 }
 

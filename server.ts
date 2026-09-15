@@ -49,6 +49,21 @@ import {
   MAX_GROUP_NAME_LENGTH,
   validGroupIcon,
 } from "./lib/groups.ts";
+import {
+  MAX_ORDER_ID_LENGTH,
+  MAX_ORDER_ITEMS,
+  MAX_ORDER_SCOPES,
+  UNGROUPED_ORDER_SCOPE,
+} from "./lib/manual-order.ts";
+import { MANUAL_ORDER_MIGRATION, createOrderStore } from "./lib/order-store.ts";
+import {
+  PROJECT_SORT_MODES,
+  THREAD_SORT_MODES,
+} from "./lib/sort-modes.ts";
+import {
+  VIEW_PREFERENCE_MIGRATION,
+  createViewPreferenceStore,
+} from "./lib/view-preference-store.ts";
 import { nestMigrations } from "./lib/migrations.ts";
 import {
   MAX_PROJECT_COLOR_ROWS,
@@ -74,6 +89,8 @@ const migrations = [
   GROUP_MIGRATION,
   GROUP_ASSIGNMENT_MIGRATION,
   `ALTER TABLE project_groups ADD COLUMN icon TEXT NOT NULL DEFAULT 'Layer'`,
+  MANUAL_ORDER_MIGRATION,
+  VIEW_PREFERENCE_MIGRATION,
 ];
 
 export interface StoredLifecycleRow {
@@ -165,6 +182,24 @@ const selectedThreadIdsSchema = z
   .refine((ids) => new Set(ids).size === ids.length, {
     message: "A root thread can be selected only once.",
   });
+
+// Manual order: one scope's list of ids, bounded and duplicate-free. The store
+// validates again on write, so a schema here only has to reject what the wire
+// should never carry.
+const orderItemsSchema = z
+  .array(z.string().trim().min(1).max(MAX_ORDER_ID_LENGTH))
+  .max(MAX_ORDER_ITEMS)
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "An order cannot name the same item twice.",
+  });
+const orderScopeIdSchema = z.string().trim().min(1).max(MAX_ORDER_ID_LENGTH);
+const orderMapSchema = z
+  .record(orderScopeIdSchema, orderItemsSchema)
+  .refine((map) => Object.keys(map).length <= MAX_ORDER_SCOPES, {
+    message: "Too many order scopes.",
+  });
+const projectSortSchema = z.enum(PROJECT_SORT_MODES);
+const threadSortSchema = z.enum(THREAD_SORT_MODES);
 export const nestRpcContract = defineRpcContract({
   listProjectColors: {
     input: z.object({}),
@@ -233,6 +268,62 @@ export const nestRpcContract = defineRpcContract({
       groupIds: z.array(z.string().trim().min(1)).max(MAX_GROUPS),
     }),
     output: z.object({ ok: z.boolean() }),
+  },
+  // Manual order: the user's own arrangement, one list per scope. Separate
+  // from the sort mode, which is only a lens over it.
+  listManualOrder: {
+    input: z.object({}),
+    output: z.object({
+      projects: orderMapSchema,
+      families: orderMapSchema,
+    }),
+  },
+  reorderProjects: {
+    input: z.object({
+      groupId: orderScopeIdSchema,
+      projectIds: orderItemsSchema,
+    }),
+    output: z.object({ ok: z.boolean() }),
+  },
+  reorderFamilies: {
+    input: z.object({
+      projectId: orderScopeIdSchema,
+      rootIds: orderItemsSchema,
+    }),
+    output: z.object({ ok: z.boolean() }),
+  },
+  /**
+   * One-time migration from the browser-local order. The project ids arrive as
+   * the legacy global list and are split by group membership here, because
+   * this is the side that already knows the assignment.
+   */
+  seedManualOrder: {
+    input: z.object({
+      projectIds: z
+        .array(z.string().trim().min(1).max(MAX_ORDER_ID_LENGTH))
+        .max(MAX_ORDER_ITEMS * 4),
+      families: orderMapSchema,
+    }),
+    output: z.object({ ok: z.boolean() }),
+  },
+  // View preferences the sidebar writes itself, because the frontend cannot
+  // write `bb.settings`.
+  getViewPreferences: {
+    input: z.object({}),
+    output: z.object({
+      projectSort: projectSortSchema,
+      threadSort: threadSortSchema,
+    }),
+  },
+  setViewPreferences: {
+    input: z.object({
+      projectSort: projectSortSchema.optional(),
+      threadSort: threadSortSchema.optional(),
+    }),
+    output: z.object({
+      projectSort: projectSortSchema,
+      threadSort: threadSortSchema,
+    }),
   },
   /**
    * Rename a project. Thin on purpose: the name is bb's own field, and the
@@ -403,6 +494,8 @@ export const nestRpcContract = defineRpcContract({
 export const LIFECYCLE_CHANNEL = "lifecycle";
 export const PROJECT_COLOR_CHANNEL = "project-colors";
 export const GROUP_CHANNEL = "groups";
+export const ORDER_CHANNEL = "manual-order";
+export const VIEW_PREFERENCE_CHANNEL = "view-preferences";
 
 export default function plugin(bb: BbPluginApi) {
   bb.settings.define({
@@ -537,6 +630,8 @@ export default function plugin(bb: BbPluginApi) {
   bb.storage.migrate(db, nestMigrations(db, migrations));
   const projectColors = createProjectColorStore(db);
   const groups = createGroupStore(db);
+  const orders = createOrderStore(db);
+  const viewPreferences = createViewPreferenceStore(db);
 
   const readAll = (): StoredLifecycleRow[] =>
     (
@@ -825,7 +920,13 @@ export default function plugin(bb: BbPluginApi) {
     },
     async deleteGroup({ groupId }) {
       const ok = groups.remove(groupId);
-      if (ok) bb.realtime.publish(GROUP_CHANNEL, {});
+      if (ok) {
+        // The group's project order dies with it; its projects fall back to
+        // Ungrouped and are ordered there from scratch.
+        orders.removeGroup(groupId);
+        bb.realtime.publish(GROUP_CHANNEL, {});
+        bb.realtime.publish(ORDER_CHANNEL, {});
+      }
       return { ok };
     },
     async assignProjectToGroup({ projectId, groupId }) {
@@ -844,6 +945,39 @@ export default function plugin(bb: BbPluginApi) {
       const ok = groups.reorder(groupIds);
       if (ok) bb.realtime.publish(GROUP_CHANNEL, {});
       return { ok };
+    },
+    async listManualOrder() {
+      return orders.list();
+    },
+    async reorderProjects({ groupId, projectIds }) {
+      // A project order is scoped to a group; the ungrouped bucket is a real
+      // scope, but a group id that no longer exists would write a row nothing
+      // reads, so it is rejected rather than stored.
+      if (groupId !== UNGROUPED_ORDER_SCOPE) {
+        const known = new Set(groups.list().map((group) => group.id));
+        if (!known.has(groupId)) return { ok: false };
+      }
+      const ok = orders.setProjectOrder(groupId, projectIds);
+      if (ok) bb.realtime.publish(ORDER_CHANNEL, {});
+      return { ok };
+    },
+    async reorderFamilies({ projectId, rootIds }) {
+      const ok = orders.setFamilyOrder(projectId, rootIds);
+      if (ok) bb.realtime.publish(ORDER_CHANNEL, {});
+      return { ok };
+    },
+    async seedManualOrder({ projectIds, families }) {
+      const ok = orders.seed({ projectIds, families }, groups.assignments());
+      if (ok) bb.realtime.publish(ORDER_CHANNEL, {});
+      return { ok };
+    },
+    async getViewPreferences() {
+      return viewPreferences.get();
+    },
+    async setViewPreferences(patch) {
+      const next = viewPreferences.set(patch);
+      bb.realtime.publish(VIEW_PREFERENCE_CHANNEL, {});
+      return next;
     },
     async renameProject({ projectId, name }) {
       const project = await bb.sdk.projects.update({ projectId, name });
@@ -868,6 +1002,7 @@ export default function plugin(bb: BbPluginApi) {
       await bb.sdk.projects.delete({ projectId });
       // A deleted project must not leave a member row pointing at nothing.
       groups.assign(projectId, null);
+      orders.removeProject(projectId);
       bb.realtime.publish(GROUP_CHANNEL, {});
       return { ok: true };
     },

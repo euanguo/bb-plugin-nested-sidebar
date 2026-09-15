@@ -8,6 +8,7 @@ const SAFE_ID = /^[^\u0000-\u001F\u007F]+$/;
 export interface ProjectOrderStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 export type ProjectMoveResult =
@@ -46,6 +47,22 @@ export function writeProjectOrder(
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Drop the legacy browser-local order once it has been migrated to the server.
+ * Best-effort: a browser that refuses storage simply keeps a stale copy that
+ * nothing reads any more.
+ */
+export function clearProjectOrder(
+  storage: ProjectOrderStorage | null = browserStorage(),
+): void {
+  if (storage === null) return;
+  try {
+    storage.removeItem?.(PROJECT_ORDER_STORAGE_KEY);
+  } catch {
+    // Nothing to do; the server copy is already authoritative.
   }
 }
 

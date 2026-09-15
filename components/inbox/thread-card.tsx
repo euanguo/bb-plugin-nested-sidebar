@@ -202,7 +202,7 @@ export function ThreadCard({
             data-nest-root-card=""
             {...reveal.handlers}
             className={cn(
-              "group/root relative flex min-w-0 items-center gap-x-2 rounded-lg px-1.5",
+              "group/root @container relative flex min-w-0 items-center gap-x-2 rounded-lg px-1.5",
               preferences.rowLayout === "one-line" || detailsOnHover
                 ? "min-h-5"
                 : "min-h-10",
@@ -510,7 +510,7 @@ export function ThreadCard({
                     ) : null}
                     <span
                       role="tooltip"
-                      className="pointer-events-none absolute bottom-full right-0 z-30 mb-1 w-max max-w-56 translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/children:translate-y-0 group-hover/children:opacity-100 group-focus-visible/children:translate-y-0 group-focus-visible/children:opacity-100"
+                      className="pointer-events-none absolute bottom-full right-0 z-30 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/children:translate-y-0 group-hover/children:opacity-100 group-focus-visible/children:translate-y-0 group-focus-visible/children:opacity-100"
                     >
                       {childDisclosureLabel}
                     </span>
@@ -677,7 +677,7 @@ function ChildThreadRow({
         <div
           {...reveal.handlers}
           className={cn(
-            "group/child relative flex min-w-0 items-center gap-1.5 rounded-md px-1.5",
+            "group/child @container relative flex min-w-0 items-center gap-1.5 rounded-md px-1.5",
             preferences.density === "compact" ? "py-0.5" : "py-1",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
             !isActive && layout !== null && "bg-sidebar-accent/25",
@@ -799,7 +799,7 @@ function ThreadStateGlyph({
       {glyph}
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-0 z-30 mb-1 w-max max-w-56 translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/child-status:translate-y-0 group-hover/child-status:opacity-100 group-focus-visible/child-status:translate-y-0 group-focus-visible/child-status:opacity-100"
+        className="pointer-events-none absolute bottom-full left-0 z-30 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/child-status:translate-y-0 group-hover/child-status:opacity-100 group-focus-visible/child-status:translate-y-0 group-focus-visible/child-status:opacity-100"
       >
         {label}
       </span>

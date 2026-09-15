@@ -74,22 +74,22 @@ export function buildTree(input: {
     projectsByGroup.set(groupId, bucket);
   }
 
-  const byName = (left: ProjectNode, right: ProjectNode) =>
-    left.project.name.localeCompare(right.project.name);
-
+  // Projects keep the order they arrived in. That order is already the user's
+  // arrangement (or the chosen sort mode) computed per group before this call,
+  // so re-sorting here would silently discard the sidebar's manual ordering.
   const nodes: GroupNode[] = [];
   for (const group of groupOrder) {
     const bucket = projectsByGroup.get(group.id);
     if (bucket === undefined || bucket.length === 0) continue;
     nodes.push(
-      makeGroupNode(group.id, group.name, group.icon, [...bucket].sort(byName)),
+      makeGroupNode(group.id, group.name, group.icon, [...bucket]),
     );
   }
 
   const ungrouped = projectsByGroup.get("__ungrouped__");
   if (ungrouped !== undefined && ungrouped.length > 0) {
     nodes.push(
-      makeGroupNode(null, "Ungrouped", "FolderTree", [...ungrouped].sort(byName)),
+      makeGroupNode(null, "Ungrouped", "FolderTree", [...ungrouped]),
     );
   }
 
@@ -103,7 +103,7 @@ export function buildTree(input: {
     .flatMap(([, bucket]) => bucket);
   if (orphans.length > 0) {
     const existing = nodes.find((node) => node.groupId === null);
-    const combined = [...(existing?.projects ?? []), ...orphans].sort(byName);
+    const combined = [...(existing?.projects ?? []), ...orphans];
     const replacement = makeGroupNode(null, "Ungrouped", "FolderTree", combined);
     if (existing === undefined) nodes.push(replacement);
     else nodes[nodes.indexOf(existing)] = replacement;

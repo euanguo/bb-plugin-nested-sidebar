@@ -62,7 +62,7 @@ export function SubagentsChip({
           <div
             role="menu"
             aria-label="Child threads"
-            className="absolute right-0 top-9 z-50 w-80 overflow-hidden rounded-xl border border-border bg-popover shadow-lg"
+            className="absolute right-0 top-9 z-50 w-[min(20rem,calc(100cqw-3rem))] overflow-hidden rounded-xl border border-border bg-popover shadow-lg"
           >
             <div className="flex items-center gap-2 px-3 pb-1 pt-2.5">
               <span className="text-xs font-semibold">Children</span>

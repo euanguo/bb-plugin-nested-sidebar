@@ -33,7 +33,7 @@ export function PullRequestMetadata({
       </span>
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full right-0 z-30 mb-1 w-max max-w-56 translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/pr:translate-y-0 group-hover/pr:opacity-100 group-focus-visible/pr:translate-y-0 group-focus-visible/pr:opacity-100"
+        className="pointer-events-none absolute bottom-full right-0 z-30 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/pr:translate-y-0 group-hover/pr:opacity-100 group-focus-visible/pr:translate-y-0 group-focus-visible/pr:opacity-100"
       >
         <span className="block font-semibold">
           {presentation.label} · #{pullRequest.number}
