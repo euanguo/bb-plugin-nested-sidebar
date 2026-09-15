@@ -2,22 +2,20 @@ import { useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
-import type {
-  WorkspaceEnvironmentDescriptor,
-  WorkspaceProjectDescriptor,
-} from "@/lib/workspace";
+import { WORKSPACE_PATHS_SNAPSHOT_CODEC } from "@/lib/store-persistence";
+import type { WorkspacePaths } from "@/lib/workspace";
 
-export interface WorkspacePaths {
-  readonly environments: Readonly<Record<string, WorkspaceEnvironmentDescriptor>>;
-  readonly projects: Readonly<Record<string, WorkspaceProjectDescriptor>>;
-}
+export type { WorkspacePaths } from "@/lib/workspace";
 
 const EMPTY: WorkspacePaths = { environments: {}, projects: {} };
 
 // A path that is not there yet draws a row without its copy actions, so an
 // empty seed takes the actions away and puts them back a round trip later.
+// Persisted, because a path only changes when the environment does and a cold
+// start would otherwise hide every copy action until the read lands.
 const workspacePathsSnapshot = defineStoreSnapshot<WorkspacePaths>(
   "workspace-paths",
+  { persist: WORKSPACE_PATHS_SNAPSHOT_CODEC },
 );
 
 /**

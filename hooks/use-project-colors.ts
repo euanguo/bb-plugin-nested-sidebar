@@ -9,7 +9,11 @@ import { useRetryingRead } from "@/hooks/use-retrying-read";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
 
 // A color an override is not there yet reads as "none", so an empty seed drops
-// every custom color off its row until the read lands.
+// every custom color off its row until the read lands. Memory only, unlike the
+// stores that persist: these values are interpolated into CSS, so a durable
+// copy needs a decode at the strength of `warm-start.ts`'s logo guard — parsed
+// back to a base and re-serialized from the parse — and that is its own change
+// rather than a line added here.
 const projectColorsSnapshot =
   defineStoreSnapshot<ReadonlyMap<string, string>>("project-colors");
 

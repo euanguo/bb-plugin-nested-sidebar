@@ -17,7 +17,10 @@ import { defineStoreSnapshot } from "@/lib/store-snapshot";
 const EMPTY: readonly SettledThreadRow[] = [];
 
 // The shelf is the only place a settled thread is drawn, so an empty seed takes
-// every one of them off the sidebar until the read lands.
+// every one of them off the sidebar until the read lands. Memory only: a cold
+// start is already covered by the lifecycle warm start, which is what decides
+// the shelf's count, and a second durable copy of thread ids would only be one
+// more thing to keep in step with it.
 const settledThreadsSnapshot =
   defineStoreSnapshot<readonly SettledThreadRow[]>("settled-threads");
 

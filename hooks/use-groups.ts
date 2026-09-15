@@ -8,16 +8,18 @@ import {
   type ScopeIcons,
 } from "@/lib/group-scope-icons";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
-
-interface GroupsSnapshot {
-  readonly groups: readonly ProjectGroup[];
-  readonly assignment: GroupAssignment;
-  readonly icons: ScopeIcons;
-}
+import {
+  GROUPS_SNAPSHOT_CODEC,
+  type GroupsSnapshot,
+} from "@/lib/store-persistence";
 
 // Groups and their assignment decide which section every project is drawn in,
 // so an empty seed is not a missing row — it is every project in Ungrouped.
-const groupsSnapshot = defineStoreSnapshot<GroupsSnapshot>("groups");
+// Persisted, because a cold start has no memory to read and the flash is the
+// whole filing system arriving late rather than an order being briefly wrong.
+const groupsSnapshot = defineStoreSnapshot<GroupsSnapshot>("groups", {
+  persist: GROUPS_SNAPSHOT_CODEC,
+});
 
 export interface GroupsApi {
   readonly groups: readonly ProjectGroup[];
