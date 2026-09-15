@@ -154,20 +154,33 @@ from the same picker in the group manager. The icon is what the compact strip
 draws when it is too narrow for labels, which is the only place any tab's icon
 shows; the Ungrouped icon also titles the Ungrouped section in the tree.
 
-### Worktrees
+### Workspaces and worktrees
 
-The worktree level appears **only when a project's threads occupy more than one
-workspace**. A project whose threads all sit in one checkout stays flat, exactly
-like bb's own sidebar; the second worktree is what earns the level its space.
+The workspace level appears **only when a project's threads occupy more than one
+physical workspace**. A project whose threads all sit in one checkout stays flat,
+exactly like bb's own sidebar. Nest identifies a workspace by host, project, and
+normalized physical path. Environment IDs are records that point at a workspace;
+they are not the workspace's identity, so duplicate BB records for one directory
+are folded into one row.
+
+Rows explain what they represent: **Project checkout**, **Git worktree**,
+**External checkout**, **External directory**, or **Unresolved workspace**. The
+project checkout label is used only when both the path and host match the
+project's configured source. A directory from another checkout, a stale record,
+or incomplete metadata cannot silently become an unqualified main row; it is
+shown with its path and a diagnostic instead.
 Worktree rows carry the environment's display name — the alias you set from the
 row's own rename action — beside or under the branch it was typed against, and
 are collapsed by default, because with many worktrees the point is to make them
 navigable rather than to show them all at once. A child agent never splits from
 its parent: families hang under the workspace of their **root**.
 
-A worktree row's menu starts a thread there, renames the worktree, copies its
-path, branch and environment ID, archives every thread family under it, and
-removes it.
+A workspace row's menu starts a thread there, copies its path, branch and
+environment ID, and archives every thread family under it. It offers rename
+using workspace wording where the row is not a Git worktree. **Remove
+worktree…** is available only for a confirmed Git worktree, so an external
+checkout or the project's own checkout cannot accidentally enter the worktree
+deletion flow.
 
 The project's own checkout leads the project and cannot be dragged: it is where
 the project is, and it is the one row that is always there. The worktrees

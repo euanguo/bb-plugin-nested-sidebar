@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
+import type {
+  WorkspaceEnvironmentDescriptor,
+  WorkspaceProjectDescriptor,
+} from "@/lib/workspace";
 
 export interface WorkspacePaths {
-  /** environmentId -> the directory that environment works in. */
-  readonly environments: Readonly<Record<string, string>>;
-  /** projectId -> the project's own checkout. */
-  readonly projects: Readonly<Record<string, string>>;
+  readonly environments: Readonly<Record<string, WorkspaceEnvironmentDescriptor>>;
+  readonly projects: Readonly<Record<string, WorkspaceProjectDescriptor>>;
 }
 
 const EMPTY: WorkspacePaths = { environments: {}, projects: {} };

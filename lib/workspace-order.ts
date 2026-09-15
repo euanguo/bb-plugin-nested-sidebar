@@ -113,9 +113,20 @@ export function orderWorkspaces<T extends { readonly ref: WorkspaceRef }>(
     const kindOrder =
       workspaceSortOrder(left.ref.kind) - workspaceSortOrder(right.ref.kind);
     if (kindOrder !== 0) return kindOrder;
-    const leftRank = rank.get(left.ref.key) ?? unlisted;
-    const rightRank = rank.get(right.ref.key) ?? unlisted;
+    const leftRank = rankForWorkspace(left.ref, rank, unlisted);
+    const rightRank = rankForWorkspace(right.ref, rank, unlisted);
     if (leftRank !== rightRank) return leftRank - rightRank;
     return left.ref.label.localeCompare(right.ref.label);
   });
+}
+
+function rankForWorkspace(
+  ref: WorkspaceRef,
+  stored: ReadonlyMap<string, number>,
+  fallback: number,
+): number {
+  const ranks = [ref.key, ...ref.environmentIds]
+    .map((key) => stored.get(key))
+    .filter((rank): rank is number => rank !== undefined);
+  return ranks.length === 0 ? fallback : Math.min(...ranks);
 }

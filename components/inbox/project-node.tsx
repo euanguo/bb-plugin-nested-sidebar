@@ -91,7 +91,7 @@ export function ProjectNode({
     (total, family) => total + 1 + family.children.length,
     0,
   );
-  const projectPath = handlers.paths.projects[node.project.id] ?? null;
+  const projectPath = handlers.paths.projects[node.project.id]?.sourcePath ?? null;
 
   const workspaceHandlers: TreeRowHandlers = {
     ...handlers,
