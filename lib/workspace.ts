@@ -27,6 +27,16 @@ export interface WorkspaceProjectDescriptor {
   readonly sourceHostId: string | null;
 }
 
+/**
+ * Where every workspace and project actually is on disk, keyed by environment
+ * id and project id. This is the shape `listWorkspacePaths` returns, and the
+ * shape the snapshot codec has to recognise on the way back in.
+ */
+export interface WorkspacePaths {
+  readonly environments: Readonly<Record<string, WorkspaceEnvironmentDescriptor>>;
+  readonly projects: Readonly<Record<string, WorkspaceProjectDescriptor>>;
+}
+
 export interface WorkspaceRef {
   readonly kind: WorkspaceKind;
   readonly key: string;

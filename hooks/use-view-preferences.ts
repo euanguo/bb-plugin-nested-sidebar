@@ -9,16 +9,18 @@ import {
   type ThreadSortMode,
 } from "@/lib/sort-modes";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
-
-interface ViewPreferencesSnapshot {
-  readonly projectSort: ProjectSortMode;
-  readonly threadSort: ThreadSortMode;
-}
+import {
+  VIEW_PREFERENCES_SNAPSHOT_CODEC,
+  type ViewPreferencesSnapshot,
+} from "@/lib/store-persistence";
 
 // The default sort is a real order, not a neutral one, so an empty seed draws
-// the tree in an order the user did not choose until the read lands.
-const viewPreferencesSnapshot =
-  defineStoreSnapshot<ViewPreferencesSnapshot>("view-preferences");
+// the tree in an order the user did not choose until the read lands. Persisted:
+// the mode is a standing choice, and a cold start should honour it.
+const viewPreferencesSnapshot = defineStoreSnapshot<ViewPreferencesSnapshot>(
+  "view-preferences",
+  { persist: VIEW_PREFERENCES_SNAPSHOT_CODEC },
+);
 
 export interface ViewPreferencesApi {
   readonly projectSort: ProjectSortMode;

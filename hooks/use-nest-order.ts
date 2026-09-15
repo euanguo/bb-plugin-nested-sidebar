@@ -6,16 +6,18 @@ import type { ManualOrderMap } from "@/lib/manual-order";
 import { clearFamilyOrder, readFamilyOrder } from "@/lib/family-order";
 import { clearProjectOrder, readProjectOrder } from "@/lib/project-order";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
-
-interface OrderSnapshot {
-  readonly projects: ManualOrderMap;
-  readonly families: ManualOrderMap;
-  readonly workspaces: ManualOrderMap;
-}
+import {
+  ORDER_SNAPSHOT_CODEC,
+  type OrderSnapshot,
+} from "@/lib/store-persistence";
 
 // A manual arrangement that is not there yet reads as the default order, so an
-// empty seed re-sorts the whole tree until the read lands.
-const orderSnapshot = defineStoreSnapshot<OrderSnapshot>("manual-order");
+// empty seed re-sorts the whole tree until the read lands. Persisted, for the
+// same reason the groups are: an arrangement is the user's own work and a cold
+// start should not undo it on screen.
+const orderSnapshot = defineStoreSnapshot<OrderSnapshot>("manual-order", {
+  persist: ORDER_SNAPSHOT_CODEC,
+});
 
 export interface NestOrderApi {
   /** Group scope key -> project ids. */
