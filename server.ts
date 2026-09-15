@@ -46,6 +46,13 @@ import {
 import {
   SCOPE_ICON_SCOPES,
 } from "./lib/group-scope-icons.ts";
+import { worktreeDirectoryContract } from "./host/contract.ts";
+import {
+  planWorktreeRemoval,
+  removalSubmissionBlocker,
+  type WorktreeRemovalPlan,
+  type WorktreeSurvey,
+} from "./lib/worktree-removal.ts";
 import {
   GROUP_ASSIGNMENT_MIGRATION,
   GROUP_MIGRATION,
@@ -209,6 +216,58 @@ const orderMapSchema = z
   });
 const projectSortSchema = z.enum(PROJECT_SORT_MODES);
 const threadSortSchema = z.enum(THREAD_SORT_MODES);
+
+/**
+ * What bb can say about one workspace before anything is touched. The counts are
+ * what the removal dialog has to put in front of the user, so they travel with
+ * their names rather than as a tuple.
+ */
+const worktreeSurveySchema = z.object({
+  path: z.string(),
+  hostId: z.string(),
+  branch: z.string().nullable(),
+  /** bb created this directory, so removing it is bb's own cleanup. */
+  bbOwned: z.boolean(),
+  gitWorktree: z.boolean(),
+  directoryExists: z.boolean(),
+  mainRepoPath: z.string().nullable(),
+  changedFiles: z.number().int().nonnegative(),
+  untrackedFiles: z.number().int().nonnegative(),
+  aheadCommits: z.number().int().nonnegative(),
+  baseRef: z.string().nullable(),
+  threads: z.number().int().nonnegative(),
+  liveThreads: z.number().int().nonnegative(),
+  openTerminals: z.number().int().nonnegative(),
+});
+
+const removalWarningSchema = z.object({
+  kind: z.enum(["discard", "in-use", "external"]),
+  text: z.string(),
+});
+
+const worktreeRemovalPlanSchema = z.object({
+  threadCount: z.number().int().nonnegative(),
+  liveThreadCount: z.number().int().nonnegative(),
+  directory: z.object({
+    via: z.enum(["git", "delete"]),
+    warnings: z.array(removalWarningSchema),
+    refusal: z.string().nullable(),
+  }),
+});
+
+const removalBlockerSchema = z.enum(["unavailable", "acknowledgement"]);
+
+/**
+ * The plan as the wire carries it. The one difference is the warnings array:
+ * the plan hands it out read-only, and zod's inferred type is mutable.
+ */
+function worktreePlanWire(plan: WorktreeRemovalPlan) {
+  return {
+    ...plan,
+    directory: { ...plan.directory, warnings: [...plan.directory.warnings] },
+  };
+}
+
 export const nestRpcContract = defineRpcContract({
   listProjectColors: {
     input: z.object({}),
@@ -253,6 +312,33 @@ export const nestRpcContract = defineRpcContract({
       icon: groupIconSchema,
     }),
     output: z.object({ ok: z.boolean() }),
+  },
+  // Removing a worktree row. One operation, three things, and only the third is
+  // irreversible — so inspection answers with the numbers, and the plan says
+  // what the user still has to acknowledge before the directory may go.
+  inspectWorktree: {
+    input: z.object({ environmentId: z.string().trim().min(1) }),
+    output: z.object({
+      survey: worktreeSurveySchema,
+      plan: worktreeRemovalPlanSchema,
+    }),
+  },
+  removeWorktree: {
+    input: z.object({
+      environmentId: z.string().trim().min(1),
+      deleteDirectory: z.boolean(),
+      acknowledged: z.boolean(),
+    }),
+    output: z.object({
+      /** The reversible half: threads archived and the environment released. */
+      ok: z.boolean(),
+      /** Set when the server refused before doing anything. */
+      blocker: removalBlockerSchema.nullable(),
+      archivedThreads: z.boolean(),
+      environmentRemoved: z.boolean(),
+      directory: z.enum(["kept", "removed", "failed"]),
+      message: z.string().nullable(),
+    }),
   },
   createGroup: {
     input: z.object({
@@ -516,6 +602,28 @@ export const nestRpcContract = defineRpcContract({
 export const LIFECYCLE_CHANNEL = "lifecycle";
 export const PROJECT_COLOR_CHANNEL = "project-colors";
 export const GROUP_CHANNEL = "groups";
+
+/**
+ * A thread that is using its workspace right now. `idle` is deliberately absent:
+ * bb refuses to release an environment while a thread is still there at all, and
+ * that refusal is what the removal reports — this set is only for saying "one of
+ * them is running" in the dialog.
+ */
+const LIVE_THREAD_STATUSES: ReadonlySet<string> = new Set([
+  "starting",
+  "active",
+  "stopping",
+]);
+
+/** Deleting a large working copy is slow; the dialog waits, so allow for it. */
+const WORKTREE_REMOVAL_TIMEOUT_MS = 120_000;
+
+/** A terminal that has not exited, so the directory is still open in a shell. */
+const OPEN_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  "running",
+  "starting",
+  "disconnected",
+]);
 export const ORDER_CHANNEL = "manual-order";
 export const VIEW_PREFERENCE_CHANNEL = "view-preferences";
 
@@ -663,6 +771,9 @@ export default function plugin(bb: BbPluginApi) {
   const scopeIcons = createScopeIconStore(db);
   const orders = createOrderStore(db);
   const viewPreferences = createViewPreferenceStore(db);
+  const worktreeHost = bb.hosts.experimental_client({
+    contract: worktreeDirectoryContract,
+  });
 
   const readAll = (): StoredLifecycleRow[] =>
     (
@@ -918,6 +1029,142 @@ export default function plugin(bb: BbPluginApi) {
     },
   });
 
+  /** The workspace half of a status read, or null when there is nothing to read. */
+  const readWorktreeStatus = async (
+    environmentId: string,
+    baseRef: string | null,
+  ) => {
+    const read = async (mergeBaseBranch: string | null) => {
+      const status = await bb.sdk.environments.status({
+        environmentId,
+        ...(mergeBaseBranch === null ? {} : { mergeBaseBranch }),
+      });
+      return status.outcome === "available" ? status.workspace : null;
+    };
+    if (baseRef === null) return await read(null);
+    try {
+      return await read(baseRef);
+    } catch {
+      // A ref this checkout does not have is not a reason to fail the whole
+      // inspection: the counts that need it are simply left at zero.
+      return await read(null);
+    }
+  };
+
+  /**
+   * Everything the removal dialog has to say about one workspace.
+   *
+   * Read from bb rather than from the tree: the tree is narrowed by search, by
+   * the selected group, and by what is collapsed, so its counts are not the
+   * counts a removal would act on.
+   */
+  const surveyWorktree = async (
+    environmentId: string,
+  ): Promise<WorktreeSurvey> => {
+    const environment = await bb.sdk.environments.get({ environmentId });
+    const path = environment.path ?? "";
+    // The status call wants one exact ref: the merge-base override first, then
+    // the branch the environment came from, then the remote's default. Without
+    // one there is no "commits not on the base" to count, which is honest —
+    // bb cannot know either.
+    const baseRef =
+      environment.mergeBaseBranch ??
+      environment.baseBranch ??
+      (environment.defaultBranch === null
+        ? null
+        : `origin/${environment.defaultBranch}`);
+    const status = await readWorktreeStatus(environmentId, baseRef);
+    const [threads, terminals, project] = await Promise.all([
+      bb.sdk.threads.list({
+        environmentId,
+        archived: false,
+        includeHidden: true,
+      }),
+      bb.sdk.terminals.list({
+        scope: { kind: "environment", environmentId },
+      }),
+      bb.sdk.projects.get({ projectId: environment.projectId }),
+    ]);
+    const source =
+      project.sources.find((candidate) => candidate.isDefault) ??
+      project.sources[0];
+    const existence =
+      path.length === 0
+        ? {}
+        : (
+            await bb.sdk.hosts.pathsExist({
+              hostId: environment.hostId,
+              paths: [path],
+            })
+          ).existence;
+    const files = status?.workingTree.files ?? [];
+
+    return {
+      path,
+      hostId: environment.hostId,
+      branch: environment.branchName,
+      bbOwned: environment.managed,
+      gitWorktree: environment.isWorktree,
+      directoryExists: path.length > 0 && existence[path] === true,
+      mainRepoPath: source?.path ?? null,
+      changedFiles: files.filter((file) => file.status !== "??").length,
+      untrackedFiles: files.filter((file) => file.status === "??").length,
+      aheadCommits: status?.mergeBase?.aheadCount ?? 0,
+      baseRef: status?.mergeBase?.mergeBaseBranch ?? null,
+      threads: threads.length,
+      liveThreads: threads.filter((thread) =>
+        LIVE_THREAD_STATUSES.has(thread.status),
+      ).length,
+      openTerminals: terminals.sessions.filter((session) =>
+        OPEN_TERMINAL_STATUSES.has(session.status),
+      ).length,
+    };
+  };
+
+  /**
+   * Take the directory off disk.
+   *
+   * `git worktree remove` where the repository is known, because git keeps a
+   * record of the worktree inside it and takes that away too. Where git is not
+   * the answer — an unregistered directory, or a machine without git — a plain
+   * recursive delete, with git's reason carried back so the dialog can say what
+   * it could not clean up rather than implying it did.
+   */
+  const removeWorktreeDirectory = async (args: {
+    path: string;
+    hostId: string;
+    mainRepoPath: string | null;
+  }): Promise<{ directory: "removed" | "failed"; message: string | null }> => {
+    let note: string | null = null;
+    try {
+      if (args.mainRepoPath !== null) {
+        const attempt = await worktreeHost.call(
+          "removeWorktree",
+          { path: args.path, mainRepoPath: args.mainRepoPath },
+          { hostId: args.hostId, timeoutMs: WORKTREE_REMOVAL_TIMEOUT_MS },
+        );
+        if (attempt.status === "removed") {
+          return { directory: "removed", message: null };
+        }
+        if (attempt.status === "failed") {
+          return { directory: "failed", message: attempt.message };
+        }
+        note = attempt.reason;
+      }
+      await bb.sdk.files.remove({
+        hostId: args.hostId,
+        path: args.path,
+        recursive: true,
+      });
+      return { directory: "removed", message: note };
+    } catch (error) {
+      return {
+        directory: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
   bb.rpc.register(nestRpcContract, {
     async listProjectColors() {
       return { colors: projectColors.list() };
@@ -945,6 +1192,76 @@ export default function plugin(bb: BbPluginApi) {
       const ok = scopeIcons.set(scope, icon);
       if (ok) bb.realtime.publish(GROUP_CHANNEL, {});
       return { ok };
+    },
+    async inspectWorktree({ environmentId }) {
+      const survey = await surveyWorktree(environmentId);
+      return { survey, plan: worktreePlanWire(planWorktreeRemoval(survey)) };
+    },
+    async removeWorktree({ environmentId, deleteDirectory, acknowledged }) {
+      // Survey again rather than trusting the dialog's copy: the workspace can
+      // have changed since it was opened, and the acknowledgements the client
+      // sends are only meaningful against what bb can see now.
+      const survey = await surveyWorktree(environmentId);
+      const plan = planWorktreeRemoval(survey);
+      const blocker = removalSubmissionBlocker(plan, {
+        deleteDirectory,
+        acknowledged,
+      });
+      if (blocker !== null) {
+        return {
+          ok: false,
+          blocker,
+          archivedThreads: false,
+          environmentRemoved: false,
+          directory: "kept" as const,
+          message: null,
+        };
+      }
+
+      // The reversible half first, and in this order: archiving is what lets bb
+      // release the environment, and an environment bb refuses to release must
+      // stop the whole thing before anything on disk is touched.
+      await bb.sdk.environments.archiveThreads({ environmentId });
+
+      let environmentRemoved = false;
+      try {
+        await bb.sdk.environments.delete({ environmentId });
+        environmentRemoved = true;
+      } catch (error) {
+        return {
+          ok: false,
+          blocker: null,
+          archivedThreads: true,
+          environmentRemoved: false,
+          directory: "kept" as const,
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+
+      if (!deleteDirectory) {
+        return {
+          ok: true,
+          blocker: null,
+          archivedThreads: true,
+          environmentRemoved,
+          directory: "kept" as const,
+          message: null,
+        };
+      }
+
+      const removal = await removeWorktreeDirectory({
+        path: survey.path,
+        hostId: survey.hostId,
+        mainRepoPath: plan.directory.via === "git" ? survey.mainRepoPath : null,
+      });
+      return {
+        ok: true,
+        blocker: null,
+        archivedThreads: true,
+        environmentRemoved,
+        directory: removal.directory,
+        message: removal.message,
+      };
     },
     async createGroup({ name, icon }) {
       const created = groups.create(`grp_${randomUUID()}`, name, icon);

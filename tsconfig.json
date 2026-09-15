@@ -24,6 +24,8 @@
   "include": [
     "server.ts",
     "app.tsx",
+    "host.ts",
+    "host",
     "components",
     "hooks",
     "lib",

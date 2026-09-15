@@ -141,7 +141,29 @@ navigable rather than to show them all at once. A child agent never splits from
 its parent: families hang under the workspace of their **root**.
 
 A worktree row's menu starts a thread there, renames the worktree, copies its
-environment ID, and archives every thread family under it.
+environment ID, archives every thread family under it, and removes it.
+
+**Remove worktree…** is the one destructive thing the sidebar offers, so the
+dialog is built around the fact that a row stands for three things and only one
+of them is irreversible. Threads archive and bb's environment is released —
+both of which come back — and that half always runs. The directory on disk is a
+checkbox that starts off, and it stays off until an acknowledgement is ticked
+next to a list of exactly what would be lost: uncommitted files, untracked files,
+commits the branch has that its base does not, terminals still open here, and who
+else keeps a record of the directory. A box rather than the directory's name
+typed out, because a path is long enough to paste without reading. Nothing can be
+submitted while that is unmet, and the server takes its own reading of the
+workspace before it acts, so the dialog's copy of the numbers is never what the
+decision is made on.
+
+The directory itself is removed with `git worktree remove` on the machine that
+owns it, so the main repository does not keep a record of a directory that is
+gone; only when git refuses — the path was never a worktree of that repository,
+or git is not installed — does bb delete it plainly, and the dialog says which
+of the two happened. bb does not have to own a directory to remove it, but the
+dialog says when one came from somewhere else, because the tool that created it
+will go on listing it. The project's own checkout cannot be removed at all: the
+menu offers the reversible half there and nothing else.
 
 **Worktree row label** in Settings decides how the row spends its width: *Alias
 over branch* (the default) stacks the alias above the branch, *Alias + branch*
