@@ -4,7 +4,9 @@ import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import {
   workspaceRefOf,
   workspaceRowLabel,
+  workspaceSortOrder,
   shouldShowWorkspaces,
+  type WorkspaceKind,
   type WorkspaceLabelMode,
   type WorkspaceRef,
 } from "../lib/workspace.ts";
@@ -96,19 +98,108 @@ describe("workspaceRefOf labels", () => {
     assert.equal(ref.branch, null);
   });
 
-  it("does not treat a project checkout as a worktree", () => {
+  it("reads a project checkout with the branch it is standing on", () => {
     const ref = workspaceRefOf(
       thread({
         id: "env_6",
-        name: "checkout",
-        branchName: "main",
+        name: null,
+        branchName: "feat/ultimate-version",
         providerId: null,
         workspaceDisplayKind: "other",
       }),
     );
     assert.equal(ref.kind, "main");
+    assert.equal(ref.key, "env_6");
+    assert.equal(ref.label, "feat/ultimate-version");
     assert.equal(ref.alias, null);
+    assert.equal(ref.branch, "feat/ultimate-version");
+    assert.equal(ref.environmentId, "env_6");
+  });
+
+  it("lets a checkout be named, and the name leads", () => {
+    const ref = workspaceRefOf(
+      thread({
+        id: "env_checkout",
+        name: "主 checkout",
+        branchName: "master",
+        providerId: null,
+        workspaceDisplayKind: "other",
+      }),
+    );
+    assert.equal(ref.label, "主 checkout");
+    assert.equal(ref.alias, "主 checkout");
+    assert.equal(ref.branch, "master");
+  });
+
+  it("keeps a nameless checkout that bb cannot place against anything", () => {
+    const ref = workspaceRefOf(
+      thread({
+        id: "env_bare",
+        name: null,
+        branchName: null,
+        providerId: null,
+        workspaceDisplayKind: "other",
+      }),
+    );
+    assert.equal(ref.kind, "main");
+    assert.equal(ref.label, "main");
     assert.equal(ref.branch, null);
+  });
+
+  it("keeps two checkouts of one project as two rows", () => {
+    const first = workspaceRefOf(
+      thread({
+        id: "env_one",
+        name: null,
+        branchName: "master",
+        providerId: null,
+        workspaceDisplayKind: "other",
+      }),
+    );
+    const second = workspaceRefOf(
+      thread({
+        id: "env_two",
+        name: null,
+        branchName: "release/china",
+        providerId: null,
+        workspaceDisplayKind: "other",
+      }),
+    );
+    assert.notEqual(first.key, second.key);
+    assert.equal(shouldShowWorkspaces([first, second]), true);
+  });
+
+  it("keeps a personal workspace out of the project's places", () => {
+    // One scratch directory per thread, with no branch and no name to draw: a
+    // row each would be four identical empty rows instead of one flat list.
+    const personal = workspaceRefOf(
+      thread({
+        id: "env_scratch",
+        name: null,
+        branchName: null,
+        providerId: "personal-workspace",
+        workspaceDisplayKind: "other",
+      }),
+    );
+    assert.equal(personal.kind, "none");
+    assert.equal(personal.key, workspaceRefOf(thread(null)).key);
+    assert.equal(shouldShowWorkspaces([personal, personal]), false);
+  });
+
+  it("still draws a checkout that came through a provider", () => {
+    // The plugin's own path into a checkout is a provider too, so the provider
+    // id is not what makes a place: only the personal-workspace one is not.
+    const attached = workspaceRefOf(
+      thread({
+        id: "env_attached",
+        name: null,
+        branchName: "feat/ultimate-version",
+        providerId: "project-checkout",
+        workspaceDisplayKind: "managed-worktree",
+      }),
+    );
+    assert.equal(attached.kind, "worktree");
+    assert.equal(attached.branch, "feat/ultimate-version");
   });
 
   it("keeps a thread with no environment out of any worktree", () => {
@@ -228,5 +319,20 @@ describe("workspaceRowLabel", () => {
       assert.equal(drawn.detail, null, mode);
       assert.equal(drawn.stacked, false, mode);
     }
+  });
+});
+
+describe("workspace order", () => {
+  const ordered = (kinds: readonly WorkspaceKind[]) =>
+    [...kinds].sort((a, b) => workspaceSortOrder(a) - workspaceSortOrder(b));
+
+  it("leads with the project's own checkout", () => {
+    // Where the project is belongs at the top, above worktrees that come and go.
+    assert.deepEqual(ordered(["worktree", "none", "main"]), [
+      "main",
+      "worktree",
+      "none",
+    ]);
+    assert.deepEqual(ordered(["none", "worktree"]), ["worktree", "none"]);
   });
 });
