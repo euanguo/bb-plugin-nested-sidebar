@@ -33,6 +33,7 @@ import {
   ROW_DENSITY_OPTIONS,
   ROW_LAYOUT_OPTIONS,
   STATUS_DISPLAY_OPTIONS,
+  WORKTREE_LABEL_OPTIONS,
 } from "./lib/preferences.ts";
 import {
   PROJECT_COLOR_MIGRATION,
@@ -582,6 +583,14 @@ export default function plugin(bb: BbPluginApi) {
         "On hover moves branch, provider, PR, age, and child count into the row's hover card.",
       options: [...ROW_DETAIL_OPTIONS],
       default: "In the row",
+    },
+    worktreeLabel: {
+      type: "select",
+      label: "Worktree row label",
+      description:
+        "Alias over branch stacks the two lines; the other options keep the row on one line. A half a worktree does not have falls back to the other.",
+      options: [...WORKTREE_LABEL_OPTIONS],
+      default: "Alias over branch",
     },
     statusDisplay: {
       type: "select",
