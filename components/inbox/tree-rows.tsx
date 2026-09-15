@@ -25,6 +25,7 @@ import {
 import type { LifecycleApi } from "@/hooks/use-lifecycle";
 import type { ThreadFamily } from "@/lib/inbox";
 import type { WorkspaceNode } from "@/lib/tree";
+import { workspaceRowLabel } from "@/lib/workspace";
 import type { RootSelectionIntent } from "@/lib/thread-management";
 import { BULK_PROTECTION_LABELS, bulkEligibility } from "@/lib/thread-management";
 import type { NestPreferences } from "@/lib/preferences";
@@ -137,10 +138,14 @@ export function WorkspaceGroup({
   const label = node.ref.label;
   const branch = node.ref.branch;
   const alias = node.ref.alias;
-  // The alias leads the row and the branch follows it, so a mistyped alias is
-  // caught by the branch sitting right next to it rather than by opening
-  // something. When there is no alias the branch alone is the row.
-  const showBranch = alias !== null && branch !== null && alias !== branch;
+  // What the row draws is the setting's call, but the branch stays on the row
+  // in every mode that has it, so a mistyped alias is caught by the row rather
+  // than by opening something.
+  const rowLabel = workspaceRowLabel(
+    node.ref,
+    handlers.preferences.worktreeLabel,
+  );
+  const stacked = rowLabel.detail !== null && rowLabel.stacked;
 
   const rows: InfoCardRow[] = [
     { label: "Kind", value: node.ref.kind === "worktree" ? "Worktree" : node.ref.kind === "main" ? "Checkout" : "No workspace" },
@@ -159,7 +164,10 @@ export function WorkspaceGroup({
         trigger={
       <div
         {...reveal.handlers}
-        className="group/ws flex h-7 w-full items-center gap-1.5 rounded-md pl-4 pr-1.5 hover:bg-sidebar-accent/50"
+        className={cn(
+          "group/ws flex w-full items-center gap-1.5 rounded-md pl-4 pr-1.5 hover:bg-sidebar-accent/50",
+          stacked ? "min-h-11 py-1" : "h-7",
+        )}
       >
         {renaming && node.ref.environmentId !== null ? (
           <WorkspaceNameField
@@ -183,24 +191,45 @@ export function WorkspaceGroup({
           aria-controls={listId}
           onClick={() => setExpanded(!expanded)}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          title={showBranch ? `${label} → ${branch}` : label}
+          title={
+            rowLabel.detail !== null && !stacked
+              ? `${rowLabel.label} → ${rowLabel.detail}`
+              : rowLabel.label
+          }
         >
           <Icon
             name="GitBranch"
             className="size-3 shrink-0 text-muted-foreground/60"
             aria-hidden
           />
-          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <span
+            className={cn(
+              "flex min-w-0 flex-1",
+              stacked ? "flex-col items-start" : "items-baseline gap-1.5",
+            )}
+          >
             {/* The alias reads as a name, so it is not monospaced; the branch
                 is an identifier, so it is. */}
-            <span className="min-w-0 truncate text-xs text-foreground/80">
-              {label}
+            <span
+              className={cn(
+                "min-w-0 max-w-full truncate text-xs",
+                rowLabel.labelIsBranch
+                  ? "font-mono text-2xs text-muted-foreground/80"
+                  : "text-foreground/80",
+              )}
+            >
+              {rowLabel.label}
             </span>
-            {showBranch ? (
-              <span className="min-w-0 truncate font-mono text-2xs text-muted-foreground/70">
-                {branch}
+            {rowLabel.detail === null ? null : (
+              <span
+                className={cn(
+                  "min-w-0 max-w-full truncate font-mono text-2xs text-muted-foreground/80",
+                  stacked && "mt-0.5",
+                )}
+              >
+                {rowLabel.detail}
               </span>
-            ) : null}
+            )}
           </span>
         </button>
         )}
