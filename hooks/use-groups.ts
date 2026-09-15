@@ -7,6 +7,17 @@ import {
   DEFAULT_SCOPE_ICONS,
   type ScopeIcons,
 } from "@/lib/group-scope-icons";
+import { defineStoreSnapshot } from "@/lib/store-snapshot";
+
+interface GroupsSnapshot {
+  readonly groups: readonly ProjectGroup[];
+  readonly assignment: GroupAssignment;
+  readonly icons: ScopeIcons;
+}
+
+// Groups and their assignment decide which section every project is drawn in,
+// so an empty seed is not a missing row — it is every project in Ungrouped.
+const groupsSnapshot = defineStoreSnapshot<GroupsSnapshot>("groups");
 
 export interface GroupsApi {
   readonly groups: readonly ProjectGroup[];
@@ -24,10 +35,19 @@ export interface GroupsApi {
  */
 export function useGroups(): GroupsApi {
   const rpc = useRpc<typeof nestRpcContract>();
-  const [groups, setGroups] = useState<readonly ProjectGroup[]>([]);
-  const [assignment, setAssignment] = useState<GroupAssignment>({});
-  const [icons, setIcons] = useState<ScopeIcons>(DEFAULT_SCOPE_ICONS);
-  const [ready, setReady] = useState(false);
+  // The previous mount's answer, so returning from a route that unmounted the
+  // list paints the arrangement the user left rather than the ungrouped one.
+  const [seed] = useState(() => groupsSnapshot.read());
+  const [groups, setGroups] = useState<readonly ProjectGroup[]>(
+    seed?.groups ?? [],
+  );
+  const [assignment, setAssignment] = useState<GroupAssignment>(
+    seed?.assignment ?? {},
+  );
+  const [icons, setIcons] = useState<ScopeIcons>(
+    seed?.icons ?? DEFAULT_SCOPE_ICONS,
+  );
+  const [ready, setReady] = useState(seed !== undefined);
   const [nonce, setNonce] = useState(0);
 
   const refresh = useCallback(() => setNonce((value) => value + 1), []);
@@ -38,6 +58,11 @@ export function useGroups(): GroupsApi {
       .call("listGroups", {})
       .then((result) => {
         if (cancelled) return;
+        groupsSnapshot.write({
+          groups: result.groups,
+          assignment: result.assignment,
+          icons: result.icons,
+        });
         setGroups(result.groups);
         setAssignment(result.assignment);
         setIcons(result.icons);

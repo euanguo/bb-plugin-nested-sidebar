@@ -6,6 +6,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { useRetryingRead } from "@/hooks/use-retrying-read";
+import { defineStoreSnapshot } from "@/lib/store-snapshot";
+
+// A color an override is not there yet reads as "none", so an empty seed drops
+// every custom color off its row until the read lands.
+const projectColorsSnapshot =
+  defineStoreSnapshot<ReadonlyMap<string, string>>("project-colors");
 
 export interface ProjectColorsApi {
   overrides: ReadonlyMap<string, string>;
@@ -17,20 +23,25 @@ export interface ProjectColorsApi {
 
 export function useProjectColors(): ProjectColorsApi {
   const rpc = useRpc<typeof nestRpcContract>();
+  const [seed] = useState(() => projectColorsSnapshot.read());
   const [overrides, setOverrides] = useState<ReadonlyMap<string, string>>(
-    () => new Map(),
+    () => seed ?? new Map(),
   );
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(seed === undefined);
   const requestSequence = useRef(0);
 
   const read = useCallback(async () => {
     const sequence = ++requestSequence.current;
     const result = await rpc.call("listProjectColors", {});
     if (sequence !== requestSequence.current) return;
-    setOverrides(
-      new Map(result.colors.map(({ projectId, color }) => [projectId, color])),
+    const next = new Map(
+      result.colors.map(({ projectId, color }) => [projectId, color]),
     );
+    setOverrides(next);
     setIsLoading(false);
+    // After the state, not before it: what is on screen must never depend on
+    // the snapshot write having gone through.
+    projectColorsSnapshot.write(next);
   }, [rpc]);
   const refresh = useRetryingRead(read);
 

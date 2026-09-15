@@ -12,8 +12,14 @@ import {
   type SettledThreadRow,
 } from "@/lib/settled-threads";
 import { useRetryingRead } from "@/hooks/use-retrying-read";
+import { defineStoreSnapshot } from "@/lib/store-snapshot";
 
 const EMPTY: readonly SettledThreadRow[] = [];
+
+// The shelf is the only place a settled thread is drawn, so an empty seed takes
+// every one of them off the sidebar until the read lands.
+const settledThreadsSnapshot =
+  defineStoreSnapshot<readonly SettledThreadRow[]>("settled-threads");
 
 export interface SettledThreadsApi {
   /** Settled threads, cut to the window against the caller's clock. */
@@ -63,7 +69,9 @@ export interface SettledThreadsApi {
  */
 export function useSettledThreads(now: number): SettledThreadsApi {
   const rpc = useRpc<typeof nestRpcContract>();
-  const [rows, setRows] = useState<readonly SettledThreadRow[]>(EMPTY);
+  const [rows, setRows] = useState<readonly SettledThreadRow[]>(
+    () => settledThreadsSnapshot.read() ?? EMPTY,
+  );
   const [rowsPending, setRowsPending] = useState(true);
 
   // Responses can land out of order — a settle's publish racing a reconnect —
@@ -76,6 +84,9 @@ export function useSettledThreads(now: number): SettledThreadsApi {
       const result = await rpc.call("listSettledThreads", {});
       if (seq !== requestSeq.current) return;
       setRows(result.threads);
+      // After the state, not before it: what is on screen must never depend on
+      // the snapshot write having gone through.
+      settledThreadsSnapshot.write(result.threads);
       // Only here, and only for the newest request. Clearing this in a `finally`
       // would drop the flag on a rejection the retry chain is still working
       // through, and clearing it from a superseded read would drop it while the

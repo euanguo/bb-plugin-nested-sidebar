@@ -8,6 +8,17 @@ import {
   type ProjectSortMode,
   type ThreadSortMode,
 } from "@/lib/sort-modes";
+import { defineStoreSnapshot } from "@/lib/store-snapshot";
+
+interface ViewPreferencesSnapshot {
+  readonly projectSort: ProjectSortMode;
+  readonly threadSort: ThreadSortMode;
+}
+
+// The default sort is a real order, not a neutral one, so an empty seed draws
+// the tree in an order the user did not choose until the read lands.
+const viewPreferencesSnapshot =
+  defineStoreSnapshot<ViewPreferencesSnapshot>("view-preferences");
 
 export interface ViewPreferencesApi {
   readonly projectSort: ProjectSortMode;
@@ -25,11 +36,12 @@ export interface ViewPreferencesApi {
  */
 export function useViewPreferences(): ViewPreferencesApi {
   const rpc = useRpc<typeof nestRpcContract>();
+  const [seed] = useState(() => viewPreferencesSnapshot.read());
   const [projectSort, setProjectSortState] =
-    useState<ProjectSortMode>(DEFAULT_PROJECT_SORT);
+    useState<ProjectSortMode>(seed?.projectSort ?? DEFAULT_PROJECT_SORT);
   const [threadSort, setThreadSortState] =
-    useState<ThreadSortMode>(DEFAULT_THREAD_SORT);
-  const [ready, setReady] = useState(false);
+    useState<ThreadSortMode>(seed?.threadSort ?? DEFAULT_THREAD_SORT);
+  const [ready, setReady] = useState(seed !== undefined);
   const [nonce, setNonce] = useState(0);
 
   const refresh = useCallback(() => setNonce((value) => value + 1), []);
@@ -40,6 +52,10 @@ export function useViewPreferences(): ViewPreferencesApi {
       .call("getViewPreferences", {})
       .then((result) => {
         if (cancelled) return;
+        viewPreferencesSnapshot.write({
+          projectSort: result.projectSort,
+          threadSort: result.threadSort,
+        });
         setProjectSortState(result.projectSort);
         setThreadSortState(result.threadSort);
         setReady(true);

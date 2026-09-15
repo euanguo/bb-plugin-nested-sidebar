@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
+import { defineStoreSnapshot } from "@/lib/store-snapshot";
 
 export interface WorkspacePaths {
   /** environmentId -> the directory that environment works in. */
@@ -10,6 +11,12 @@ export interface WorkspacePaths {
 }
 
 const EMPTY: WorkspacePaths = { environments: {}, projects: {} };
+
+// A path that is not there yet draws a row without its copy actions, so an
+// empty seed takes the actions away and puts them back a round trip later.
+const workspacePathsSnapshot = defineStoreSnapshot<WorkspacePaths>(
+  "workspace-paths",
+);
 
 /**
  * Where every workspace and project actually is on disk.
@@ -21,14 +28,20 @@ const EMPTY: WorkspacePaths = { environments: {}, projects: {} };
  */
 export function useWorkspacePaths(): WorkspacePaths {
   const rpc = useRpc<typeof nestRpcContract>();
-  const [paths, setPaths] = useState<WorkspacePaths>(EMPTY);
+  const [paths, setPaths] = useState<WorkspacePaths>(
+    () => workspacePathsSnapshot.read() ?? EMPTY,
+  );
 
   useEffect(() => {
     let cancelled = false;
     rpc
       .call("listWorkspacePaths", {})
       .then((result) => {
-        if (!cancelled) setPaths(result);
+        if (cancelled) return;
+        setPaths(result);
+        // After the state, not before it: what is on screen must never depend
+        // on the snapshot write having gone through.
+        workspacePathsSnapshot.write(result);
       })
       .catch(() => {
         // Nothing to say: the rows still work, they just cannot be copied.
