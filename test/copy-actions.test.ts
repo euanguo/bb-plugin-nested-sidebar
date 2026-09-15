@@ -17,8 +17,8 @@ const server = await read("server.ts");
 describe("copying what a row points at", () => {
   it("reads the paths from the side that knows them", () => {
     assert.match(server, /listWorkspacePaths: \{/);
-    assert.match(server, /environments: z\.record\(z\.string\(\), z\.string\(\)\)/);
-    assert.match(server, /projects: z\.record\(z\.string\(\), z\.string\(\)\)/);
+    assert.match(server, /environments: z\.record\(/);
+    assert.match(server, /projects: z\.record\(/);
     assert.match(server, /async listWorkspacePaths\(\)/);
   });
 
@@ -41,7 +41,7 @@ describe("copying what a row points at", () => {
     // branch of it, and the two should not look the same.
     assert.match(
       treeRows,
-      /name=\{node\.ref\.kind === "main" \? "Folder" : "GitBranch"\}/,
+      /name=\{node\.ref\.kind === "project-checkout" \? "Folder"/,
     );
   });
 });

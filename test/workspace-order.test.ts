@@ -16,14 +16,18 @@ const ref = (
   key,
   label,
   alias: null,
-  branch: kind === "worktree" ? label : null,
+  branch: kind === "git-worktree" ? label : null,
   environmentId: key,
+  environmentIds: [key],
+  path: "/repo/" + key,
+  hostId: "host_fixture",
+  diagnostic: null,
 });
 
-const checkout = ref("env_checkout", "main", "feat/ultimate-version");
-const alpha = ref("env_alpha", "worktree", "alpha");
-const beta = ref("env_beta", "worktree", "beta");
-const gamma = ref("env_gamma", "worktree", "gamma");
+const checkout = ref("env_checkout", "project-checkout", "feat/ultimate-version");
+const alpha = ref("env_alpha", "git-worktree", "alpha");
+const beta = ref("env_beta", "git-worktree", "beta");
+const gamma = ref("env_gamma", "git-worktree", "gamma");
 
 const keysOf = (workspaces: readonly { ref: WorkspaceRef }[]) =>
   workspaces.map((workspace) => workspace.ref.key);

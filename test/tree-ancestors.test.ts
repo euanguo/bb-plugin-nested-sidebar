@@ -56,12 +56,16 @@ const nodes: GroupNode[] = [
         workspaces: [
           {
             ref: {
-              kind: "worktree",
+              kind: "git-worktree",
               key: "env_1",
               label: "feature",
               alias: null,
               branch: "feature",
               environmentId: "env_1",
+              environmentIds: ["env_1"],
+              path: "/repo/worktree",
+              hostId: "host_fixture",
+              diagnostic: null,
             },
             families: [family("thr_root", ["thr_child"])],
             rollup: null as never,

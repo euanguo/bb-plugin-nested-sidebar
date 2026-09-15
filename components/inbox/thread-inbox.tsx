@@ -459,6 +459,8 @@ export function ThreadInbox({
         })),
         ungroupedIcon: groupsApi.icons.ungrouped,
         workspaceOrder: order.workspaces,
+        environments: new Map(Object.entries(paths.environments)),
+        projects: new Map(Object.entries(paths.projects)),
       }),
       searchQuery,
     );
@@ -781,7 +783,11 @@ export function ThreadInbox({
     if (group === undefined) return null;
     const refs = new Map<string, WorkspaceRef>();
     for (const family of group.families) {
-      const ref = workspaceRefOf(family.root);
+      const ref = workspaceRefOf(
+        family.root,
+        new Map(Object.entries(paths.environments)),
+        new Map(Object.entries(paths.projects)),
+      );
       if (!refs.has(ref.key)) refs.set(ref.key, ref);
     }
     return {
@@ -789,7 +795,7 @@ export function ThreadInbox({
         [...refs.values()].map((ref) => ({ ref })),
         order.workspaces[projectId],
       )
-        .filter((workspace) => workspace.ref.kind === "worktree")
+        .filter((workspace) => workspace.ref.kind === "git-worktree")
         .map((workspace) => workspace.ref.key),
     };
   };

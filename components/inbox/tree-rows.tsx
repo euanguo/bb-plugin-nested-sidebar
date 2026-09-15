@@ -34,6 +34,18 @@ import { renameIntent } from "@/lib/groups";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import { Modal } from "@/components/ui/modal";
 import { RemoveWorktreeDialog } from "@/components/inbox/remove-worktree-dialog";
+import type { WorkspaceKind } from "@/lib/workspace";
+
+function workspaceKindLabel(kind: WorkspaceKind): string {
+  switch (kind) {
+    case "project-checkout": return "Project checkout";
+    case "git-worktree": return "Git worktree";
+    case "external-checkout": return "External checkout";
+    case "external-directory": return "External directory";
+    case "unresolved": return "Unresolved workspace";
+    case "personal": return "Personal workspace";
+  }
+}
 
 export interface TreeRowHandlers {
   readonly providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
@@ -145,7 +157,9 @@ export function WorkspaceGroup({
   const viewState = useNestViewState();
   // A workspace is collapsed by default — the level only earns its space when
   // a project has several — so the store keeps the expanded ones instead.
-  const expanded = viewState.isWorkspaceExpanded(node.ref.key);
+  const expanded =
+    viewState.isWorkspaceExpanded(node.ref.key) ||
+    node.ref.environmentIds.some((id) => viewState.isWorkspaceExpanded(id));
   const setExpanded = (open: boolean) =>
     viewState.setWorkspaceExpanded(node.ref.key, open);
   const [renaming, setRenaming] = useState(false);
@@ -155,7 +169,9 @@ export function WorkspaceGroup({
   // The checkout leads every project and has nothing to arrange, so only a
   // worktree row is a handle.
   const canReorder =
-    handlers.workspaceReorderEnabled && node.ref.kind === "worktree";
+    handlers.workspaceReorderEnabled && node.ref.kind === "git-worktree";
+  const canRename = node.ref.environmentId !== null && node.ref.kind !== "unresolved";
+  const canRemove = node.ref.environmentId !== null && node.ref.kind === "git-worktree";
   const reveal = useRowReveal();
   const listId = useId();
   const renameInput = useRef<HTMLInputElement>(null);
@@ -178,10 +194,10 @@ export function WorkspaceGroup({
   const path =
     node.ref.environmentId === null
       ? null
-      : (handlers.paths.environments[node.ref.environmentId] ?? null);
+      : (handlers.paths.environments[node.ref.environmentId]?.path ?? node.ref.path);
 
   const rows: InfoCardRow[] = [
-    { label: "Kind", value: node.ref.kind === "worktree" ? "Worktree" : node.ref.kind === "main" ? "Checkout" : "No workspace" },
+    { label: "Kind", value: workspaceKindLabel(node.ref.kind) },
     { label: "Project", value: projectName },
     { label: "Threads", value: String(threadCount) },
     ...(alias === null ? [] : [{ label: "Alias", value: alias }]),
@@ -189,6 +205,8 @@ export function WorkspaceGroup({
     ...(node.ref.environmentId === null
       ? []
       : [{ label: "Env ID", value: node.ref.environmentId, mono: true, copy: true }]),
+    ...(path === null ? [] : [{ label: "Path", value: path, mono: true, copy: true }]),
+    ...(node.ref.diagnostic === null ? [] : [{ label: "Diagnostic", value: node.ref.diagnostic }]),
   ];
 
   return (
@@ -301,7 +319,7 @@ export function WorkspaceGroup({
           {/* A worktree is a branch of the project; a checkout is the project's
               own directory, and the two are worth telling apart at a glance. */}
           <Icon
-            name={node.ref.kind === "main" ? "Folder" : "GitBranch"}
+            name={node.ref.kind === "project-checkout" ? "Folder" : node.ref.kind === "git-worktree" ? "GitBranch" : "Folder"}
             className="size-3 shrink-0 text-muted-foreground/60"
             aria-hidden
           />
@@ -377,17 +395,17 @@ export function WorkspaceGroup({
               label={expanded ? "Collapse" : "Expand"}
               onSelect={() => setExpanded(!expanded)}
             />
-            {node.ref.environmentId === null ? (
+            {!canRename ? (
               <MenuItem
                 icon="Edit"
-                label="Rename worktree…"
+                label="Rename workspace…"
                 disabled
                 onSelect={() => undefined}
               />
             ) : (
               <MenuItem
                 icon="Edit"
-                label="Rename worktree…"
+                label={node.ref.kind === "git-worktree" ? "Rename worktree…" : "Rename workspace…"}
                 onSelect={() => setRenaming(true)}
               />
             )}
@@ -439,8 +457,8 @@ export function WorkspaceGroup({
             <MenuItem
               icon="Trash"
               label="Remove worktree…"
-              disabled={node.ref.environmentId === null}
-              onSelect={() => setRemoving(true)}
+              disabled={!canRemove}
+              onSelect={() => { if (canRemove) setRemoving(true); }}
             />
           </Menu>
         </RowActions>

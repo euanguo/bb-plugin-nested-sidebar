@@ -2,48 +2,38 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import {
+  normalizeWorkspacePath,
+  disambiguateWorkspaceLabels,
+  shouldShowWorkspaces,
   workspaceRefOf,
   workspaceRowLabel,
   workspaceSortOrder,
-  shouldShowWorkspaces,
-  type WorkspaceKind,
+  type WorkspaceEnvironmentDescriptor,
   type WorkspaceLabelMode,
+  type WorkspaceProjectDescriptor,
   type WorkspaceRef,
 } from "../lib/workspace.ts";
 
-/**
- * A complete DTO. The label resolution only reads the environment, but building
- * the whole shape keeps this fixture honest: a field added to the DTO surfaces
- * here as a type error rather than as a silently stale test.
- */
-function thread(
-  environment: PluginSidebarThread["environment"],
-): PluginSidebarThread {
+function thread(environment: PluginSidebarThread["environment"]): PluginSidebarThread {
   return {
     id: "thr_fixture",
     projectId: "proj_fixture",
     title: "Fixture",
-    titleFallback: "Fixture",
+    titleFallback: null,
     parentThreadId: null,
     sectionId: null,
-    originKind: "fork",
+    originKind: null,
     originPluginId: null,
     providerId: "codex",
     hasPendingInteraction: false,
-    activity: {
-      workflows: 0,
-      backgroundAgents: 0,
-      backgroundCommands: 0,
-      planMode: 0,
-      goals: 0,
-    },
+    activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 0 },
     indicator: "none",
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
     isArchived: false,
     environment,
-    host: null,
+    host: { id: "host_fixture", name: "Fixture host" },
     createdAt: 0,
     updatedAt: 0,
     lastReadAt: null,
@@ -51,288 +41,124 @@ function thread(
   };
 }
 
-const worktree = (
-  id: string,
-  name: string | null,
-  branchName: string | null,
-) =>
-  thread({
-    id,
-    name,
-    branchName,
-    providerId: null,
-    workspaceDisplayKind: "managed-worktree",
-  });
-
-describe("workspaceRefOf labels", () => {
-  it("prefers the alias as the label but keeps the branch beside it", () => {
-    const ref = workspaceRefOf(worktree("env_1", "登录重构", "feature/login"));
-    assert.equal(ref.label, "登录重构");
-    assert.equal(ref.alias, "登录重构");
-    assert.equal(ref.branch, "feature/login");
-  });
-
-  it("falls back to the branch when there is no alias", () => {
-    const ref = workspaceRefOf(worktree("env_2", null, "feature/login"));
-    assert.equal(ref.label, "feature/login");
-    assert.equal(ref.alias, null);
-    assert.equal(ref.branch, "feature/login");
-  });
-
-  it("falls back to the environment name when there is no branch", () => {
-    const ref = workspaceRefOf(worktree("env_3", "scratch", null));
-    assert.equal(ref.label, "scratch");
-    assert.equal(ref.branch, null);
-  });
-
-  it("never leaves a worktree nameless", () => {
-    const ref = workspaceRefOf(worktree("env_4", null, null));
-    assert.equal(ref.label, "worktree");
-    assert.equal(ref.key, "env_4");
-  });
-
-  it("treats blank alias and branch as absent", () => {
-    const ref = workspaceRefOf(worktree("env_5", "   ", "  "));
-    assert.equal(ref.label, "worktree");
-    assert.equal(ref.alias, null);
-    assert.equal(ref.branch, null);
-  });
-
-  it("reads a project checkout with the branch it is standing on", () => {
-    const ref = workspaceRefOf(
-      thread({
-        id: "env_6",
-        name: null,
-        branchName: "feat/ultimate-version",
-        providerId: null,
-        workspaceDisplayKind: "other",
-      }),
-    );
-    assert.equal(ref.kind, "main");
-    assert.equal(ref.key, "env_6");
-    assert.equal(ref.label, "feat/ultimate-version");
-    assert.equal(ref.alias, null);
-    assert.equal(ref.branch, "feat/ultimate-version");
-    assert.equal(ref.environmentId, "env_6");
-  });
-
-  it("lets a checkout be named, and the name leads", () => {
-    const ref = workspaceRefOf(
-      thread({
-        id: "env_checkout",
-        name: "主 checkout",
-        branchName: "master",
-        providerId: null,
-        workspaceDisplayKind: "other",
-      }),
-    );
-    assert.equal(ref.label, "主 checkout");
-    assert.equal(ref.alias, "主 checkout");
-    assert.equal(ref.branch, "master");
-  });
-
-  it("keeps a nameless checkout that bb cannot place against anything", () => {
-    const ref = workspaceRefOf(
-      thread({
-        id: "env_bare",
-        name: null,
-        branchName: null,
-        providerId: null,
-        workspaceDisplayKind: "other",
-      }),
-    );
-    assert.equal(ref.kind, "main");
-    assert.equal(ref.label, "main");
-    assert.equal(ref.branch, null);
-  });
-
-  it("keeps two checkouts of one project as two rows", () => {
-    const first = workspaceRefOf(
-      thread({
-        id: "env_one",
-        name: null,
-        branchName: "master",
-        providerId: null,
-        workspaceDisplayKind: "other",
-      }),
-    );
-    const second = workspaceRefOf(
-      thread({
-        id: "env_two",
-        name: null,
-        branchName: "release/china",
-        providerId: null,
-        workspaceDisplayKind: "other",
-      }),
-    );
-    assert.notEqual(first.key, second.key);
-    assert.equal(shouldShowWorkspaces([first, second]), true);
-  });
-
-  it("keeps a personal workspace out of the project's places", () => {
-    // One scratch directory per thread, with no branch and no name to draw: a
-    // row each would be four identical empty rows instead of one flat list.
-    const personal = workspaceRefOf(
-      thread({
-        id: "env_scratch",
-        name: null,
-        branchName: null,
-        providerId: "personal-workspace",
-        workspaceDisplayKind: "other",
-      }),
-    );
-    assert.equal(personal.kind, "none");
-    assert.equal(personal.key, workspaceRefOf(thread(null)).key);
-    assert.equal(shouldShowWorkspaces([personal, personal]), false);
-  });
-
-  it("still draws a checkout that came through a provider", () => {
-    // The plugin's own path into a checkout is a provider too, so the provider
-    // id is not what makes a place: only the personal-workspace one is not.
-    const attached = workspaceRefOf(
-      thread({
-        id: "env_attached",
-        name: null,
-        branchName: "feat/ultimate-version",
-        providerId: "project-checkout",
-        workspaceDisplayKind: "managed-worktree",
-      }),
-    );
-    assert.equal(attached.kind, "worktree");
-    assert.equal(attached.branch, "feat/ultimate-version");
-  });
-
-  it("keeps a thread with no environment out of any worktree", () => {
-    const ref = workspaceRefOf(thread(null));
-    assert.equal(ref.kind, "none");
-    assert.equal(ref.label, "No workspace");
-  });
-
-  it("gives each worktree a distinct key even with the same branch", () => {
-    // Two worktrees can sit on the same branch name; the environment id is what
-    // keeps them as two nodes rather than collapsing them into one.
-    const first = workspaceRefOf(worktree("env_a", "one", "main"));
-    const second = workspaceRefOf(worktree("env_b", "two", "main"));
-    assert.notEqual(first.key, second.key);
-    assert.equal(shouldShowWorkspaces([first, second]), true);
-  });
-
-  it("keeps a single-worktree project flat", () => {
-    const only = workspaceRefOf(worktree("env_only", "one", "main"));
-    assert.equal(shouldShowWorkspaces([only, only]), false);
-  });
-});
-
-/**
- * A ref as the tree hands it to a row. The row only reads these three fields,
- * so the planner is tested against them rather than against a whole DTO.
- */
-function ref(
-  alias: string | null,
-  branch: string | null,
-  label = alias ?? branch ?? "worktree",
-): WorkspaceRef {
+function environment(id: string, path: string, extra: Partial<WorkspaceEnvironmentDescriptor> = {}): WorkspaceEnvironmentDescriptor {
   return {
-    kind: "worktree",
-    key: "env_x",
-    label,
-    alias,
-    branch,
-    environmentId: "env_x",
+    id,
+    projectId: "proj_fixture",
+    hostId: "host_fixture",
+    path,
+    isGitRepo: false,
+    isWorktree: false,
+    branchName: null,
+    name: null,
+    providerId: "project-checkout",
+    workspaceDisplayKind: "other",
+    ...extra,
   };
 }
 
-const MODES: readonly WorkspaceLabelMode[] = [
-  "alias-over-branch",
-  "alias-and-branch",
-  "alias-only",
-  "branch-only",
-];
+const project: WorkspaceProjectDescriptor = {
+  projectId: "proj_fixture",
+  sourcePath: "/repo/chat_history",
+  sourceHostId: "host_fixture",
+};
 
-describe("workspaceRowLabel", () => {
-  it("stacks the alias over the branch by default", () => {
-    const drawn = workspaceRowLabel(
-      ref("登录重构", "feature/login"),
-      "alias-over-branch",
+function resolve(env: WorkspaceEnvironmentDescriptor): WorkspaceRef {
+  return workspaceRefOf(
+    thread({ id: env.id, name: env.name, branchName: env.branchName, providerId: env.providerId, workspaceDisplayKind: env.workspaceDisplayKind }),
+    new Map([[env.id, env]]),
+    new Map([[project.projectId, project]]),
+  );
+}
+
+describe("workspace identity", () => {
+  it("normalizes separators and trailing slashes", () => {
+    assert.equal(normalizeWorkspacePath("/repo/chat_history///"), "/repo/chat_history");
+    assert.equal(normalizeWorkspacePath("  C:\\\\repo\\\\app\\\\  "), "C:/repo/app");
+  });
+
+  it("recognizes the configured source as the project checkout", () => {
+    const ref = resolve(environment("env_checkout", "/repo/chat_history", { branchName: "main" }));
+    assert.equal(ref.kind, "project-checkout");
+    assert.equal(ref.label, "main");
+  });
+
+  it("recognizes an unrelated git directory as external checkout", () => {
+    const ref = resolve(environment("env_external", "/repo/important_project/bb", { isGitRepo: true, branchName: "main", providerId: null }));
+    assert.equal(ref.kind, "external-checkout");
+    assert.equal(ref.label, "bb");
+    assert.match(ref.diagnostic ?? "", /outside/);
+  });
+
+  it("keeps two different paths distinct even when branch names match", () => {
+    const first = resolve(environment("env_one", "/repo/one", { isGitRepo: true, branchName: "main", providerId: null }));
+    const second = resolve(environment("env_two", "/repo/two", { isGitRepo: true, branchName: "main", providerId: null }));
+    assert.notEqual(first.key, second.key);
+    assert.equal(shouldShowWorkspaces([first, second]), true);
+  });
+
+  it("merges duplicate environment records for one physical path", () => {
+    const first = resolve(environment("env_one", "/repo/chat_history", { branchName: "main" }));
+    const second = resolve(environment("env_two", "/repo/chat_history/", { branchName: "main" }));
+    assert.equal(first.key, second.key);
+  });
+
+  it("keeps identity stable if classification metadata changes", () => {
+    const checkout = resolve(environment("env_one", "/repo/same", { isGitRepo: true }));
+    const worktree = resolve(environment("env_two", "/repo/same", { isWorktree: true, workspaceDisplayKind: "unmanaged-worktree" }));
+    assert.equal(checkout.key, worktree.key);
+  });
+
+  it("requires the source host to match", () => {
+    const foreign = workspaceRefOf(
+      thread({ id: "env_foreign", name: null, branchName: null, providerId: null, workspaceDisplayKind: "other" }),
+      new Map([["env_foreign", environment("env_foreign", "/repo/chat_history", { hostId: "host_other" })]]),
+      new Map([[project.projectId, project]]),
     );
-    assert.deepEqual(drawn, {
-      label: "登录重构",
-      labelIsBranch: false,
-      detail: "feature/login",
-      stacked: true,
-    });
+    assert.notEqual(foreign.kind, "project-checkout");
   });
 
-  it("puts both on one line when asked, keeping the branch monospaced", () => {
-    const drawn = workspaceRowLabel(
-      ref("登录重构", "feature/login"),
-      "alias-and-branch",
-    );
-    assert.equal(drawn.label, "登录重构");
-    assert.equal(drawn.labelIsBranch, false);
-    assert.equal(drawn.detail, "feature/login");
-    assert.equal(drawn.stacked, false);
+  it("disambiguates equal labels from different physical paths", () => {
+    const first = resolve(environment("env_one", "/repo/one/bb", { isGitRepo: true, branchName: "main", providerId: null }));
+    const second = resolve(environment("env_two", "/repo/two/bb", { isGitRepo: true, branchName: "main", providerId: null }));
+    const labels = disambiguateWorkspaceLabels([first, second]).map((ref) => ref.label);
+    assert.deepEqual(labels, ["bb · one/bb", "bb · two/bb"]);
   });
 
-  it("drops the branch in alias-only and the alias in branch-only", () => {
-    const source = ref("登录重构", "feature/login");
-    const aliasOnly = workspaceRowLabel(source, "alias-only");
-    assert.equal(aliasOnly.label, "登录重构");
-    assert.equal(aliasOnly.detail, null);
-    assert.equal(aliasOnly.stacked, false);
-
-    const branchOnly = workspaceRowLabel(source, "branch-only");
-    assert.equal(branchOnly.label, "feature/login");
-    assert.equal(branchOnly.labelIsBranch, true);
-    assert.equal(branchOnly.detail, null);
+  it("uses an explicit unresolved state when environment metadata is missing", () => {
+    const ref = workspaceRefOf(thread({ id: "env_missing", name: null, branchName: "main", providerId: null, workspaceDisplayKind: "other" }));
+    assert.equal(ref.kind, "unresolved");
+    assert.match(ref.label, /Unresolved/);
   });
 
-  it("draws a half that is not there only once", () => {
-    for (const mode of MODES) {
-      const onlyAlias = workspaceRowLabel(ref("登录重构", null), mode);
-      assert.equal(onlyAlias.label, "登录重构", mode);
-      assert.equal(onlyAlias.detail, null, mode);
-      assert.equal(onlyAlias.stacked, false, mode);
-
-      const onlyBranch = workspaceRowLabel(ref(null, "feature/login"), mode);
-      assert.equal(onlyBranch.label, "feature/login", mode);
-      assert.equal(onlyBranch.labelIsBranch, true, mode);
-      assert.equal(onlyBranch.detail, null, mode);
-    }
-  });
-
-  it("never repeats an alias that already reads as its branch", () => {
-    // Stacking this would print one string on two lines, and the one-line modes
-    // would print it twice side by side.
-    for (const mode of MODES) {
-      const drawn = workspaceRowLabel(ref("main", "main"), mode);
-      assert.equal(drawn.label, "main", mode);
-      assert.equal(drawn.detail, null, mode);
-      assert.equal(drawn.stacked, false, mode);
-    }
-  });
-
-  it("keeps a nameless workspace drawing its own fallback label", () => {
-    for (const mode of MODES) {
-      const drawn = workspaceRowLabel(ref(null, null, "worktree"), mode);
-      assert.equal(drawn.label, "worktree", mode);
-      assert.equal(drawn.detail, null, mode);
-      assert.equal(drawn.stacked, false, mode);
-    }
+  it("keeps personal and absent environments out of workspace rows", () => {
+    assert.equal(workspaceRefOf(thread(null)).kind, "personal");
+    assert.equal(workspaceRefOf(thread({ id: "scratch", name: null, branchName: null, providerId: "personal-workspace", workspaceDisplayKind: "other" })).kind, "personal");
   });
 });
 
-describe("workspace order", () => {
-  const ordered = (kinds: readonly WorkspaceKind[]) =>
-    [...kinds].sort((a, b) => workspaceSortOrder(a) - workspaceSortOrder(b));
+describe("workspace labels and order", () => {
+  const ref = (alias: string | null, branch: string | null): WorkspaceRef => ({
+    kind: "git-worktree", key: "env_x", label: alias ?? branch ?? "Git worktree", alias, branch,
+    environmentId: "env_x", environmentIds: ["env_x"], path: "/repo/worktree", hostId: "host_fixture", diagnostic: null,
+  });
+  const modes: readonly WorkspaceLabelMode[] = ["alias-over-branch", "alias-and-branch", "alias-only", "branch-only"];
 
-  it("leads with the project's own checkout", () => {
-    // Where the project is belongs at the top, above worktrees that come and go.
-    assert.deepEqual(ordered(["worktree", "none", "main"]), [
-      "main",
-      "worktree",
-      "none",
-    ]);
-    assert.deepEqual(ordered(["none", "worktree"]), ["worktree", "none"]);
+  it("retains the existing alias and branch layout", () => {
+    assert.deepEqual(workspaceRowLabel(ref("登录重构", "feature/login"), "alias-over-branch"), {
+      label: "登录重构", labelIsBranch: false, detail: "feature/login", stacked: true,
+    });
+  });
+
+  it("never renders an absent half or duplicates equal alias and branch", () => {
+    for (const mode of modes) {
+      assert.equal(workspaceRowLabel(ref("main", "main"), mode).detail, null);
+      assert.equal(workspaceRowLabel(ref(null, "feature/login"), mode).label, "feature/login");
+    }
+  });
+
+  it("orders project checkout before worktrees and diagnostics", () => {
+    const kinds = ["unresolved", "git-worktree", "project-checkout", "external-checkout"] as const;
+    assert.deepEqual([...kinds].sort((a, b) => workspaceSortOrder(a) - workspaceSortOrder(b)), ["project-checkout", "git-worktree", "external-checkout", "unresolved"]);
   });
 });

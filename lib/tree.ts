@@ -8,7 +8,7 @@ import {
   type ThreadFamily,
 } from "./inbox.ts";
 import { rollupThreads, mergeRollups, type StatusRollup } from "./rollup.ts";
-import { shouldShowWorkspaces, workspaceRefOf, type WorkspaceRef } from "./workspace.ts";
+import { disambiguateWorkspaceLabels, mergeWorkspaceRefs, shouldShowWorkspaces, workspaceRefOf, type WorkspaceEnvironmentDescriptor, type WorkspaceProjectDescriptor, type WorkspaceRef } from "./workspace.ts";
 import { orderWorkspaces } from "./workspace-order.ts";
 import type { ManualOrderMap } from "./manual-order.ts";
 import type { GroupIconName } from "./groups.ts";
@@ -63,9 +63,13 @@ export function buildTree(input: {
   workspaceOrder: ManualOrderMap;
   /** The icon the implicit Ungrouped section carries, chosen by the user. */
   ungroupedIcon: GroupIconName;
+  environments?: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>;
+  projects?: ReadonlyMap<string, WorkspaceProjectDescriptor>;
 }): GroupNode[] {
   const { projectGroups, now, assignment, groupOrder, ungroupedIcon } = input;
   const { workspaceOrder } = input;
+  const environments = input.environments ?? new Map<string, WorkspaceEnvironmentDescriptor>();
+  const projects = input.projects ?? new Map<string, WorkspaceProjectDescriptor>();
 
   const projectsByGroup = new Map<string, ProjectNode[]>();
   for (const group of projectGroups) {
@@ -74,6 +78,8 @@ export function buildTree(input: {
       group.families,
       now,
       workspaceOrder[group.project.id],
+      environments,
+      projects,
     );
     const groupId = assignment[group.project.id] ?? "__ungrouped__";
     const bucket = projectsByGroup.get(groupId) ?? [];
@@ -139,6 +145,8 @@ function buildProjectNode(
   families: readonly ThreadFamily[],
   now: number,
   storedWorkspaceKeys: readonly string[] | undefined,
+  environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>,
+  projects: ReadonlyMap<string, WorkspaceProjectDescriptor>,
 ): ProjectNode {
   const allThreads = families.flatMap((family) => [
     family.root,
@@ -149,18 +157,22 @@ function buildProjectNode(
   // its parent does, and splitting a family across nodes would break it apart.
   const workspacesById = new Map<string, { ref: WorkspaceRef; families: ThreadFamily[] }>();
   for (const family of families) {
-    const ref = workspaceRefOf(family.root);
-    const bucket = workspacesById.get(ref.key) ?? { ref, families: [] };
+    const ref = workspaceRefOf(family.root, environments, projects);
+    const existing = workspacesById.get(ref.key);
+    const bucket = existing ?? { ref, families: [] };
+    if (existing !== undefined) bucket.ref = mergeWorkspaceRefs(existing.ref, ref);
     bucket.families.push(family);
     workspacesById.set(ref.key, bucket);
   }
 
+  const refs = disambiguateWorkspaceLabels([...workspacesById.values()].map(({ ref }) => ref));
+  const familiesByKey = new Map([...workspacesById.values()].map((entry) => [entry.ref.key, entry.families]));
   const workspaces: WorkspaceNode[] = orderWorkspaces(
-    [...workspacesById.values()].map(({ ref, families: bucket }) => ({
+    refs.map((ref) => ({
       ref,
-      families: bucket,
+      families: familiesByKey.get(ref.key) ?? [],
       rollup: rollupThreads(
-        bucket.flatMap((family) => [family.root, ...family.children]),
+        (familiesByKey.get(ref.key) ?? []).flatMap((family) => [family.root, ...family.children]),
         now,
       ),
     })),

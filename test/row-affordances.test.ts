@@ -56,7 +56,7 @@ describe("row affordances across the four levels", () => {
   it("keeps rename reachable from every level", () => {
     assert.match(projectRow, /label="Rename…"/);
     // A worktree renames the environment, which is what its alias is.
-    assert.match(treeRows, /label="Rename worktree…"/);
+    assert.match(treeRows, /node\.ref\.kind === "git-worktree" \? "Rename worktree…"/);
     // The group row menu mirrors bb's own section menu, which offers rename
     // and remove next to the disclosure toggle.
     assert.match(groupRow, /label="Rename…"/);

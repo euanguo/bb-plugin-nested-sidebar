@@ -1,172 +1,249 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 
-/**
- * The middle level of the sidebar tree.
- *
- * A thread always runs somewhere, but bb only exposes a branch for some
- * environments. Rather than let an unplaceable thread fall out of the tree,
- * every thread resolves to exactly one of three kinds:
- *
- * - main      — the project's own checkout (workspaceDisplayKind "other")
- * - worktree  — a managed or unmanaged worktree, labelled by its branch
- * - none      — no environment yet, or a personal workspace
- *
- * The kind is what the tree groups on; the label is only ever decoration. A
- * checkout is not a lesser workspace than a worktree: it has a branch of its own
- * and can be named, so it carries both, and what separates the two kinds is that
- * only a worktree can be deleted from its row.
- */
-export type WorkspaceKind = "main" | "worktree" | "none";
+export type WorkspaceKind =
+  | "project-checkout"
+  | "git-worktree"
+  | "external-checkout"
+  | "external-directory"
+  | "personal"
+  | "unresolved";
+
+export interface WorkspaceEnvironmentDescriptor {
+  readonly id: string;
+  readonly projectId: string;
+  readonly hostId: string;
+  readonly path: string | null;
+  readonly isGitRepo: boolean;
+  readonly isWorktree: boolean;
+  readonly branchName: string | null;
+  readonly name: string | null;
+  readonly providerId: string | null;
+  readonly workspaceDisplayKind: "managed-worktree" | "unmanaged-worktree" | "other" | null;
+}
+
+export interface WorkspaceProjectDescriptor {
+  readonly projectId: string;
+  readonly sourcePath: string | null;
+  readonly sourceHostId: string | null;
+}
 
 export interface WorkspaceRef {
   readonly kind: WorkspaceKind;
-  /** Stable within one project: an environment id, or a sentinel. */
   readonly key: string;
   readonly label: string;
-  /**
-   * The user's own name for this worktree, when they set one. Drawn together
-   * with the branch rather than instead of it: an alias is a label the user
-   * typed, and the branch is the fact that tells them whether it was typed
-   * correctly. How the two share the row is `WorkspaceLabelMode`.
-   */
   readonly alias: string | null;
-  /** The branch this worktree is on, if bb knows it. */
   readonly branch: string | null;
-  /** The thread's environment id, when it has one. Used to reuse a worktree. */
   readonly environmentId: string | null;
+  readonly environmentIds: readonly string[];
+  readonly path: string | null;
+  readonly hostId: string | null;
+  readonly diagnostic: string | null;
 }
 
 const NO_WORKSPACE: WorkspaceRef = {
-  kind: "none",
+  kind: "personal",
   key: "__no_workspace__",
   label: "No workspace",
   alias: null,
   branch: null,
   environmentId: null,
+  environmentIds: [],
+  path: null,
+  hostId: null,
+  diagnostic: null,
 };
 
-/**
- * A project's own checkout, as a row.
- *
- * Keyed by the environment rather than by a sentinel, so two checkouts attached
- * to one project stay two rows — the same way two worktrees do — and every
- * thread that shares the checkout folds into the one row. It is not a worktree,
- * and `planWorktreeRemoval` refuses to delete it, but it reads like one: the
- * alias if the user set one, then the branch it is actually standing on, and
- * only then the bare word.
- */
-function checkoutRef(
-  environment: NonNullable<PluginSidebarThread["environment"]>,
-): WorkspaceRef {
-  const branch = environment.branchName?.trim();
-  const alias = environment.name?.trim();
-  return {
-    kind: "main",
-    key: environment.id ?? "__main__",
-    label: alias || branch || "main",
-    alias: alias || null,
-    branch: branch || null,
-    environmentId: environment.id,
-  };
-}
-
-function isWorktreeKind(kind: string | null | undefined): boolean {
-  return kind === "managed-worktree" || kind === "unmanaged-worktree";
-}
-
-/**
- * bb's provider for the directory a thread gets when it is not working in a
- * project of its own. The app hands the provider id through untouched, so this
- * is the only thing in this DTO that tells a personal workspace apart from a
- * project checkout — both are non-worktrees, and neither is null.
- */
 const PERSONAL_WORKSPACE_PROVIDER = "personal-workspace";
 
-/**
- * Where a thread lives. A worktree without a branch name still has an
- * environment id, so it is still its own node — it just falls back to the
- * environment's own name for a label.
- *
- * A personal workspace is not a place in the project, though: its provider hands
- * every thread a directory of its own, with no branch and no name, so one row
- * per thread would print the same empty label four times over. Those threads
- * share the bucket for "none of this project's places" instead, which is what
- * keeps a project whose threads all sit in scratch directories flat — the way
- * bb's own sidebar shows it.
- */
-export function workspaceRefOf(thread: PluginSidebarThread): WorkspaceRef {
+function clean(value: string | null | undefined): string | null {
+  const result = value?.trim();
+  return result === undefined || result.length === 0 ? null : result;
+}
+
+export function normalizeWorkspacePath(path: string | null | undefined): string | null {
+  const value = clean(path);
+  if (value === null) return null;
+  const normalized = value.replaceAll("\\", "/").replace(/\/+/g, "/").replace(/\/+$/, "");
+  return normalized.length === 0 ? "/" : normalized;
+}
+
+function basename(path: string | null): string | null {
+  if (path === null) return null;
+  return path.split("/").filter(Boolean).at(-1) ?? null;
+}
+
+function pathHint(path: string | null): string {
+  if (path === null) return "unknown path";
+  const parts = path.split("/").filter(Boolean);
+  return parts.slice(Math.max(0, parts.length - 2)).join("/");
+}
+
+function labelFor(
+  kind: WorkspaceKind,
+  alias: string | null,
+  branch: string | null,
+  path: string | null,
+  environmentId: string | null,
+): string {
+  if (alias !== null) return alias;
+  if (kind === "project-checkout") return branch ?? "Project checkout";
+  if (kind === "git-worktree") return branch ?? basename(path) ?? "Git worktree";
+  if (kind === "external-checkout") return basename(path) ?? "External checkout";
+  if (kind === "external-directory") return basename(path) ?? "External directory";
+  if (kind === "unresolved") return environmentId === null ? "Unresolved workspace" : "Unresolved · " + environmentId.slice(-8);
+  return "No workspace";
+}
+
+function classify(
+  environment: WorkspaceEnvironmentDescriptor,
+  project: WorkspaceProjectDescriptor | undefined,
+): WorkspaceKind {
+  if (environment.providerId === PERSONAL_WORKSPACE_PROVIDER) return "personal";
+  const path = normalizeWorkspacePath(environment.path);
+  if (path === null) return "unresolved";
+  const sourcePath = normalizeWorkspacePath(project?.sourcePath);
+  if (
+    sourcePath !== null &&
+    path === sourcePath &&
+    project !== undefined &&
+    project.sourceHostId !== null &&
+    environment.hostId === project.sourceHostId
+  ) return "project-checkout";
+  if (environment.isWorktree || environment.workspaceDisplayKind === "managed-worktree" || environment.workspaceDisplayKind === "unmanaged-worktree") return "git-worktree";
+  if (environment.isGitRepo) return "external-checkout";
+  return "external-directory";
+}
+
+/** Stable identity for a physical workspace. Classification is presentation
+ * metadata and must never split one path into two rows when it changes. */
+export function workspaceIdentityKey(input: {
+  readonly hostId: string;
+  readonly projectId: string;
+  readonly path: string;
+}): string {
+  return `workspace:${input.hostId}:${input.projectId}:${normalizeWorkspacePath(input.path) ?? input.path}`;
+}
+
+export function workspaceRefOf(
+  thread: PluginSidebarThread,
+  environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor> = new Map(),
+  projects: ReadonlyMap<string, WorkspaceProjectDescriptor> = new Map(),
+): WorkspaceRef {
   const environment = thread.environment;
-  if (environment === null) return NO_WORKSPACE;
-  if (!isWorktreeKind(environment.workspaceDisplayKind)) {
-    return environment.providerId === PERSONAL_WORKSPACE_PROVIDER
-      ? NO_WORKSPACE
-      : checkoutRef(environment);
+  if (environment === null || environment.providerId === PERSONAL_WORKSPACE_PROVIDER) return NO_WORKSPACE;
+
+  const descriptor = environment.id === null ? undefined : environments.get(environment.id);
+  if (descriptor === undefined) {
+    const branch = clean(environment.branchName);
+    const alias = clean(environment.name);
+    return {
+      kind: "unresolved",
+      key: "environment:" + (environment.id ?? "unknown"),
+      label: labelFor("unresolved", alias, branch, null, environment.id),
+      alias,
+      branch,
+      environmentId: environment.id,
+      environmentIds: environment.id === null ? [] : [environment.id],
+      path: null,
+      hostId: thread.host?.id ?? null,
+      diagnostic: "Environment metadata is unavailable.",
+    };
   }
 
-  const branch = environment.branchName?.trim();
-  const alias = environment.name?.trim();
-  // The alias leads, because it is what the user called this worktree and what
-  // they will scan for; the branch is the ground truth. Either alone still
-  // labels the row, so a worktree with neither is never nameless.
-  const label = alias || branch || "worktree";
+  const project = projects.get(descriptor.projectId);
+  const kind = classify(descriptor, project);
+  const path = normalizeWorkspacePath(descriptor.path);
+  const alias = clean(descriptor.name);
+  const branch = clean(descriptor.branchName);
+  const key = path === null
+    ? "environment:" + descriptor.id
+    : workspaceIdentityKey({ hostId: descriptor.hostId, projectId: descriptor.projectId, path });
   return {
-    kind: "worktree",
-    key: environment.id ?? label,
-    label,
-    alias: alias || null,
-    branch: branch || null,
-    environmentId: environment.id,
+    kind,
+    key,
+    label: labelFor(kind, alias, branch, path, descriptor.id),
+    alias,
+    branch,
+    environmentId: descriptor.id,
+    environmentIds: [descriptor.id],
+    path,
+    hostId: descriptor.hostId,
+    diagnostic: kind === "external-checkout" || kind === "external-directory"
+      ? "This environment is outside the project's configured source."
+      : kind === "unresolved"
+        ? "The workspace could not be classified from current metadata."
+        : null,
   };
 }
 
-/**
- * The workspace level is only worth drawing when it distinguishes anything.
- *
- * A project whose threads all sit in one place — the common case of a single
- * checkout — reads better flat, which is also how bb's own sidebar shows it.
- * The moment a second workspace appears, the level earns its space.
- */
+export function mergeWorkspaceRefs(left: WorkspaceRef, right: WorkspaceRef): WorkspaceRef {
+  if (left.key !== right.key) throw new Error("Cannot merge different workspaces.");
+  const environmentIds = [...new Set([...left.environmentIds, ...right.environmentIds])];
+  const representative = preferredWorkspaceRef(left, right);
+  return {
+    ...representative,
+    environmentIds,
+    environmentId: chooseCanonicalEnvironment(left, right),
+    alias: left.alias ?? right.alias,
+    branch: left.branch ?? right.branch,
+    label: left.alias ?? right.alias ?? representative.label,
+    diagnostic: left.diagnostic ?? right.diagnostic,
+  };
+}
+
+function preferredWorkspaceRef(left: WorkspaceRef, right: WorkspaceRef): WorkspaceRef {
+  const leftPriority = workspaceSortOrder(left.kind);
+  const rightPriority = workspaceSortOrder(right.kind);
+  if (leftPriority !== rightPriority) return leftPriority < rightPriority ? left : right;
+  return left.environmentId === null || (right.environmentId !== null && left.environmentId.localeCompare(right.environmentId) <= 0)
+    ? left
+    : right;
+}
+
+function chooseCanonicalEnvironment(left: WorkspaceRef, right: WorkspaceRef): string | null {
+  const candidates = [left, right].flatMap((ref) =>
+    ref.environmentId === null ? [] : [{
+      id: ref.environmentId,
+      priority: ref.kind === "project-checkout" ? 0 : ref.kind === "git-worktree" ? 1 : 2,
+    }],
+  );
+  candidates.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+  return candidates[0]?.id ?? null;
+}
+
+/** Add enough context to labels that collide inside one project. */
+export function disambiguateWorkspaceLabels(refs: readonly WorkspaceRef[]): WorkspaceRef[] {
+  const counts = new Map<string, number>();
+  for (const ref of refs) counts.set(ref.label, (counts.get(ref.label) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return refs.map((ref) => {
+    if ((counts.get(ref.label) ?? 0) <= 1) return ref;
+    const index = (seen.get(ref.label) ?? 0) + 1;
+    seen.set(ref.label, index);
+    const suffix = ref.path === null ? ref.environmentId?.slice(-8) ?? String(index) : pathHint(ref.path);
+    return { ...ref, label: ref.label + " · " + suffix };
+  });
+}
+
 export function shouldShowWorkspaces(refs: readonly WorkspaceRef[]): boolean {
-  const keys = new Set(refs.map((ref) => ref.key));
-  return keys.size >= 2;
+  return new Set(refs.map((ref) => ref.key)).size >= 2;
 }
 
-/**
- * The project's own checkout leads, then its worktrees, then threads with no
- * workspace at all.
- *
- * The checkout is where the project is: it is the row the eye should land on
- * first, and it is the one that never goes away. Worktrees come and go beneath
- * it, sorted by their own labels.
- */
 export function workspaceSortOrder(kind: WorkspaceKind): number {
-  if (kind === "main") return 0;
-  if (kind === "worktree") return 1;
-  return 2;
+  if (kind === "project-checkout") return 0;
+  if (kind === "git-worktree") return 1;
+  if (kind === "external-checkout") return 2;
+  if (kind === "external-directory") return 3;
+  if (kind === "unresolved") return 4;
+  return 5;
 }
 
-/**
- * How one workspace row divides the alias and the branch between its lines.
- *
- * The alias is a name the user typed; the branch is the fact that verifies it,
- * and the row is the only place the two meet. `alias-over-branch` is the
- * default because a single line of "alias  branch" truncates both halves as
- * soon as either is long, while stacked lines keep each one readable.
- */
-export type WorkspaceLabelMode =
-  | "alias-over-branch"
-  | "alias-and-branch"
-  | "alias-only"
-  | "branch-only";
+export type WorkspaceLabelMode = "alias-over-branch" | "alias-and-branch" | "alias-only" | "branch-only";
 
 export interface WorkspaceRowLabel {
-  /** The line the row is scanned by. Never empty. */
   readonly label: string;
-  /** The label is a branch, so the row draws it monospaced. */
   readonly labelIsBranch: boolean;
-  /** The branch, when the row draws one at all. */
   readonly detail: string | null;
-  /** `true` puts the detail on its own line; `false` rides beside the label. */
   readonly stacked: boolean;
 }
 
@@ -174,49 +251,23 @@ function alone(label: string, isBranch: boolean): WorkspaceRowLabel {
   return { label, labelIsBranch: isBranch, detail: null, stacked: false };
 }
 
-function together(
-  alias: string,
-  branch: string,
-  stacked: boolean,
-): WorkspaceRowLabel {
+function together(alias: string, branch: string, stacked: boolean): WorkspaceRowLabel {
   return { label: alias, labelIsBranch: false, detail: branch, stacked };
 }
 
-/** Whichever half the row still has, so a row is never left with nothing. */
 function remaining(ref: WorkspaceRef): WorkspaceRowLabel {
   if (ref.alias !== null) return alone(ref.alias, false);
   if (ref.branch !== null) return alone(ref.branch, true);
   return alone(ref.label, false);
 }
 
-/**
- * What one workspace row draws, given the setting and what bb knows.
- *
- * An alias equal to its branch is a single fact, so the row draws it once
- * whatever the mode says: stacking it would print the same string twice. A mode
- * that asks for a half the environment does not have falls back to the other
- * one, because a row with nothing to say would still have to draw a height.
- */
-export function workspaceRowLabel(
-  ref: WorkspaceRef,
-  mode: WorkspaceLabelMode,
-): WorkspaceRowLabel {
+export function workspaceRowLabel(ref: WorkspaceRef, mode: WorkspaceLabelMode): WorkspaceRowLabel {
   const { alias, branch } = ref;
-  if (alias !== null && branch !== null && alias === branch) {
-    return alone(alias, false);
-  }
+  if (alias !== null && branch !== null && alias === branch) return alone(alias, false);
   switch (mode) {
-    case "alias-only":
-      return alias === null ? remaining(ref) : alone(alias, false);
-    case "branch-only":
-      return branch === null ? remaining(ref) : alone(branch, true);
-    case "alias-and-branch":
-      return alias !== null && branch !== null
-        ? together(alias, branch, false)
-        : remaining(ref);
-    case "alias-over-branch":
-      return alias !== null && branch !== null
-        ? together(alias, branch, true)
-        : remaining(ref);
+    case "alias-only": return alias === null ? remaining(ref) : alone(alias, false);
+    case "branch-only": return branch === null ? remaining(ref) : alone(branch, true);
+    case "alias-and-branch": return alias !== null && branch !== null ? together(alias, branch, false) : remaining(ref);
+    case "alias-over-branch": return alias !== null && branch !== null ? together(alias, branch, true) : remaining(ref);
   }
 }

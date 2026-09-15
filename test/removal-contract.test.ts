@@ -18,7 +18,7 @@ const server = await read("server.ts");
 describe("removing a worktree", () => {
   it("offers it from the worktree row, and only where there is an environment", () => {
     assert.match(treeRows, /label="Remove worktree…"/);
-    assert.match(treeRows, /disabled=\{node\.ref\.environmentId === null\}/);
+    assert.match(treeRows, /disabled=\{!canRemove\}/);
     assert.match(treeRows, /<RemoveWorktreeDialog/);
   });
 

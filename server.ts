@@ -323,10 +323,31 @@ export const nestRpcContract = defineRpcContract({
   listWorkspacePaths: {
     input: z.object({}),
     output: z.object({
-      /** environmentId -> the directory that environment works in. */
-      environments: z.record(z.string(), z.string()),
-      /** projectId -> the project's own checkout. */
-      projects: z.record(z.string(), z.string()),
+      /** environmentId -> authoritative workspace facts. */
+      environments: z.record(
+        z.string(),
+        z.object({
+          id: z.string(),
+          projectId: z.string(),
+          hostId: z.string(),
+          path: z.string().nullable(),
+          isGitRepo: z.boolean(),
+          isWorktree: z.boolean(),
+          branchName: z.string().nullable(),
+          name: z.string().nullable(),
+          providerId: z.string().nullable(),
+          workspaceDisplayKind: z.enum(["managed-worktree", "unmanaged-worktree", "other"]).nullable(),
+        }),
+      ),
+      /** projectId -> the project's configured source. */
+      projects: z.record(
+        z.string(),
+        z.object({
+          projectId: z.string(),
+          sourcePath: z.string().nullable(),
+          sourceHostId: z.string().nullable(),
+        }),
+      ),
     }),
   },
   // Removing a worktree row. One operation, three things, and only the third is
@@ -1230,20 +1251,55 @@ export default function plugin(bb: BbPluginApi) {
         bb.sdk.environments.list({ limit: WORKSPACE_PATH_LIMIT }),
         bb.sdk.projects.list({}),
       ]);
-      const environmentPaths: Record<string, string> = {};
+      const environmentDescriptors: Record<string, {
+        id: string;
+        projectId: string;
+        hostId: string;
+        path: string | null;
+        isGitRepo: boolean;
+        isWorktree: boolean;
+        branchName: string | null;
+        name: string | null;
+        providerId: string | null;
+        workspaceDisplayKind: "managed-worktree" | "unmanaged-worktree" | "other" | null;
+      }> = {};
       for (const environment of environments) {
-        if (environment.path !== null && environment.path.length > 0) {
-          environmentPaths[environment.id] = environment.path;
-        }
+        environmentDescriptors[environment.id] = {
+          id: environment.id,
+          projectId: environment.projectId,
+          hostId: environment.hostId,
+          path: environment.path,
+          isGitRepo: environment.isGitRepo,
+          isWorktree: environment.isWorktree,
+          branchName: environment.branchName,
+          name: environment.name,
+          providerId: environment.environmentProviderId,
+          workspaceDisplayKind:
+            environment.workspaceProvisionType === "managed-worktree"
+              ? "managed-worktree"
+              : environment.workspaceProvisionType === "unmanaged"
+                ? "unmanaged-worktree"
+                : environment.isWorktree
+                  ? "unmanaged-worktree"
+                  : "other",
+        };
       }
-      const projectPaths: Record<string, string> = {};
+      const projectDescriptors: Record<string, {
+        projectId: string;
+        sourcePath: string | null;
+        sourceHostId: string | null;
+      }> = {};
       for (const project of projects) {
         const source =
           project.sources.find((candidate) => candidate.isDefault) ??
           project.sources[0];
-        if (source !== undefined) projectPaths[project.id] = source.path;
+        projectDescriptors[project.id] = {
+          projectId: project.id,
+          sourcePath: source?.path ?? null,
+          sourceHostId: source?.hostId ?? null,
+        };
       }
-      return { environments: environmentPaths, projects: projectPaths };
+      return { environments: environmentDescriptors, projects: projectDescriptors };
     },
     async inspectWorktree({ environmentId }) {
       const survey = await surveyWorktree(environmentId);
