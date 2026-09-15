@@ -11,7 +11,12 @@ export interface GroupTab {
   readonly scope: GroupScope;
   readonly label: string;
   readonly count: number;
-  readonly icon?: GroupIconName;
+  /**
+   * Every tab carries one, including the strip's own All and Ungrouped: the
+   * compact layout is the only place an icon shows, and one icon system across
+   * the strip is what makes the user's choice of icon mean anything.
+   */
+  readonly icon: GroupIconName;
   /**
    * The worst state anywhere under this tab, or null when nothing is under it.
    * A dot only — the tab strip answers "is anything moving" at a glance, and a
@@ -105,23 +110,7 @@ export function GroupTabs({
                 )}
               >
                 {overflowing ? (
-                  tab.icon === undefined ? (
-                    <Icon
-                      name={
-                        tab.scope.kind === "all"
-                          ? "Eye"
-                          : "FolderTree"
-                      }
-                      className="size-3.5"
-                      aria-hidden
-                    />
-                  ) : (
-                    <GroupIcon
-                      name={tab.icon}
-                      className="size-3.5"
-                      ariaHidden
-                    />
-                  )
+                  <GroupIcon name={tab.icon} className="size-3.5" ariaHidden />
                 ) : (
                   <span className="truncate">{tab.label}</span>
                 )}
