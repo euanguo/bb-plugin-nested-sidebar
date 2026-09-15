@@ -117,8 +117,17 @@ decisions for the row you are looking at -- **Rename…**, **Copy group ID**,
 
 The strip is a **scope selector, not a second tree**: choosing a group narrows
 what the tree below draws, and projects are still the first level inside it.
-**Ungrouped** only appears once groups exist; with none, it would just duplicate
-**All**.
+**Ungrouped** earns its tab: it appears only once groups exist, and only while it
+holds a project, so it is never a second copy of **All** and never a destination
+to an empty list. A project filed out of its last group brings it back, and a
+selection left on it falls back to **All** rather than scoping the tree to
+nothing.
+
+**All** and **Ungrouped** are not groups -- they take no name, cannot be
+reordered or removed, and hold no projects -- but they do take an icon, chosen
+from the same picker in the group manager. The icon is what the compact strip
+draws when it is too narrow for labels, which is the only place any tab's icon
+shows; the Ungrouped icon also titles the Ungrouped section in the tree.
 
 ### Worktrees
 

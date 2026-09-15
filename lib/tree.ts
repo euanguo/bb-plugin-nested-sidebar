@@ -62,8 +62,10 @@ export function buildTree(input: {
   assignment: Readonly<Record<string, string>>;
   /** Rendered in this order; an id with no projects is dropped. */
   groupOrder: readonly { id: string; name: string; icon: GroupIconName }[];
+  /** The icon the implicit Ungrouped section carries, chosen by the user. */
+  ungroupedIcon: GroupIconName;
 }): GroupNode[] {
-  const { projectGroups, now, assignment, groupOrder } = input;
+  const { projectGroups, now, assignment, groupOrder, ungroupedIcon } = input;
 
   const projectsByGroup = new Map<string, ProjectNode[]>();
   for (const group of projectGroups) {
@@ -89,7 +91,7 @@ export function buildTree(input: {
   const ungrouped = projectsByGroup.get("__ungrouped__");
   if (ungrouped !== undefined && ungrouped.length > 0) {
     nodes.push(
-      makeGroupNode(null, "Ungrouped", "FolderTree", [...ungrouped]),
+      makeGroupNode(null, "Ungrouped", ungroupedIcon, [...ungrouped]),
     );
   }
 
@@ -104,7 +106,7 @@ export function buildTree(input: {
   if (orphans.length > 0) {
     const existing = nodes.find((node) => node.groupId === null);
     const combined = [...(existing?.projects ?? []), ...orphans];
-    const replacement = makeGroupNode(null, "Ungrouped", "FolderTree", combined);
+    const replacement = makeGroupNode(null, "Ungrouped", ungroupedIcon, combined);
     if (existing === undefined) nodes.push(replacement);
     else nodes[nodes.indexOf(existing)] = replacement;
   }

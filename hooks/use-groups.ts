@@ -3,10 +3,16 @@ import { useRpc, useRealtime } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { GROUP_CHANNEL } from "@/server";
 import type { GroupAssignment, ProjectGroup } from "@/lib/groups";
+import {
+  DEFAULT_SCOPE_ICONS,
+  type ScopeIcons,
+} from "@/lib/group-scope-icons";
 
 export interface GroupsApi {
   readonly groups: readonly ProjectGroup[];
   readonly assignment: GroupAssignment;
+  /** The icons of the strip's own All and Ungrouped tabs. */
+  readonly icons: ScopeIcons;
   readonly ready: boolean;
   refresh: () => void;
 }
@@ -20,6 +26,7 @@ export function useGroups(): GroupsApi {
   const rpc = useRpc<typeof nestRpcContract>();
   const [groups, setGroups] = useState<readonly ProjectGroup[]>([]);
   const [assignment, setAssignment] = useState<GroupAssignment>({});
+  const [icons, setIcons] = useState<ScopeIcons>(DEFAULT_SCOPE_ICONS);
   const [ready, setReady] = useState(false);
   const [nonce, setNonce] = useState(0);
 
@@ -33,6 +40,7 @@ export function useGroups(): GroupsApi {
         if (cancelled) return;
         setGroups(result.groups);
         setAssignment(result.assignment);
+        setIcons(result.icons);
         setReady(true);
       })
       .catch(() => {
@@ -47,5 +55,5 @@ export function useGroups(): GroupsApi {
 
   useRealtime(GROUP_CHANNEL, refresh);
 
-  return { groups, assignment, ready, refresh };
+  return { groups, assignment, icons, ready, refresh };
 }

@@ -98,6 +98,7 @@ import { useGroups } from "@/hooks/use-groups";
 import {
   groupScopeKey,
   projectInScope,
+  shouldShowUngroupedTab,
   type GroupAssignment,
   type GroupScope,
 } from "@/lib/groups";
@@ -405,6 +406,7 @@ export function ThreadInbox({
         scope: { kind: "all" },
         label: "All",
         count: countFor({ kind: "all" }),
+        icon: groupsApi.icons.all,
         statusKind: kindFor({ kind: "all" }),
       },
       ...groupsApi.groups.map((group) => {
@@ -418,15 +420,18 @@ export function ThreadInbox({
         };
       }),
     ];
-    // "Ungrouped" is a real destination, but only once groups exist: with
-    // none, it would duplicate "All" and read as a second, empty list.
-    if (groupsApi.groups.length > 0) {
-      const scope: GroupScope = { kind: "ungrouped" };
+    // "Ungrouped" is a real destination, but only once groups exist and only
+    // while something is in it. A project filed out of its last group brings
+    // the tab straight back.
+    const ungroupedScope: GroupScope = { kind: "ungrouped" };
+    const ungroupedCount = countFor(ungroupedScope);
+    if (shouldShowUngroupedTab(groupsApi.groups.length, ungroupedCount)) {
       groupTabs.push({
-        scope,
+        scope: ungroupedScope,
         label: "Ungrouped",
-        count: countFor(scope),
-        statusKind: kindFor(scope),
+        count: ungroupedCount,
+        icon: groupsApi.icons.ungrouped,
+        statusKind: kindFor(ungroupedScope),
       });
     }
 
@@ -443,6 +448,7 @@ export function ThreadInbox({
           name: group.name,
           icon: group.icon,
         })),
+        ungroupedIcon: groupsApi.icons.ungrouped,
       }),
       searchQuery,
     );
@@ -482,6 +488,29 @@ export function ThreadInbox({
     viewPreferences.threadSort,
     threads,
   ]);
+
+  /**
+   * Ungrouped leaves the strip when nothing is in it, so a selection sitting on
+   * it would point at a tab that is not drawn and scope the tree to a list that
+   * can only be empty.
+   *
+   * The selection is cleared rather than resolved away on every read, for the
+   * same reason `resolveGroupScope` degrades a deleted group instead of
+   * remembering it: filing a project back out of a group should not silently
+   * re-select Ungrouped later.
+   */
+  const ungroupedTabVisible = groupTabs.some(
+    (tab) => tab.scope.kind === "ungrouped",
+  );
+  useEffect(() => {
+    if (groupScope.kind !== "ungrouped") return;
+    if (ungroupedTabVisible) return;
+    setViewState((current) =>
+      current.scope === UNGROUPED_SCOPE_KEY
+        ? { ...current, scope: ALL_SCOPE_KEY }
+        : current,
+    );
+  }, [groupScope.kind, ungroupedTabVisible, setViewState]);
 
   /**
    * Put the user back where they were.
@@ -1383,6 +1412,7 @@ export function ThreadInbox({
     <GroupManagerDialog
       open={groupManagerOpen}
       groups={groupsApi.groups}
+      icons={groupsApi.icons}
       onClose={() => setGroupManagerOpen(false)}
     />
 
