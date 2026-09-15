@@ -313,6 +313,22 @@ export const nestRpcContract = defineRpcContract({
     }),
     output: z.object({ ok: z.boolean() }),
   },
+  /**
+   * The absolute path of each workspace and project, for the copy actions.
+   *
+   * Neither the app's environment DTO nor its project DTO carries a path, and
+   * the clipboard lives in the app, so this is the one read a "copy path" needs
+   * from this side.
+   */
+  listWorkspacePaths: {
+    input: z.object({}),
+    output: z.object({
+      /** environmentId -> the directory that environment works in. */
+      environments: z.record(z.string(), z.string()),
+      /** projectId -> the project's own checkout. */
+      projects: z.record(z.string(), z.string()),
+    }),
+  },
   // Removing a worktree row. One operation, three things, and only the third is
   // irreversible — so inspection answers with the numbers, and the plan says
   // what the user still has to acknowledge before the directory may go.
@@ -614,6 +630,9 @@ const LIVE_THREAD_STATUSES: ReadonlySet<string> = new Set([
   "active",
   "stopping",
 ]);
+
+/** One page big enough for every workspace a sidebar would draw. */
+const WORKSPACE_PATH_LIMIT = 500;
 
 /** Deleting a large working copy is slow; the dialog waits, so allow for it. */
 const WORKTREE_REMOVAL_TIMEOUT_MS = 120_000;
@@ -1192,6 +1211,26 @@ export default function plugin(bb: BbPluginApi) {
       const ok = scopeIcons.set(scope, icon);
       if (ok) bb.realtime.publish(GROUP_CHANNEL, {});
       return { ok };
+    },
+    async listWorkspacePaths() {
+      const [environments, projects] = await Promise.all([
+        bb.sdk.environments.list({ limit: WORKSPACE_PATH_LIMIT }),
+        bb.sdk.projects.list({}),
+      ]);
+      const environmentPaths: Record<string, string> = {};
+      for (const environment of environments) {
+        if (environment.path !== null && environment.path.length > 0) {
+          environmentPaths[environment.id] = environment.path;
+        }
+      }
+      const projectPaths: Record<string, string> = {};
+      for (const project of projects) {
+        const source =
+          project.sources.find((candidate) => candidate.isDefault) ??
+          project.sources[0];
+        if (source !== undefined) projectPaths[project.id] = source.path;
+      }
+      return { environments: environmentPaths, projects: projectPaths };
     },
     async inspectWorktree({ environmentId }) {
       const survey = await surveyWorktree(environmentId);

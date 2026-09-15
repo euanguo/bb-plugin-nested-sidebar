@@ -95,6 +95,7 @@ import {
 
 import { GroupManagerDialog } from "@/components/inbox/group-manager-dialog";
 import { useGroups } from "@/hooks/use-groups";
+import { useWorkspacePaths } from "@/hooks/use-workspace-paths";
 import {
   groupScopeKey,
   projectInScope,
@@ -126,6 +127,7 @@ export function ThreadInbox({
   );
   const { overrides: projectColorOverrides } = useProjectColors();
   const groupsApi = useGroups();
+  const paths = useWorkspacePaths();
   /**
    * The remembered view, read once at mount and written on every change.
    *
@@ -1140,6 +1142,7 @@ export function ThreadInbox({
 
   const treeHandlers: TreeRowHandlers = {
     providerInfoById,
+    paths,
     activeThreadId,
     forceExpanded: searching,
     lifecycle,

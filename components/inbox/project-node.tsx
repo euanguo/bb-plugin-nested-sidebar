@@ -91,6 +91,7 @@ export function ProjectNode({
     (total, family) => total + 1 + family.children.length,
     0,
   );
+  const projectPath = handlers.paths.projects[node.project.id] ?? null;
 
   const workspaceHandlers: TreeRowHandlers = {
     ...handlers,
@@ -192,6 +193,7 @@ export function ProjectNode({
           <ProjectMenu
             projectId={node.project.id}
             projectName={node.project.name}
+            projectPath={projectPath}
             groups={groups}
             currentGroupId={currentGroupId}
             expanded={expanded}
@@ -318,6 +320,7 @@ function parseDraggedProject(raw: string): { projectId: string } | null {
 function ProjectMenu({
   projectId,
   projectName,
+  projectPath,
   groups,
   currentGroupId,
   expanded,
@@ -329,6 +332,7 @@ function ProjectMenu({
 }: {
   projectId: string;
   projectName: string;
+  projectPath: string | null;
   groups: readonly ProjectGroup[];
   currentGroupId: string | null;
   expanded: boolean;
@@ -396,6 +400,16 @@ function ProjectMenu({
           icon="Settings"
           label="Project settings"
           onSelect={() => navigate.toProject(projectId)}
+        />
+        <MenuItem
+          icon="Copy"
+          label="Copy path"
+          disabled={projectPath === null}
+          onSelect={() => {
+            if (projectPath !== null) {
+              void copyWithAnnouncement(projectPath, "Path");
+            }
+          }}
         />
         <MenuItem
           icon="IdCard"
