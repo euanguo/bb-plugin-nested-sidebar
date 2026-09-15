@@ -105,7 +105,7 @@ export function GroupTabs({
                     : "flex h-6.5 max-w-[9rem] items-center gap-1.5 rounded-md px-1.5 text-2xs",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   selected
-                    ? "bg-sidebar-accent font-semibold text-foreground"
+                    ? "bg-sidebar-accent text-foreground"
                     : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
                 )}
               >
