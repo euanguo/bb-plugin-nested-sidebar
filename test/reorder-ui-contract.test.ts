@@ -24,13 +24,14 @@ const familyStatus = await readFile(
 );
 
 describe("family reorder UI contract", () => {
-  it("applies persisted complete-family order before filter and search", () => {
-    assert.ok(inbox.indexOf("applyProjectOrder(") < inbox.indexOf("filterProjectThreadGroups("));
-    const apply = inbox.indexOf("families: applyFamilyOrder(");
-    const filter = inbox.indexOf("filterProjectThreadGroups(", apply);
+  it("applies the project and family order before filter and search", () => {
+    const projects = inbox.indexOf("orderProjectGroups(");
+    const families = inbox.indexOf("families: orderFamilies(");
+    const filter = inbox.indexOf("filterProjectThreadGroups(");
     const search = inbox.indexOf("searchProjectThreadGroups(", filter);
-    assert.ok(apply >= 0);
-    assert.ok(filter > apply);
+    assert.ok(projects >= 0);
+    assert.ok(families > projects);
+    assert.ok(filter > families);
     assert.ok(search > filter);
   });
 
@@ -40,6 +41,20 @@ describe("family reorder UI contract", () => {
     assert.match(inbox, /searching\s*\? "Clear search/);
     assert.match(inbox, /reorderEnabled,/);
     assert.match(inbox, /onReorder: reorderByDrag,/);
+  });
+
+  it("only drags when the mode reads the manual order", () => {
+    assert.match(inbox, /viewPreferences\.threadSort !== "manual"/);
+    assert.match(inbox, /viewPreferences\.projectSort !== "manual"/);
+    assert.match(inbox, /projectReorderDisabledReason/);
+  });
+
+  it("scopes a project order to its group and refuses a cross-group drop", () => {
+    assert.match(inbox, /projectOrderScope\(/);
+    assert.match(inbox, /orderedProjectIds\(/);
+    assert.match(inbox, /Projects can only be reordered within their group/);
+    assert.match(inbox, /reorderProjects\(/);
+    assert.match(inbox, /reorderFamilies\(/);
   });
 
   it("wires explicit drag and keyboard controls with announcements", () => {

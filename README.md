@@ -20,10 +20,10 @@ compact project-first inbox designed for parallel agent work.
 
 Projects and complete root/child families stay where you put them. Drag the
 existing project header or a family's semantic status icon to sort, or use
-Alt+Up/Alt+Down from the same focus targets. The browser-local order survives
-reloads, children remain attached, and pinned roots retain their leading
-partition. Sorting pauses during search, filtering, or bulk selection so hidden
-rows never move implicitly.
+Alt+Up/Alt+Down from the same focus targets. The order is kept on the server, so
+it follows you across clients, and it survives reloads; children remain attached,
+and pinned roots retain their leading partition. Sorting pauses during search,
+filtering, or bulk selection so hidden rows never move implicitly.
 
 Every family has an explicit **Failed**, **Needs you**, **Working**, **Unread**,
 **Inactive**, or seven-day **Stale** state. Labels, distinct shapes, animation,
@@ -58,8 +58,12 @@ Two things are worth knowing before you tune it:
 - Rows are denser than bb's own list by design — the tree carries groups and
   worktrees, so everything that is not the title is a dot, a count, or a
   tooltip. Everything visible can be turned off from Settings.
-- The scroll area reserves its scrollbar width (`scrollbar-gutter: stable`), so
-  the tree does not shift sideways the moment it grows past the viewport.
+- The scroll area reserves its scrollbar's own lane (`scrollbar-gutter: stable`)
+  and keeps only a token gap beside it, so the tree does not shift sideways the
+  moment it grows past the viewport. That area also clips horizontally, so a
+  decoration poking past a row can never grow a horizontal scrollbar: the
+  status, pull-request and provider tooltips are bounded by the row they hang
+  off instead.
 
 ## Install
 
@@ -186,12 +190,15 @@ wording is still in the tooltip and the accessible label.
 
 - **Projects** — drag an existing project header to sort projects, or focus the
   same header and press Alt+Up/Alt+Down. No extra drag icon is added, and the
-  browser-local project order survives reloads. Pinned roots remain first inside
-  each project.
+  project order survives reloads. It is kept **per group**, because the tree is
+  `group -> project`: a project sorts inside the group it belongs to, and a
+  cross-group drop is refused rather than quietly changing the project's group —
+  use **Move to group** for that. Pinned roots remain first inside each project.
   Drag a family's semantic status icon, or focus it and press Alt+Up/Alt+Down, to move
   a complete root/child family inside its pinned or unpinned partition. The
-  family order survives reloads. Clear search, choose the All filter, and
-  exit bulk selection before sorting so hidden rows are never moved implicitly.
+  family order survives reloads. Clear search, choose the All filter, exit bulk
+  selection, and pick the **Manual** sort before sorting so hidden rows are never
+  moved implicitly.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
 - **Settled** — work you are done with, collapsed to one line and shown for 24 hours. Settling also **archives the thread in bb**, so every other surface agrees, and new attention un-settles and unarchives it. After a day the row stops being drawn but stays archived.
 
@@ -274,11 +281,34 @@ browser, or remote client where you want to use it.
 
 ## Configuration
 
+The **view menu** (the sliders icon at the right of the group strip) holds how
+the tree is drawn. Every row is a submenu that shows its current value, and the
+icon carries a dot whenever anything is off its default:
+
+- **Filter** — All, Working, Needs you, Unread, Quiet, Quiet 1d+, Quiet 7d+.
+- **Sort projects** — Manual (default), Name A→Z / Z→A, Most threads, Recently
+  updated, Status.
+- **Sort threads** — Manual (default), Newest, Oldest, Recently updated, Least
+  recent, Recent attention, Name, Status.
+- **Collapse all** and **Reset view**.
+
+`Manual` reads the order you arranged by dragging; every other mode is a lens
+over it, and switching back restores the arrangement untouched. Dragging is only
+enabled in `Manual`, because a time or name sort has no place to drop a row.
+
+The arrangement and the two sort modes are stored on the server, so they are the
+same on every client. The tree's *shape* — the selected group tab, the filter,
+and what you collapsed or expanded — stays per browser.
+
 Nest Settings offers Default, High contrast, Colorblind-friendly, and Custom
 semantic palettes. Every status, live activity type, and PR role is previewed;
 custom values accept only six-digit hex colors and otherwise fall back safely.
 You can also choose row density, default child expansion, provider marks,
 parent-only PR metadata, and relative-time visibility.
+
+Those display settings stay in Settings — the frontend can read `bb.settings`
+but not write it — so the sidebar footer carries a **Nest settings** button as
+the one-click route to them.
 
 The snooze presets still assume a 09:00 morning, an 18:00 evening, and a week
 starting Monday in your local timezone. The settled shelf reaches back 24 hours.

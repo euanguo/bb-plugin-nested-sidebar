@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { GroupSection } from "@/components/inbox/group-section";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { SlimRow } from "@/components/inbox/slim-row";
-import { FilterMenu } from "@/components/inbox/filter-menu";
+import { ViewMenu } from "@/components/inbox/view-menu";
 import {
   BulkDeleteDialog,
   type BulkDeletePreviewView,
@@ -57,22 +57,23 @@ import {
   resolveNestPreferences,
 } from "@/lib/preferences";
 import {
-  applyFamilyOrder,
   keyboardFamilyMove,
   moveProjectFamily,
-  readFamilyOrder,
-  withProjectFamilyOrder,
-  writeFamilyOrder,
   type FamilyMoveResult,
 } from "@/lib/family-order";
 import {
-  applyProjectOrder,
   keyboardProjectMove,
   moveProject,
-  readProjectOrder,
-  writeProjectOrder,
   type ProjectMoveResult,
 } from "@/lib/project-order";
+import {
+  orderFamilies,
+  orderProjectGroups,
+  orderedProjectIds,
+  projectOrderScope,
+} from "@/lib/ordering";
+import { useNestOrder } from "@/hooks/use-nest-order";
+import { useViewPreferences } from "@/hooks/use-view-preferences";
 import { GroupTabs, type GroupTab } from "@/components/inbox/group-tabs";
 import { ProjectNode as ProjectNodeView } from "@/components/inbox/project-node";
 import {
@@ -175,8 +176,12 @@ export function ThreadInbox({
   const showSettled = viewState.settledOpen;
   const filterPreset = viewState.filter;
   const [selectionMode, setSelectionMode] = useState(false);
-  const [familyOrder, setFamilyOrder] = useState(readFamilyOrder);
-  const [projectOrder, setProjectOrder] = useState(readProjectOrder);
+  /**
+   * The manual arrangement and the sort lenses, both server-backed. The
+   * arrangement is the user's own data; the lenses decide whether it is read.
+   */
+  const order = useNestOrder();
+  const viewPreferences = useViewPreferences();
   const [reorderAnnouncement, setReorderAnnouncement] = useState("");
   /**
    * Copy feedback from the row menus, which live too far below this surface to
@@ -321,17 +326,26 @@ export function ThreadInbox({
       else active.push(thread);
     }
 
-    const unfilteredProjectGroups = applyProjectOrder(
+    // Projects are ordered per group, then each project's families by the
+    // thread lens. Both run before filtering and search, so a hidden row never
+    // moves and the visible order is always a slice of the complete one.
+    const unfilteredProjectGroups = orderProjectGroups(
       groupThreadsByProject(active, projects),
-      projectOrder,
+      {
+        assignment: groupsApi.assignment,
+        groupOrder: groupsApi.groups.map((group) => group.id),
+        manual: order.projects,
+        mode: viewPreferences.projectSort,
+        now,
+      },
     ).map((group) => ({
-        ...group,
-        families: applyFamilyOrder(
-          group.families,
-          familyOrder[group.project.id],
-        ),
+      ...group,
+      families: orderFamilies(group.families, {
+        manual: order.families[group.project.id],
+        mode: viewPreferences.threadSort,
+        now,
       }),
-    );
+    }));
     const filteredProjectGroups = filterProjectThreadGroups(
       unfilteredProjectGroups,
       filterPreset,
@@ -453,17 +467,19 @@ export function ThreadInbox({
     };
   }, [
     filterPreset,
-    familyOrder,
     groupScope,
     groupsApi.assignment,
     groupsApi.groups,
     lifecycle,
     now,
+    order.families,
+    order.projects,
     projects,
-    projectOrder,
     searchQuery,
     selectedRootIds,
     selectionMode,
+    viewPreferences.projectSort,
+    viewPreferences.threadSort,
     threads,
   ]);
 
@@ -589,14 +605,30 @@ export function ThreadInbox({
     ? activeVisibleCount + snoozed.length + settled.length + pendingSettled
     : activeVisibleCount;
   const searching = searchQuery.trim().length > 0;
-  const reorderDisabledReason = selectionMode
-    ? "Exit bulk selection to reorder thread families."
+  /**
+   * Reordering needs the complete, unfiltered, unsearched list — otherwise a
+   * hidden row would move implicitly — and it needs the mode that reads the
+   * manual order. A time or name sort has no place to drop a dragged row.
+   */
+  const sharedReorderBlocker = selectionMode
+    ? "Exit bulk selection to reorder."
     : filterPreset !== "all"
-      ? "Choose the All filter to reorder the complete project."
+      ? "Choose the All filter to reorder."
       : searching
-        ? "Clear search to reorder the complete project."
+        ? "Clear search to reorder."
         : null;
-  const reorderEnabled = reorderDisabledReason === null;
+  const familyReorderDisabledReason =
+    sharedReorderBlocker ??
+    (viewPreferences.threadSort !== "manual"
+      ? "Choose the Manual thread sort to drag thread families."
+      : null);
+  const reorderEnabled = familyReorderDisabledReason === null;
+  const projectReorderDisabledReason =
+    sharedReorderBlocker ??
+    (viewPreferences.projectSort !== "manual"
+      ? "Choose the Manual project sort to drag projects."
+      : null);
+  const projectReorderEnabled = projectReorderDisabledReason === null;
   const selectableVisibleRootIds = useMemo(
     () => selectableRootIds(projectGroups, activeThreadId),
     [activeThreadId, projectGroups],
@@ -647,16 +679,19 @@ export function ThreadInbox({
 
   const commitFamilyOrder = (
     projectId: string,
-    order: readonly string[],
+    rootIds: readonly string[],
     announcement: string,
   ) => {
-    const next = withProjectFamilyOrder(familyOrder, projectId, order);
-    if (next === null || !writeFamilyOrder(next)) {
-      setReorderAnnouncement("Thread family order could not be saved.");
-      return;
-    }
-    setFamilyOrder(next);
-    setReorderAnnouncement(announcement);
+    void order
+      .reorderFamilies(projectId, rootIds)
+      .then((ok) =>
+        setReorderAnnouncement(
+          ok ? announcement : "Thread family order could not be saved.",
+        ),
+      )
+      .catch(() =>
+        setReorderAnnouncement("Thread family order could not be saved."),
+      );
   };
 
   const projectOrderInputs = (projectId: string) => {
@@ -693,7 +728,9 @@ export function ThreadInbox({
     position: "before" | "after";
   }) => {
     if (!reorderEnabled) {
-      setReorderAnnouncement(reorderDisabledReason ?? "Reordering is unavailable.");
+      setReorderAnnouncement(
+        familyReorderDisabledReason ?? "Reordering is unavailable.",
+      );
       return;
     }
     const project = projectOrderInputs(input.targetProjectId);
@@ -723,7 +760,9 @@ export function ThreadInbox({
     direction: -1 | 1,
   ) => {
     if (!reorderEnabled) {
-      setReorderAnnouncement(reorderDisabledReason ?? "Reordering is unavailable.");
+      setReorderAnnouncement(
+        familyReorderDisabledReason ?? "Reordering is unavailable.",
+      );
       return;
     }
     const project = projectOrderInputs(projectId);
@@ -747,21 +786,24 @@ export function ThreadInbox({
   };
 
   const commitProjectOrder = (
-    order: readonly string[],
+    groupId: string,
+    projectIds: readonly string[],
     announcement: string,
   ) => {
-    if (!writeProjectOrder(order)) {
-      setReorderAnnouncement("Project order could not be saved.");
-      return;
-    }
-    setProjectOrder([...order]);
-    setReorderAnnouncement(announcement);
+    void order
+      .reorderProjects(groupId, projectIds)
+      .then((ok) =>
+        setReorderAnnouncement(
+          ok ? announcement : "Project order could not be saved.",
+        ),
+      )
+      .catch(() => setReorderAnnouncement("Project order could not be saved."));
   };
 
   const announceRejectedProjectMove = (result: ProjectMoveResult) => {
     if (result.ok) return;
     const messages: Record<Exclude<ProjectMoveResult, { ok: true }>["reason"], string> = {
-      "incomplete-order": "Project reordering requires the complete project list.",
+      "incomplete-order": "Project reordering requires the complete group order.",
       "invalid-id": "That project reorder request was invalid.",
       "missing-project": "That project cannot move farther in this direction.",
       "same-project": "Project order did not change.",
@@ -774,28 +816,54 @@ export function ThreadInbox({
     targetProjectId: string;
     position: "before" | "after";
   }) => {
-    if (!reorderEnabled) {
-      setReorderAnnouncement(reorderDisabledReason ?? "Reordering is unavailable.");
+    if (!projectReorderEnabled) {
+      setReorderAnnouncement(
+        projectReorderDisabledReason ?? "Reordering is unavailable.",
+      );
+      return;
+    }
+    const sourceScope = projectOrderScope(
+      groupsApi.assignment,
+      input.sourceProjectId,
+    );
+    const targetScope = projectOrderScope(
+      groupsApi.assignment,
+      input.targetProjectId,
+    );
+    // A project belongs to one group, and the order is stored per group; a
+    // cross-group drop would be two decisions at once. Membership has its own
+    // command in the row menu, so the drag stays a pure reorder.
+    if (sourceScope !== targetScope) {
+      setReorderAnnouncement(
+        "Projects can only be reordered within their group. Use Move to group to change groups.",
+      );
       return;
     }
     const result = moveProject({
-      projectIds: unfilteredProjectGroups.map((group) => group.project.id),
+      projectIds: orderedProjectIds(
+        unfilteredProjectGroups,
+        groupsApi.assignment,
+        sourceScope,
+      ),
       ...input,
     });
     if (!result.ok) {
       announceRejectedProjectMove(result);
       return;
     }
-    commitProjectOrder(result.order, "Moved project.");
+    commitProjectOrder(sourceScope, result.order, "Moved project.");
   };
 
   const reorderProjectByKeyboard = (projectId: string, direction: -1 | 1) => {
-    if (!reorderEnabled) {
-      setReorderAnnouncement(reorderDisabledReason ?? "Reordering is unavailable.");
+    if (!projectReorderEnabled) {
+      setReorderAnnouncement(
+        projectReorderDisabledReason ?? "Reordering is unavailable.",
+      );
       return;
     }
+    const scope = projectOrderScope(groupsApi.assignment, projectId);
     const result = keyboardProjectMove(
-      unfilteredProjectGroups.map((group) => group.project.id),
+      orderedProjectIds(unfilteredProjectGroups, groupsApi.assignment, scope),
       projectId,
       direction,
     );
@@ -807,6 +875,7 @@ export function ThreadInbox({
       (group) => group.project.id === projectId,
     )?.project.name;
     commitProjectOrder(
+      scope,
       result.order,
       `Moved ${projectName ?? "project"} ${direction < 0 ? "up" : "down"}.`,
     );
@@ -1020,6 +1089,26 @@ export function ThreadInbox({
       .catch((error) => setReorderAnnouncement(errorMessage(error)));
   };
 
+  /** Fold every group and project, so the tree collapses to its headers. */
+  const collapseAll = () => {
+    patchViewState({
+      collapsedGroups: [
+        ...groupsApi.groups.map((group) => group.id),
+        UNGROUPED_SCOPE_KEY,
+      ],
+      collapsedProjects: unfilteredProjectGroups.map(
+        (group) => group.project.id,
+      ),
+    });
+  };
+
+  /** Back to the default view: no filter, both orders read the manual list. */
+  const resetView = () => {
+    patchViewState({ filter: "all" });
+    viewPreferences.setProjectSort("manual");
+    viewPreferences.setThreadSort("manual");
+  };
+
   const treeHandlers: TreeRowHandlers = {
     providerInfoById,
     activeThreadId,
@@ -1034,11 +1123,11 @@ export function ThreadInbox({
     onNewThreadInWorkspace: seedFromWorkspace,
     preferences,
     reorderEnabled,
-    reorderDisabledReason,
+    reorderDisabledReason: familyReorderDisabledReason,
     onReorder: reorderByDrag,
     onKeyboardMove: reorderByKeyboard,
-    projectReorderEnabled: reorderEnabled,
-    projectReorderDisabledReason: reorderDisabledReason,
+    projectReorderEnabled,
+    projectReorderDisabledReason,
     onProjectReorder: reorderProjectByDrag,
     onProjectKeyboardMove: reorderProjectByKeyboard,
     onGroupMove: moveGroup,
@@ -1073,9 +1162,15 @@ export function ThreadInbox({
           onManage={() => setGroupManagerOpen(true)}
         >
           {selectionMode ? null : (
-            <FilterMenu
-              value={filterPreset}
-              onChange={(filter) => patchViewState({ filter })}
+            <ViewMenu
+              filter={filterPreset}
+              onFilterChange={(filter) => patchViewState({ filter })}
+              projectSort={viewPreferences.projectSort}
+              onProjectSortChange={viewPreferences.setProjectSort}
+              threadSort={viewPreferences.threadSort}
+              onThreadSortChange={viewPreferences.setThreadSort}
+              onCollapseAll={collapseAll}
+              onResetView={resetView}
             />
           )}
           <button
@@ -1094,7 +1189,7 @@ export function ThreadInbox({
             }}
             className={cn(
               "flex size-6 items-center justify-center rounded-md text-muted-foreground",
-              "hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50",
+              "hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-none focus-visible:bg-sidebar-accent focus-visible:text-foreground disabled:opacity-50",
               selectionMode && "bg-primary/10 text-primary",
             )}
           >
@@ -1190,16 +1285,28 @@ export function ThreadInbox({
       </div>
 
       {/*
-        Asymmetric padding, not `scrollbar-gutter: stable`.
+        The bar's lane is reserved, and the padding is not a stand-in for it.
 
-        The gutter reserves the scrollbar's full width even when nothing is
-        scrollable, which leaves a permanent dead strip on the right and makes
-        the tree look off-centre. Padding costs nothing when no bar is showing
-        and absorbs the bar exactly when one appears: the scrollbar sits in the
-        right padding, so the visible content keeps the same left and right
-        insets either way and nothing shifts.
+        A scrollbar is laid out between the padding box and the border, so it
+        is taken out of the content box and never out of the padding. Padding
+        therefore cannot absorb one: rows are full width, so the moment the bar
+        appears every row narrows by the bar's width and everything pinned to a
+        row's right edge — the trailing glyphs, the disclosure chevron, the
+        menu — jumps left. `scrollbar-gutter: stable` keeps the content box at
+        one width whether or not the bar is showing, so nothing moves. What is
+        left on the right is the bar's own lane plus a small gap, which is why
+        the padding is a token step rather than the roomier inset it used to
+        be: with the lane reserved, a wide padding just reads as a dead margin.
+
+        `overflow-y: auto` computes `overflow-x` to `auto`, so a single pixel
+        of horizontal overflow used to grow a horizontal bar, which then ate
+        its own strip of height and fed back into the vertical one. `overflow-x:
+        clip` ends that whole class of failure. Decorations that used to poke
+        past the right edge — the status, pull-request and provider tooltips —
+        are bounded by the row they hang off instead, which is what those rows'
+        `@container` is for.
       */}
-      <div className="min-h-0 flex-1 overflow-y-auto pl-1.5 pr-3 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-clip pl-1.5 pr-0.5 pb-2 [scrollbar-gutter:stable]">
         {status === "loading" ? null : status === "error" ? (
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
           <p role="status" className={EMPTY_STATE_CLASS}>
@@ -1224,7 +1331,7 @@ export function ThreadInbox({
                 onNewThreadInWorkspace={seedFromWorkspace}
                 projectColorOverrides={projectColorOverrides}
                 projectReorder={{
-                  enabled: reorderEnabled,
+                  enabled: projectReorderEnabled,
                   next: reorderProjectByKeyboard,
                   drop: reorderProjectDrop,
                 }}

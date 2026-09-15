@@ -207,6 +207,16 @@ export function worstKind(
   return KIND_PRIORITY[best] ?? "inactive";
 }
 
+/**
+ * A kind's place in the priority ladder, lowest number most urgent. Exported
+ * so the ordering comparators rank by the same ladder the rollups fold with —
+ * a "sort by status" that disagreed with the dots would be worse than none.
+ */
+export function statusKindRank(kind: FamilyStatusKind): number {
+  const rank = KIND_PRIORITY.indexOf(kind);
+  return rank < 0 ? KIND_PRIORITY.length : rank;
+}
+
 /** True when a rollup should draw an animated dot rather than a static one. */
 export function rollupIsAnimated(rollup: StatusRollup): boolean {
   return rollup.kind === "working";

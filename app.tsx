@@ -29,4 +29,15 @@ export default definePluginApp((app) => {
     title: "Parent thread",
     component: ParentChip,
   });
+
+  // The view menu can change filtering and ordering, but the display settings
+  // (density, row layout, which metadata shows) are `bb.settings`, which the
+  // frontend can read but not write. Rather than keep a second copy of them,
+  // this is a one-click route to the page that owns them.
+  app.slots.sidebarFooterAction({
+    id: "settings",
+    title: "Nest settings",
+    icon: "Settings",
+    run: (context) => context.openSettings(),
+  });
 });

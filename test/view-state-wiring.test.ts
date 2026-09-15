@@ -26,7 +26,7 @@ describe("remembered view state", () => {
   it("restores the scope, the filter, and the shelves", () => {
     assert.match(inbox, /resolveGroupScope\(/);
     assert.match(inbox, /activeKey={activeScopeKey}/);
-    assert.match(inbox, /value={filterPreset}/);
+    assert.match(inbox, /filter={filterPreset}/);
     assert.match(inbox, /patchViewState\(\{ snoozedOpen:/);
     assert.match(inbox, /patchViewState\(\{ settledOpen:/);
   });

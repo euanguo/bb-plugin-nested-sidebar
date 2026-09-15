@@ -1,0 +1,85 @@
+import { useCallback, useEffect, useState } from "react";
+import { useRpc, useRealtime } from "@get-bb/plugin-sdk/app";
+import type { nestRpcContract } from "@/server";
+import { VIEW_PREFERENCE_CHANNEL } from "@/server";
+import {
+  DEFAULT_PROJECT_SORT,
+  DEFAULT_THREAD_SORT,
+  type ProjectSortMode,
+  type ThreadSortMode,
+} from "@/lib/sort-modes";
+
+export interface ViewPreferencesApi {
+  readonly projectSort: ProjectSortMode;
+  readonly threadSort: ThreadSortMode;
+  readonly ready: boolean;
+  setProjectSort: (mode: ProjectSortMode) => void;
+  setThreadSort: (mode: ThreadSortMode) => void;
+}
+
+/**
+ * How the tree is ordered, read once and re-read on the plugin's publish.
+ *
+ * The frontend cannot write `bb.settings`, so these live in the plugin's own
+ * store and every change goes through the server. The hook only mirrors it.
+ */
+export function useViewPreferences(): ViewPreferencesApi {
+  const rpc = useRpc<typeof nestRpcContract>();
+  const [projectSort, setProjectSortState] =
+    useState<ProjectSortMode>(DEFAULT_PROJECT_SORT);
+  const [threadSort, setThreadSortState] =
+    useState<ThreadSortMode>(DEFAULT_THREAD_SORT);
+  const [ready, setReady] = useState(false);
+  const [nonce, setNonce] = useState(0);
+
+  const refresh = useCallback(() => setNonce((value) => value + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    rpc
+      .call("getViewPreferences", {})
+      .then((result) => {
+        if (cancelled) return;
+        setProjectSortState(result.projectSort);
+        setThreadSortState(result.threadSort);
+        setReady(true);
+      })
+      .catch(() => {
+        // The default order is always a safe answer.
+        if (!cancelled) setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nonce, rpc]);
+
+  useRealtime(VIEW_PREFERENCE_CHANNEL, refresh);
+
+  const setProjectSort = useCallback(
+    (mode: ProjectSortMode) => {
+      setProjectSortState(mode);
+      void rpc
+        .call("setViewPreferences", { projectSort: mode })
+        .catch(() => refresh());
+    },
+    [rpc, refresh],
+  );
+
+  const setThreadSort = useCallback(
+    (mode: ThreadSortMode) => {
+      setThreadSortState(mode);
+      void rpc
+        .call("setViewPreferences", { threadSort: mode })
+        .catch(() => refresh());
+    },
+    [rpc, refresh],
+  );
+
+  return {
+    projectSort,
+    threadSort,
+    ready,
+    setProjectSort,
+    setThreadSort,
+  };
+}

@@ -152,7 +152,7 @@ export function GroupTabs({
         className={cn(
           "flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground",
           "hover:bg-sidebar-accent hover:text-foreground",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "focus-visible:outline-none focus-visible:bg-sidebar-accent focus-visible:text-foreground",
         )}
       >
         <Icon name="FolderAdd" className="size-3.5" aria-hidden />

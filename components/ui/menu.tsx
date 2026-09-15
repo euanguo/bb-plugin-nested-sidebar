@@ -149,10 +149,16 @@ export function MenuCheckboxItem({
 export function MenuSub({
   label,
   icon,
+  hint,
   children,
 }: {
   label: string;
   icon?: Parameters<typeof Icon>[0]["name"];
+  /**
+   * The current value, shown on the trigger. A submenu that reports its own
+   * state means the menu does not have to be opened to read the tree's order.
+   */
+  hint?: string;
   children: React.ReactNode;
 }) {
   const scope = usePortalScopeProps();
@@ -176,6 +182,11 @@ export function MenuSub({
           />
         )}
         <span className="min-w-0 flex-1 truncate">{label}</span>
+        {hint === undefined ? null : (
+          <span className="max-w-24 shrink-0 truncate text-2xs text-muted-foreground">
+            {hint}
+          </span>
+        )}
         <Icon
           name="ChevronRight"
           className="size-3.5 text-muted-foreground"
@@ -199,6 +210,48 @@ export function MenuSub({
 
 export function MenuSeparator() {
   return <DropdownMenu.Separator className="my-1 h-px bg-border/70" />;
+}
+
+/** A group of mutually exclusive choices, e.g. one sort mode or one filter. */
+export function MenuRadioGroup({
+  value,
+  onValueChange,
+  children,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <DropdownMenu.RadioGroup value={value} onValueChange={onValueChange}>
+      {children}
+    </DropdownMenu.RadioGroup>
+  );
+}
+
+export function MenuRadioItem({
+  value,
+  label,
+}: {
+  value: string;
+  label: string;
+}) {
+  return (
+    <DropdownMenu.RadioItem
+      value={value}
+      className={cn(
+        "flex cursor-default select-none items-center gap-2 px-2 py-1 text-xs outline-none",
+        "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground",
+      )}
+    >
+      <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center">
+        <DropdownMenu.ItemIndicator>
+          <Icon name="Check" className="size-3.5 text-primary" aria-hidden />
+        </DropdownMenu.ItemIndicator>
+      </span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </DropdownMenu.RadioItem>
+  );
 }
 
 export function MenuLabel({ children }: { children: React.ReactNode }) {
