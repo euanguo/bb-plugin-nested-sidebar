@@ -34,6 +34,7 @@
     },
     "server": "./server.ts",
     "app": "./app.tsx",
+    "host": "./host.ts",
     "skills": []
   },
   "files": [
@@ -50,7 +51,11 @@
     "app.tsx",
     "lib/",
     "components/",
-    "hooks/"
+    "hooks/",
+    "dist/host.js",
+    "dist/host.meta.json",
+    "host.ts",
+    "host/"
   ],
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.1.3",

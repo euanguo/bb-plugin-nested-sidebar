@@ -32,6 +32,7 @@ import type { NestPreferences } from "@/lib/preferences";
 import { renameIntent } from "@/lib/groups";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import { Modal } from "@/components/ui/modal";
+import { RemoveWorktreeDialog } from "@/components/inbox/remove-worktree-dialog";
 
 export interface TreeRowHandlers {
   readonly providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
@@ -127,6 +128,7 @@ export function WorkspaceGroup({
     viewState.setWorkspaceExpanded(node.ref.key, open);
   const [renaming, setRenaming] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const reveal = useRowReveal();
   const listId = useId();
   const renameInput = useRef<HTMLInputElement>(null);
@@ -312,6 +314,13 @@ export function WorkspaceGroup({
                 />
               </>
             )}
+            <MenuSeparator />
+            <MenuItem
+              icon="Trash"
+              label="Remove worktree…"
+              disabled={node.ref.environmentId === null}
+              onSelect={() => setRemoving(true)}
+            />
           </Menu>
         </RowActions>
       </div>
@@ -328,6 +337,14 @@ export function WorkspaceGroup({
             setArchiving(false);
             for (const family of node.families) actions.archive(family.root.id);
           }}
+        />
+      ) : null}
+      {removing ? (
+        <RemoveWorktreeDialog
+          open
+          environmentId={node.ref.environmentId}
+          label={label}
+          onClose={() => setRemoving(false)}
         />
       ) : null}
       {expanded ? (
