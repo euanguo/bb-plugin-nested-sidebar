@@ -29,6 +29,7 @@ import { workspaceRowLabel } from "@/lib/workspace";
 import type { RootSelectionIntent } from "@/lib/thread-management";
 import { BULK_PROTECTION_LABELS, bulkEligibility } from "@/lib/thread-management";
 import type { NestPreferences } from "@/lib/preferences";
+import type { WorkspacePaths } from "@/hooks/use-workspace-paths";
 import { renameIntent } from "@/lib/groups";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import { Modal } from "@/components/ui/modal";
@@ -48,6 +49,8 @@ export interface TreeRowHandlers {
   /** Opens the new-thread dialog seeded from a workspace row. */
   readonly onNewThreadInWorkspace: (launch: WorkspaceLaunch) => void;
   readonly preferences: NestPreferences;
+  /** Where each workspace and project lives, for the copy actions. */
+  readonly paths: WorkspacePaths;
   /** Family reordering is disabled by selection, filters, and host search. */
   readonly reorderEnabled: boolean;
   readonly reorderDisabledReason: string | null;
@@ -148,6 +151,10 @@ export function WorkspaceGroup({
     handlers.preferences.worktreeLabel,
   );
   const stacked = rowLabel.detail !== null && rowLabel.stacked;
+  const path =
+    node.ref.environmentId === null
+      ? null
+      : (handlers.paths.environments[node.ref.environmentId] ?? null);
 
   const rows: InfoCardRow[] = [
     { label: "Kind", value: node.ref.kind === "worktree" ? "Worktree" : node.ref.kind === "main" ? "Checkout" : "No workspace" },
@@ -199,8 +206,10 @@ export function WorkspaceGroup({
               : rowLabel.label
           }
         >
+          {/* A worktree is a branch of the project; a checkout is the project's
+              own directory, and the two are worth telling apart at a glance. */}
           <Icon
-            name="GitBranch"
+            name={node.ref.kind === "main" ? "Folder" : "GitBranch"}
             className="size-3 shrink-0 text-muted-foreground/60"
             aria-hidden
           />
@@ -291,18 +300,38 @@ export function WorkspaceGroup({
               />
             )}
             {node.ref.environmentId === null ? null : (
-              <MenuItem
-                icon="IdCard"
-                label="Copy environment ID"
-                onSelect={() => {
-                  if (node.ref.environmentId !== null) {
-                    void copyWithAnnouncement(
-                      node.ref.environmentId,
-                      "Environment ID",
-                    );
-                  }
-                }}
-              />
+              <>
+                <MenuItem
+                  icon="Copy"
+                  label="Copy path"
+                  disabled={path === null}
+                  onSelect={() => {
+                    if (path !== null) void copyWithAnnouncement(path, "Path");
+                  }}
+                />
+                <MenuItem
+                  icon="Copy"
+                  label="Copy branch"
+                  disabled={branch === null}
+                  onSelect={() => {
+                    if (branch !== null) {
+                      void copyWithAnnouncement(branch, "Branch");
+                    }
+                  }}
+                />
+                <MenuItem
+                  icon="IdCard"
+                  label="Copy environment ID"
+                  onSelect={() => {
+                    if (node.ref.environmentId !== null) {
+                      void copyWithAnnouncement(
+                        node.ref.environmentId,
+                        "Environment ID",
+                      );
+                    }
+                  }}
+                />
+              </>
             )}
             {threadCount === 0 ? null : (
               <>
