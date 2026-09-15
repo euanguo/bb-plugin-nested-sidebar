@@ -1,6 +1,8 @@
 # Third-party notices — Nest
 
-The plugin's own code is MIT, Copyright (c) 2026 Mateo Cerquetella. See [LICENSE](LICENSE).
+The plugin's own code is MIT, through the fork chain recorded in
+[LICENSE](LICENSE): bb's example sidebar, Dockside, the unpublished fork this
+repository started from, and this repository.
 
 This package also ships code and artwork from the projects below, under their own
 terms. Every entry is MIT licensed; the licence text is given once at the end and

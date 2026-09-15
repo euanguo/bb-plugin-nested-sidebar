@@ -39,6 +39,32 @@ states.
 You clear the list with two email verbs: **snooze** a thread until a wake time, or
 **settle** it when you are done. Both shelves collapse to one counted header.
 
+## Fork and origin
+
+Nest is a fork, and this repository is the third copy in a short line of them:
+
+| | |
+|---|---|
+| [`get-bb/bb` → `examples/plugins/t3sidebar`](https://github.com/get-bb/bb/tree/main/examples/plugins/t3sidebar) | the example sidebar every one of these starts from (MIT, Copyright (c) 2026 Michael Yong) |
+| [`MateoCerquetella/bb-plugins` → `plugins/dockside`](https://github.com/MateoCerquetella/bb-plugins/tree/main/plugins/dockside) | Dockside, the fork of that sidebar this line descends from (MIT, Copyright (c) 2026 Mateo Cerquetella) |
+| the **unpublished Nest fork by verger** | groups, the worktree tree, status rollups, and the row-seeded new-thread dialog — the sidebar this repository started as. It has no public URL: it was installed from a local path source, and its README is the one this one grew out of |
+| **this repository**, [`euanguo/bb-plugin-nested-sidebar`](https://github.com/euanguo/bb-plugin-nested-sidebar) | what the sections below describe |
+
+This repository is **not** a GitHub fork: it has no upstream parent on GitHub and
+no fork banner, because it was created from a copy of the unpublished fork rather
+than through GitHub's fork button. Nothing here tracks an upstream tag, and there
+is no "compare against upstream" to follow. The authorship the copy carried over
+is recorded in `package.json` (`verger (fork of Dockside by Mateo Cerquetella)`),
+and the licence chain in `LICENSE` and `THIRD_PARTY_NOTICES.md`. The ADR that
+recorded why the sidebar was forked rather than written from scratch lives outside
+this repository, in the workspace the fork was extracted from.
+
+What this repository has added since it was copied is its commit history: the
+worktree row carrying its alias and branch, the project's own checkout as a row
+of its own that leads its project, removing a worktree, the copy actions on the
+workspace and project rows, and the strip's own All and Ungrouped tabs taking an
+icon.
+
 ## Nest in action
 
 | Light | Dark |
@@ -67,13 +93,13 @@ Two things are worth knowing before you tune it:
 
 ## Install
 
-This fork is **not published** — it is installed from this repository as a local
-path source. There is no marketplace entry and no upstream tag to track.
+The plugin is **not published to a marketplace** — it is installed from this
+repository as a local path source, which is also the loop to develop it in.
 
 ```sh
 cd path/to/bb-plugin-nested-sidebar
 npm install                       # runtime deps + the pinned @get-bb/plugin-sdk
-bb plugin build .                 # writes dist/{server,app}
+bb plugin build .                 # writes dist/{server,app,host}
 bb plugin install "path:$PWD" --yes
 ```
 
@@ -83,8 +109,7 @@ uninstalls it, and the local path source stays on disk.
 
 The install used to fail with `Could not resolve "@bb/plugin-sdk"`: the tree
 vendored SDK declarations under `types/`. It now depends on the
-`@get-bb/plugin-sdk` package instead — see
-[ADR 0002](../../docs/adr/0002-sidebar-fork-and-information-architecture.md).
+`@get-bb/plugin-sdk` package instead.
 
 ## Requirements
 
@@ -390,19 +415,11 @@ plugin and are not claimed by Nest.
 
 ## Credits
 
-This fork is built on **Dockside** by Mateo Cerquetella, which is itself derived
-from bb's own example sidebar.
-
-| | |
-|---|---|
-| Forked from | [`MateoCerquetella/bb-plugins` → `plugins/dockside`](https://github.com/MateoCerquetella/bb-plugins/tree/main/plugins/dockside) (MIT) |
-| Dockside derived from | [`get-bb/bb` → `examples/plugins/t3sidebar`](https://github.com/get-bb/bb/tree/main/examples/plugins/t3sidebar) |
-| License | MIT — see `LICENSE` and `THIRD_PARTY_NOTICES.md` |
-
-Nest adds the group level, the worktree tree, status rollups, and the row-seeded
-new-thread dialog on top. Why it was forked rather than written from scratch is
-recorded in
-[ADR 0002](../../docs/adr/0002-sidebar-fork-and-information-architecture.md).
+The full lineage is under [Fork and origin](#fork-and-origin): bb's example
+sidebar (MIT, Copyright (c) 2026 Michael Yong), Dockside by Mateo Cerquetella
+(MIT), and the unpublished fork this repository started from. `LICENSE` carries
+the terms; `THIRD_PARTY_NOTICES.md` lists everything bundled on top of that,
+including shadcn/ui and the Hugeicons the group picker draws from.
 
 The provider brand marks are vendored SVG geometry from `get-bb/bb` and depict
 third-party brands. A host-served logo always wins over them, rendered as a muted
