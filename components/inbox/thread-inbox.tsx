@@ -104,6 +104,13 @@ import {
   type GroupScope,
 } from "@/lib/groups";
 import { buildTree, searchTree, threadAncestors } from "@/lib/tree";
+import { workspaceRefOf, type WorkspaceRef } from "@/lib/workspace";
+import {
+  keyboardWorkspaceMove,
+  moveProjectWorkspace,
+  orderWorkspaces,
+  type WorkspaceMoveResult,
+} from "@/lib/workspace-order";
 import type { WorkspaceLaunch, TreeRowHandlers } from "@/components/inbox/tree-rows";
 
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
@@ -451,6 +458,7 @@ export function ThreadInbox({
           icon: group.icon,
         })),
         ungroupedIcon: groupsApi.icons.ungrouped,
+        workspaceOrder: order.workspaces,
       }),
       searchQuery,
     );
@@ -654,6 +662,13 @@ export function ThreadInbox({
       ? "Choose the Manual thread sort to drag thread families."
       : null);
   const reorderEnabled = familyReorderDisabledReason === null;
+  /*
+   * The workspace level has no sort lens — what is stored is always what is
+   * drawn — so a drag there only needs the shared blocker: a row hidden by
+   * search, a filter, or bulk selection must never move implicitly.
+   */
+  const workspaceReorderDisabledReason = sharedReorderBlocker;
+  const workspaceReorderEnabled = workspaceReorderDisabledReason === null;
   const projectReorderDisabledReason =
     sharedReorderBlocker ??
     (viewPreferences.projectSort !== "manual"
@@ -749,6 +764,129 @@ export function ThreadInbox({
       "same-root": "Thread family order did not change.",
     };
     setReorderAnnouncement(messages[result.reason]);
+  };
+
+  /**
+   * The project's worktrees as rows, in the order they are drawn.
+   *
+   * Taken from every thread the project has rather than from what is on screen:
+   * a reorder has to write the complete arrangement, or a row hidden by search
+   * would drop out of it. The checkout is not in the list, because it leads
+   * under every arrangement and there is nothing to move.
+   */
+  const workspaceOrderInputs = (projectId: string) => {
+    const group = unfilteredProjectGroups.find(
+      (candidate) => candidate.project.id === projectId,
+    );
+    if (group === undefined) return null;
+    const refs = new Map<string, WorkspaceRef>();
+    for (const family of group.families) {
+      const ref = workspaceRefOf(family.root);
+      if (!refs.has(ref.key)) refs.set(ref.key, ref);
+    }
+    return {
+      keys: orderWorkspaces(
+        [...refs.values()].map((ref) => ({ ref })),
+        order.workspaces[projectId],
+      )
+        .filter((workspace) => workspace.ref.kind === "worktree")
+        .map((workspace) => workspace.ref.key),
+    };
+  };
+
+  const commitWorkspaceOrder = (
+    projectId: string,
+    keys: readonly string[],
+    announcement: string,
+  ) => {
+    void order
+      .reorderWorkspaces(projectId, keys)
+      .then((ok) =>
+        setReorderAnnouncement(
+          ok ? announcement : "Worktree order could not be saved.",
+        ),
+      )
+      .catch(() =>
+        setReorderAnnouncement("Worktree order could not be saved."),
+      );
+  };
+
+  const announceRejectedWorkspaceMove = (result: WorkspaceMoveResult) => {
+    if (result.ok) return;
+    const messages: Record<
+      Exclude<WorkspaceMoveResult, { ok: true }>["reason"],
+      string
+    > = {
+      "cross-project": "Worktrees cannot move between projects.",
+      "invalid-id": "That reorder request was invalid.",
+      "missing-workspace": "That worktree cannot move farther in this direction.",
+      "same-workspace": "Worktree order did not change.",
+    };
+    setReorderAnnouncement(messages[result.reason]);
+  };
+
+  const reorderWorkspaceByDrag = (input: {
+    sourceProjectId: string;
+    sourceKey: string;
+    targetProjectId: string;
+    targetKey: string;
+    position: "before" | "after";
+  }) => {
+    if (!workspaceReorderEnabled) {
+      setReorderAnnouncement(
+        workspaceReorderDisabledReason ?? "Reordering is unavailable.",
+      );
+      return;
+    }
+    const project = workspaceOrderInputs(input.targetProjectId);
+    if (project === null) {
+      setReorderAnnouncement("That project is no longer available.");
+      return;
+    }
+    const result = moveProjectWorkspace({
+      projectId: input.targetProjectId,
+      ...input,
+      keys: project.keys,
+    });
+    if (!result.ok) {
+      announceRejectedWorkspaceMove(result);
+      return;
+    }
+    commitWorkspaceOrder(
+      input.targetProjectId,
+      result.keys,
+      "Moved worktree.",
+    );
+  };
+
+  const reorderWorkspaceByKeyboard = (
+    projectId: string,
+    workspaceKey: string,
+    direction: -1 | 1,
+  ) => {
+    if (!workspaceReorderEnabled) {
+      setReorderAnnouncement(
+        workspaceReorderDisabledReason ?? "Reordering is unavailable.",
+      );
+      return;
+    }
+    const project = workspaceOrderInputs(projectId);
+    if (project === null) return;
+    const result = keyboardWorkspaceMove(
+      projectId,
+      project.keys,
+      workspaceKey,
+      direction,
+    );
+    if (!result.ok) {
+      announceRejectedWorkspaceMove(result);
+      return;
+    }
+    commitWorkspaceOrder(
+      projectId,
+      result.keys,
+      `Moved worktree ${direction < 0 ? "up" : "down"}.`,
+    );
   };
 
   const reorderByDrag = (input: {
@@ -1158,6 +1296,10 @@ export function ThreadInbox({
     reorderDisabledReason: familyReorderDisabledReason,
     onReorder: reorderByDrag,
     onKeyboardMove: reorderByKeyboard,
+    workspaceReorderEnabled,
+    workspaceReorderDisabledReason,
+    onWorkspaceReorder: reorderWorkspaceByDrag,
+    onWorkspaceKeyboardMove: reorderWorkspaceByKeyboard,
     projectReorderEnabled,
     projectReorderDisabledReason,
     onProjectReorder: reorderProjectByDrag,

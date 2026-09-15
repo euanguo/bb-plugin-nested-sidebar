@@ -54,6 +54,25 @@ export interface TreeRowHandlers {
   /** Family reordering is disabled by selection, filters, and host search. */
   readonly reorderEnabled: boolean;
   readonly reorderDisabledReason: string | null;
+  /**
+   * Worktree rows drag too, but they answer to fewer modes: the workspace
+   * arrangement is always the manual one, so only the shared blocker — search,
+   * a filter, bulk selection — can turn them off.
+   */
+  readonly workspaceReorderEnabled: boolean;
+  readonly workspaceReorderDisabledReason: string | null;
+  readonly onWorkspaceReorder: (input: {
+    sourceProjectId: string;
+    sourceKey: string;
+    targetProjectId: string;
+    targetKey: string;
+    position: "before" | "after";
+  }) => void;
+  readonly onWorkspaceKeyboardMove: (
+    projectId: string,
+    workspaceKey: string,
+    direction: -1 | 1,
+  ) => void;
   readonly onReorder: (input: FamilyReorderInput) => void;
   readonly onKeyboardMove: (
     projectId: string,
@@ -132,6 +151,11 @@ export function WorkspaceGroup({
   const [renaming, setRenaming] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const dragStarted = useRef(false);
+  // The checkout leads every project and has nothing to arrange, so only a
+  // worktree row is a handle.
+  const canReorder =
+    handlers.workspaceReorderEnabled && node.ref.kind === "worktree";
   const reveal = useRowReveal();
   const listId = useId();
   const renameInput = useRef<HTMLInputElement>(null);
@@ -177,6 +201,33 @@ export function WorkspaceGroup({
           "group/ws flex w-full items-center gap-1.5 rounded-md pl-4 pr-1.5 hover:bg-sidebar-accent/50",
           stacked ? "min-h-11 py-1" : "h-7",
         )}
+        onDragOver={(event) => {
+          if (!canReorder) return;
+          if (!event.dataTransfer.types.includes("application/x-nest-workspace")) {
+            return;
+          }
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(event) => {
+          if (!canReorder) return;
+          const raw = event.dataTransfer.getData("application/x-nest-workspace");
+          if (raw.length === 0) return;
+          event.preventDefault();
+          const dragged = parseDraggedWorkspace(raw);
+          if (dragged === null) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          handlers.onWorkspaceReorder({
+            sourceProjectId: dragged.projectId,
+            sourceKey: dragged.workspaceKey,
+            targetProjectId: projectId,
+            targetKey: node.ref.key,
+            position:
+              event.clientY >= bounds.top + bounds.height / 2
+                ? "after"
+                : "before",
+          });
+        }}
       >
         {renaming && node.ref.environmentId !== null ? (
           <WorkspaceNameField
@@ -196,10 +247,51 @@ export function WorkspaceGroup({
         ) : (
         <button
           type="button"
+          draggable={canReorder}
           aria-expanded={expanded}
           aria-controls={listId}
-          onClick={() => setExpanded(!expanded)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          aria-keyshortcuts={canReorder ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+          onClick={(event) => {
+            if (dragStarted.current) {
+              event.preventDefault();
+              return;
+            }
+            setExpanded(!expanded);
+          }}
+          onDragStart={(event) => {
+            if (!canReorder || node.ref.environmentId === null) {
+              event.preventDefault();
+              return;
+            }
+            dragStarted.current = true;
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData(
+              "application/x-nest-workspace",
+              JSON.stringify({
+                projectId,
+                workspaceKey: node.ref.key,
+              }),
+            );
+          }}
+          onDragEnd={() => {
+            setTimeout(() => {
+              dragStarted.current = false;
+            }, 0);
+          }}
+          onKeyDown={(event) => {
+            if (!event.altKey || !canReorder) return;
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+            event.preventDefault();
+            handlers.onWorkspaceKeyboardMove(
+              projectId,
+              node.ref.key,
+              event.key === "ArrowUp" ? -1 : 1,
+            );
+          }}
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            canReorder && "cursor-grab active:cursor-grabbing",
+          )}
           title={
             rowLabel.detail !== null && !stacked
               ? `${rowLabel.label} → ${rowLabel.detail}`
@@ -627,4 +719,30 @@ function ArchiveWorkspaceDialog({
       </p>
     </Modal>
   );
+}
+
+/** The payload a dragged worktree row carries: which project, and which place. */
+function parseDraggedWorkspace(
+  raw: string,
+): { projectId: string; workspaceKey: string } | null {
+  if (raw.length === 0 || raw.length > 500) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("projectId" in parsed) ||
+      !("workspaceKey" in parsed) ||
+      typeof parsed.projectId !== "string" ||
+      typeof parsed.workspaceKey !== "string"
+    ) {
+      return null;
+    }
+    return {
+      projectId: parsed.projectId,
+      workspaceKey: parsed.workspaceKey,
+    };
+  } catch {
+    return null;
+  }
 }

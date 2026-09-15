@@ -2,9 +2,10 @@
  * The manual arrangement, as a per-scope map.
  *
  * One scope is one list: a group holds its projects, a project holds its root
- * threads. Storing it per scope rather than as one global list is what makes
- * "move a project inside its group" a local write — and it is the shape the
- * tree already has (`group -> project -> thread`).
+ * threads, and a project also holds its worktrees. Storing it per scope rather
+ * than as one global list is what makes "move a project inside its group" a
+ * local write — and it is the shape the tree already has
+ * (`group -> project -> workspace -> thread`).
  *
  * This module is shared by the server store and the frontend hook, so it stays
  * free of any SDK or inbox type. `UNGROUPED_ORDER_SCOPE` mirrors
@@ -27,9 +28,15 @@ export interface ManualOrder {
   readonly projects: ManualOrderMap;
   /** Project id -> root thread ids. */
   readonly families: ManualOrderMap;
+  /** Project id -> worktree keys, in the order they are drawn. */
+  readonly workspaces: ManualOrderMap;
 }
 
-export const EMPTY_MANUAL_ORDER: ManualOrder = { projects: {}, families: {} };
+export const EMPTY_MANUAL_ORDER: ManualOrder = {
+  projects: {},
+  families: {},
+  workspaces: {},
+};
 
 export function validOrderId(value: unknown): value is string {
   return (
