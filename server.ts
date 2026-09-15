@@ -40,6 +40,13 @@ import {
   createProjectColorStore,
 } from "./lib/project-color-store.ts";
 import {
+  SCOPE_ICON_MIGRATION,
+  createScopeIconStore,
+} from "./lib/scope-icon-store.ts";
+import {
+  SCOPE_ICON_SCOPES,
+} from "./lib/group-scope-icons.ts";
+import {
   GROUP_ASSIGNMENT_MIGRATION,
   GROUP_MIGRATION,
   createGroupStore,
@@ -92,6 +99,7 @@ const migrations = [
   `ALTER TABLE project_groups ADD COLUMN icon TEXT NOT NULL DEFAULT 'Layer'`,
   MANUAL_ORDER_MIGRATION,
   VIEW_PREFERENCE_MIGRATION,
+  SCOPE_ICON_MIGRATION,
 ];
 
 export interface StoredLifecycleRow {
@@ -231,7 +239,20 @@ export const nestRpcContract = defineRpcContract({
         }),
       ),
       assignment: z.record(z.string(), z.string()),
+      // The strip's own two tabs are not rows in project_groups, so their icons
+      // travel beside the groups rather than inside them.
+      icons: z.object({
+        all: groupIconSchema,
+        ungrouped: groupIconSchema,
+      }),
     }),
+  },
+  setScopeIcon: {
+    input: z.object({
+      scope: z.enum(SCOPE_ICON_SCOPES),
+      icon: groupIconSchema,
+    }),
+    output: z.object({ ok: z.boolean() }),
   },
   createGroup: {
     input: z.object({
@@ -639,6 +660,7 @@ export default function plugin(bb: BbPluginApi) {
   bb.storage.migrate(db, nestMigrations(db, migrations));
   const projectColors = createProjectColorStore(db);
   const groups = createGroupStore(db);
+  const scopeIcons = createScopeIconStore(db);
   const orders = createOrderStore(db);
   const viewPreferences = createViewPreferenceStore(db);
 
@@ -913,7 +935,16 @@ export default function plugin(bb: BbPluginApi) {
       return { projectId, reset };
     },
     async listGroups() {
-      return { groups: groups.list(), assignment: groups.assignments() };
+      return {
+        groups: groups.list(),
+        assignment: groups.assignments(),
+        icons: scopeIcons.list(),
+      };
+    },
+    async setScopeIcon({ scope, icon }) {
+      const ok = scopeIcons.set(scope, icon);
+      if (ok) bb.realtime.publish(GROUP_CHANNEL, {});
+      return { ok };
     },
     async createGroup({ name, icon }) {
       const created = groups.create(`grp_${randomUUID()}`, name, icon);

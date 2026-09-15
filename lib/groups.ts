@@ -115,6 +115,20 @@ export function groupScopeKey(scope: GroupScope): string {
 }
 
 /**
+ * Whether the strip draws its Ungrouped tab.
+ *
+ * Ungrouped is a real destination, but only once groups exist — with none it
+ * would duplicate All — and only while it holds a project, because a tab whose
+ * tree can only ever be empty is a destination to nowhere.
+ */
+export function shouldShowUngroupedTab(
+  projectGroupCount: number,
+  ungroupedProjectCount: number,
+): boolean {
+  return projectGroupCount > 0 && ungroupedProjectCount > 0;
+}
+
+/**
  * Which group a project belongs to under the current scope. `null` means the
  * scope does not include it. Membership is by the FIRST group that claims a
  * project, so a stale duplicate assignment cannot draw a project twice.

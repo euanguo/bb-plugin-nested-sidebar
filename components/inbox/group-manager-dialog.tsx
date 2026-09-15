@@ -16,23 +16,39 @@ import {
   type GroupIconName,
   type ProjectGroup,
 } from "@/lib/groups";
+import {
+  SCOPE_ICON_SCOPES,
+  type ScopeIconScope,
+  type ScopeIcons,
+} from "@/lib/group-scope-icons";
 
 const INITIAL_ICON_LIMIT = 240;
+
+/** What each of the strip's own tabs is called, for the picker's label. */
+const SCOPE_ICON_LABELS: Readonly<Record<ScopeIconScope, string>> = {
+  all: "All",
+  ungrouped: "Ungrouped",
+};
 
 /** Create, rename, reorder, delete, and visually choose project group icons. */
 export function GroupManagerDialog({
   open,
   groups,
+  icons,
   onClose,
 }: {
   open: boolean;
   groups: readonly ProjectGroup[];
+  icons: ScopeIcons;
   onClose: () => void;
 }) {
   const rpc = useRpc<typeof nestRpcContract>();
   const [draftName, setDraftName] = useState("");
   const [draftIcon, setDraftIcon] = useState<GroupIconName>("LayerIcon");
   const [iconOverrides, setIconOverrides] = useState<Record<string, GroupIconName>>({});
+  const [scopeOverrides, setScopeOverrides] = useState<
+    Partial<Record<ScopeIconScope, GroupIconName>>
+  >({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +64,19 @@ export function GroupManagerDialog({
       return next;
     });
   }, [groups]);
+
+  useEffect(() => {
+    setScopeOverrides((current) => {
+      const next: Partial<Record<ScopeIconScope, GroupIconName>> = {};
+      for (const scope of SCOPE_ICON_SCOPES) {
+        const override = current[scope];
+        if (override !== undefined && override !== icons[scope]) {
+          next[scope] = override;
+        }
+      }
+      return next;
+    });
+  }, [icons]);
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -86,6 +115,28 @@ export function GroupManagerDialog({
     });
   };
 
+  /**
+   * The strip's own two tabs are not groups, so their icon is the only thing
+   * about them that can be chosen. The optimistic override is dropped again if
+   * the write fails, exactly as a group's is, so the picker never claims an
+   * icon the store did not take.
+   */
+  const changeScopeIcon = (scope: ScopeIconScope, icon: GroupIconName) => {
+    setScopeOverrides((current) => ({ ...current, [scope]: icon }));
+    void run(async () => {
+      try {
+        await rpc.call("setScopeIcon", { scope, icon });
+      } catch (caught) {
+        setScopeOverrides((current) => {
+          const next = { ...current };
+          delete next[scope];
+          return next;
+        });
+        throw caught;
+      }
+    });
+  };
+
   const move = (groupId: string, delta: -1 | 1) => {
     const ids = groups.map((group) => group.id);
     const index = ids.indexOf(groupId);
@@ -113,6 +164,27 @@ export function GroupManagerDialog({
           Groups organize projects. Choose any free Hugeicons icon from the
           preview panel; changes are saved per group and do not affect projects.
         </p>
+
+        <div className="flex flex-col gap-1 rounded-md border border-border/60 px-2 py-1.5">
+          <span className="text-2xs text-muted-foreground">
+            The strip's own tabs are not groups: they take an icon, no name, and
+            can be neither reordered nor removed. An icon shows when the strip
+            is too narrow to draw labels.
+          </span>
+          {SCOPE_ICON_SCOPES.map((scope) => (
+            <div key={scope} className="flex items-center gap-1.5">
+              <IconPicker
+                value={scopeOverrides[scope] ?? icons[scope]}
+                disabled={busy}
+                label={SCOPE_ICON_LABELS[scope]}
+                onChange={(icon) => changeScopeIcon(scope, icon)}
+              />
+              <span className="min-w-0 truncate text-xs text-foreground/80">
+                {SCOPE_ICON_LABELS[scope]}
+              </span>
+            </div>
+          ))}
+        </div>
 
         {error === null ? null : (
           <p className="rounded border border-destructive/30 bg-destructive/10 px-2 py-1 text-2xs text-destructive">

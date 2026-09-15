@@ -221,6 +221,7 @@ describe("the tree keeps the order it is given", () => {
       now: NOW,
       assignment: {},
       groupOrder: [],
+      ungroupedIcon: "FolderTreeIcon",
     });
     assert.deepEqual(
       nodes.flatMap((node) => node.projects.map((item) => item.project.name)),
