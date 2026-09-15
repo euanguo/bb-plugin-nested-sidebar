@@ -21,9 +21,10 @@ export interface WorkspaceRef {
   readonly key: string;
   readonly label: string;
   /**
-   * The user's own name for this worktree, when they set one. Shown *beside*
-   * the branch rather than instead of it: an alias is a label the user typed,
-   * and the branch is the fact that tells them whether it was typed correctly.
+   * The user's own name for this worktree, when they set one. Drawn together
+   * with the branch rather than instead of it: an alias is a label the user
+   * typed, and the branch is the fact that tells them whether it was typed
+   * correctly. How the two share the row is `WorkspaceLabelMode`.
    */
   readonly alias: string | null;
   /** The branch this worktree is on, if bb knows it. */
@@ -97,4 +98,80 @@ export function workspaceSortOrder(kind: WorkspaceKind): number {
   if (kind === "worktree") return 0;
   if (kind === "main") return 1;
   return 2;
+}
+
+/**
+ * How one workspace row divides the alias and the branch between its lines.
+ *
+ * The alias is a name the user typed; the branch is the fact that verifies it,
+ * and the row is the only place the two meet. `alias-over-branch` is the
+ * default because a single line of "alias  branch" truncates both halves as
+ * soon as either is long, while stacked lines keep each one readable.
+ */
+export type WorkspaceLabelMode =
+  | "alias-over-branch"
+  | "alias-and-branch"
+  | "alias-only"
+  | "branch-only";
+
+export interface WorkspaceRowLabel {
+  /** The line the row is scanned by. Never empty. */
+  readonly label: string;
+  /** The label is a branch, so the row draws it monospaced. */
+  readonly labelIsBranch: boolean;
+  /** The branch, when the row draws one at all. */
+  readonly detail: string | null;
+  /** `true` puts the detail on its own line; `false` rides beside the label. */
+  readonly stacked: boolean;
+}
+
+function alone(label: string, isBranch: boolean): WorkspaceRowLabel {
+  return { label, labelIsBranch: isBranch, detail: null, stacked: false };
+}
+
+function together(
+  alias: string,
+  branch: string,
+  stacked: boolean,
+): WorkspaceRowLabel {
+  return { label: alias, labelIsBranch: false, detail: branch, stacked };
+}
+
+/** Whichever half the row still has, so a row is never left with nothing. */
+function remaining(ref: WorkspaceRef): WorkspaceRowLabel {
+  if (ref.alias !== null) return alone(ref.alias, false);
+  if (ref.branch !== null) return alone(ref.branch, true);
+  return alone(ref.label, false);
+}
+
+/**
+ * What one workspace row draws, given the setting and what bb knows.
+ *
+ * An alias equal to its branch is a single fact, so the row draws it once
+ * whatever the mode says: stacking it would print the same string twice. A mode
+ * that asks for a half the environment does not have falls back to the other
+ * one, because a row with nothing to say would still have to draw a height.
+ */
+export function workspaceRowLabel(
+  ref: WorkspaceRef,
+  mode: WorkspaceLabelMode,
+): WorkspaceRowLabel {
+  const { alias, branch } = ref;
+  if (alias !== null && branch !== null && alias === branch) {
+    return alone(alias, false);
+  }
+  switch (mode) {
+    case "alias-only":
+      return alias === null ? remaining(ref) : alone(alias, false);
+    case "branch-only":
+      return branch === null ? remaining(ref) : alone(branch, true);
+    case "alias-and-branch":
+      return alias !== null && branch !== null
+        ? together(alias, branch, false)
+        : remaining(ref);
+    case "alias-over-branch":
+      return alias !== null && branch !== null
+        ? together(alias, branch, true)
+        : remaining(ref);
+  }
 }

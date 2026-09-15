@@ -125,13 +125,21 @@ what the tree below draws, and projects are still the first level inside it.
 The worktree level appears **only when a project's threads occupy more than one
 workspace**. A project whose threads all sit in one checkout stays flat, exactly
 like bb's own sidebar; the second worktree is what earns the level its space.
-Worktree rows are labelled by branch (falling back to the environment name) and
+Worktree rows carry the environment's display name — the alias you set from the
+row's own rename action — beside or under the branch it was typed against, and
 are collapsed by default, because with many worktrees the point is to make them
 navigable rather than to show them all at once. A child agent never splits from
 its parent: families hang under the workspace of their **root**.
 
 A worktree row's menu starts a thread there, renames the worktree, copies its
 environment ID, and archives every thread family under it.
+
+**Worktree row label** in Settings decides how the row spends its width: *Alias
+over branch* (the default) stacks the alias above the branch, *Alias + branch*
+keeps both on one line, and *Alias only* / *Branch only* drop the other half.
+Whichever half a worktree does not have — an alias cleared, an environment bb
+never gave a branch — the row draws the one it does, so no row grows an empty
+line, and an alias that already reads as its branch is drawn once.
 
 ### Status that bubbles up
 
@@ -303,8 +311,9 @@ and what you collapsed or expanded — stays per browser.
 Nest Settings offers Default, High contrast, Colorblind-friendly, and Custom
 semantic palettes. Every status, live activity type, and PR role is previewed;
 custom values accept only six-digit hex colors and otherwise fall back safely.
-You can also choose row density, default child expansion, provider marks,
-parent-only PR metadata, and relative-time visibility.
+You can also choose row density, the worktree row label, default child
+expansion, provider marks, parent-only PR metadata, and relative-time
+visibility.
 
 Those display settings stay in Settings — the frontend can read `bb.settings`
 but not write it — so the sidebar footer carries a **Nest settings** button as

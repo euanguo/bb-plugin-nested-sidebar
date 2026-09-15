@@ -13,6 +13,7 @@ describe("resolveNestPreferences", () => {
     assert.equal(loading.palettePreset, "Default");
     assert.equal(loading.density, "comfortable");
     assert.equal(loading.rowLayout, "two-line");
+    assert.equal(loading.worktreeLabel, "alias-over-branch");
     assert.equal(loading.statusDisplay, "dot");
     assert.equal(loading.defaultChildrenExpanded, true);
     assert.equal(loading.showProviderIcons, true);
@@ -34,6 +35,7 @@ describe("resolveNestPreferences", () => {
     assert.equal(malformed.palettePreset, "Default");
     assert.equal(malformed.density, "comfortable");
     assert.equal(malformed.rowLayout, "two-line");
+    assert.equal(malformed.worktreeLabel, "alias-over-branch");
     assert.equal(malformed.statusDisplay, "dot");
     assert.equal(malformed.defaultChildrenExpanded, true);
     assert.equal(malformed.showProviderIcons, true);
@@ -56,6 +58,20 @@ describe("resolveNestPreferences", () => {
       resolveNestPreferences({ showChildCount: "no" }).showChildCount,
       true,
     );
+  });
+
+  it("reads every worktree label mode by its declared label", () => {
+    for (const [option, mode] of [
+      ["Alias over branch", "alias-over-branch"],
+      ["Alias + branch", "alias-and-branch"],
+      ["Alias only", "alias-only"],
+      ["Branch only", "branch-only"],
+    ] as const) {
+      assert.equal(
+        resolveNestPreferences({ worktreeLabel: option }).worktreeLabel,
+        mode,
+      );
+    }
   });
 
   it("resolves distinct high-contrast and colorblind-friendly presets", () => {

@@ -50,6 +50,7 @@ describe("Nest settings contract", () => {
       "prClosedColor",
       "rowDensity",
       "rowLayout",
+      "worktreeLabel",
       "statusDisplay",
       "defaultChildExpansion",
       "showProviderIcons",

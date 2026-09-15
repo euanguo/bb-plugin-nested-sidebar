@@ -19,12 +19,20 @@ import {
   type NestPreferences,
   type SemanticColorRole,
 } from "@/lib/preferences";
+import type { WorkspaceLabelMode } from "@/lib/workspace";
 import { useProjectColors } from "@/hooks/use-project-colors";
 import {
   automaticProjectColor,
   projectBadgeLetter,
   projectBadgePresentation,
 } from "@/lib/project-colors";
+
+const WORKTREE_LABEL_SUMMARY: Readonly<Record<WorkspaceLabelMode, string>> = {
+  "alias-over-branch": "alias over branch",
+  "alias-and-branch": "alias + branch",
+  "alias-only": "alias only",
+  "branch-only": "branch only",
+};
 
 const THREAD_STATES: readonly FamilyStatusKind[] = [
   "working",
@@ -94,6 +102,7 @@ export function NestSettingsSection() {
       <p className="text-2xs text-muted-foreground">
         {preferences.density === "compact" ? "Compact" : "Comfortable"} rows ·
         {preferences.rowLayout === "one-line" ? "one line" : "two lines"} ·
+        worktree labels {WORKTREE_LABEL_SUMMARY[preferences.worktreeLabel]} ·
         {preferences.statusDisplay === "dot" ? "dot" : "icon"} status ·
         details {preferences.rowDetails === "hover" ? "on hover" : "in the row"} ·
         children {preferences.defaultChildrenExpanded ? "expanded" : "collapsed"} ·

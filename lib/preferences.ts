@@ -1,3 +1,5 @@
+import type { WorkspaceLabelMode } from "./workspace.ts";
+
 export const PALETTE_PRESET_OPTIONS = [
   "Default",
   "High contrast",
@@ -10,6 +12,12 @@ export const CHILD_EXPANSION_OPTIONS = ["Expanded", "Collapsed"] as const;
 export const ROW_LAYOUT_OPTIONS = ["Two lines", "One line"] as const;
 export const STATUS_DISPLAY_OPTIONS = ["Dot", "Status icon"] as const;
 export const ROW_DETAIL_OPTIONS = ["In the row", "On hover"] as const;
+export const WORKTREE_LABEL_OPTIONS = [
+  "Alias over branch",
+  "Alias + branch",
+  "Alias only",
+  "Branch only",
+] as const;
 
 export type PalettePreset = (typeof PALETTE_PRESET_OPTIONS)[number];
 export type RowDensity = "comfortable" | "compact";
@@ -17,6 +25,17 @@ export type RowLayout = "two-line" | "one-line";
 export type StatusDisplay = "dot" | "icon";
 /** Where a thread row's non-essential fields live. */
 export type RowDetailPlacement = "row" | "hover";
+export type WorktreeLabelOption = (typeof WORKTREE_LABEL_OPTIONS)[number];
+
+/** The declared option labels, mapped onto the row's own vocabulary. */
+const WORKTREE_LABEL_MODES: Readonly<
+  Record<WorktreeLabelOption, WorkspaceLabelMode>
+> = {
+  "Alias over branch": "alias-over-branch",
+  "Alias + branch": "alias-and-branch",
+  "Alias only": "alias-only",
+  "Branch only": "branch-only",
+};
 
 export const SEMANTIC_COLOR_ROLES = [
   "working",
@@ -48,6 +67,8 @@ export interface NestPreferences {
   density: RowDensity;
   /** One line saves height; two lines keep the branch on its own line. */
   rowLayout: RowLayout;
+  /** How a worktree row divides the alias and the branch between its lines. */
+  worktreeLabel: WorkspaceLabelMode;
   /** A dot is quieter and narrower than the state's own icon. */
   statusDisplay: StatusDisplay;
   /**
@@ -195,6 +216,14 @@ export function resolveNestPreferences(
       "One line"
         ? "one-line"
         : "two-line",
+    worktreeLabel:
+      WORKTREE_LABEL_MODES[
+        readOption(
+          values?.worktreeLabel,
+          WORKTREE_LABEL_OPTIONS,
+          "Alias over branch",
+        )
+      ],
     statusDisplay:
       readOption(
         values?.statusDisplay,
