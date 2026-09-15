@@ -5,6 +5,17 @@ import { ORDER_CHANNEL } from "@/server";
 import type { ManualOrderMap } from "@/lib/manual-order";
 import { clearFamilyOrder, readFamilyOrder } from "@/lib/family-order";
 import { clearProjectOrder, readProjectOrder } from "@/lib/project-order";
+import { defineStoreSnapshot } from "@/lib/store-snapshot";
+
+interface OrderSnapshot {
+  readonly projects: ManualOrderMap;
+  readonly families: ManualOrderMap;
+  readonly workspaces: ManualOrderMap;
+}
+
+// A manual arrangement that is not there yet reads as the default order, so an
+// empty seed re-sorts the whole tree until the read lands.
+const orderSnapshot = defineStoreSnapshot<OrderSnapshot>("manual-order");
 
 export interface NestOrderApi {
   /** Group scope key -> project ids. */
@@ -51,10 +62,13 @@ function isEmptyOrder(
  */
 export function useNestOrder(): NestOrderApi {
   const rpc = useRpc<typeof nestRpcContract>();
-  const [projects, setProjects] = useState<ManualOrderMap>({});
-  const [families, setFamilies] = useState<ManualOrderMap>({});
-  const [workspaces, setWorkspaces] = useState<ManualOrderMap>({});
-  const [ready, setReady] = useState(false);
+  const [seed] = useState(() => orderSnapshot.read());
+  const [projects, setProjects] = useState<ManualOrderMap>(seed?.projects ?? {});
+  const [families, setFamilies] = useState<ManualOrderMap>(seed?.families ?? {});
+  const [workspaces, setWorkspaces] = useState<ManualOrderMap>(
+    seed?.workspaces ?? {},
+  );
+  const [ready, setReady] = useState(seed !== undefined);
   const [nonce, setNonce] = useState(0);
 
   const refresh = useCallback(() => setNonce((value) => value + 1), []);
@@ -71,12 +85,22 @@ export function useNestOrder(): NestOrderApi {
           const seeded = await seedLegacyOrder(rpc);
           if (cancelled) return;
           if (seeded !== null) {
+            orderSnapshot.write({
+              projects: seeded.projects,
+              families: seeded.families,
+              workspaces: {},
+            });
             setProjects(seeded.projects);
             setFamilies(seeded.families);
             setReady(true);
             return;
           }
         }
+        orderSnapshot.write({
+          projects: result.projects,
+          families: result.families,
+          workspaces: result.workspaces,
+        });
         setProjects(result.projects);
         setFamilies(result.families);
         setWorkspaces(result.workspaces);
