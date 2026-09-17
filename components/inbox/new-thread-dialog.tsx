@@ -132,6 +132,10 @@ function SeedDialog({
       // Only the width — the composer is content-height, so a forced height
       // would show as blank space rather than as a bigger editor.
       width="56rem"
+      // The composer's slash panel is positioned inside it and cannot be
+      // painted under a clipping ancestor, so this is the one dialog that must
+      // not clip — see Modal for what that costs.
+      allowOverflow
       title={`New thread in ${seed.projectName}`}
       subtitle={seed.originLabel}
     >

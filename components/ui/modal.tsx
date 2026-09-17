@@ -27,6 +27,24 @@ import { cn } from "@/lib/utils";
  * There is deliberately no forced height. The host composer is content-height
  * under `layout="document"`, so a definite height on the box would not give the
  * editor room — it would show as blank space under the composer.
+ *
+ * `allowOverflow` is for the one dialog whose content is a host compose
+ * surface. The composer opens its slash panel as an absolutely positioned child
+ * of its own prompt box, so a panel taller than the room below that box has to
+ * escape the box — and any clipping ancestor between it and the viewport cuts
+ * it off at the dialog's bottom edge instead. Measured on the running app: with
+ * `overflow-hidden` the panel was painted down to y=788 against a box ending at
+ * 790, and the rest of its 192px was not painted at all; with the two boxes this
+ * wrapper owns left unclipped the whole panel paints, including the part past
+ * the frame. bb's own layer inside the composer does not clip, so those two are
+ * the whole of it — and the same panel in bb's full-page composer, where nothing
+ * clips, is fully visible, which is the behaviour being matched.
+ *
+ * It is opt-in because not clipping means not scrolling: the container that
+ * would scroll is also the container that would cut the panel, so a dialog can
+ * have one or the other. Only the compose surface wants the panel; every other
+ * dialog in the plugin draws ordinary content, which is meant to scroll inside
+ * its box rather than spill out of it.
  */
 export function Modal({
   open,
@@ -36,6 +54,7 @@ export function Modal({
   icon,
   busy = false,
   width = "46rem",
+  allowOverflow = false,
   children,
   footer,
 }: {
@@ -47,6 +66,11 @@ export function Modal({
   busy?: boolean;
   /** Any CSS length; min() keeps it inside the viewport. */
   width?: string;
+  /**
+   * Let content past the box instead of scrolling inside it. Only for a dialog
+   * holding a host surface whose own floating panels must escape.
+   */
+  allowOverflow?: boolean;
   children: ReactNode;
   footer?: ReactNode;
 }) {
@@ -62,7 +86,8 @@ export function Modal({
         hideCloseButton
         style={{ width: across(width), maxWidth: across(width) }}
         className={cn(
-          "flex max-h-[min(85vh,44rem)] flex-col gap-0 overflow-hidden rounded-xl border-border bg-popover p-0 text-popover-foreground shadow-xl",
+          "flex max-h-[min(85vh,44rem)] flex-col gap-0 rounded-xl border-border bg-popover p-0 text-popover-foreground shadow-xl",
+          allowOverflow ? "overflow-visible" : "overflow-hidden",
         )}
       >
         <DialogHeader className="flex shrink-0 flex-row items-center gap-2 border-b border-border px-3 py-2">
@@ -93,7 +118,14 @@ export function Modal({
           </DialogClose>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">{children}</div>
+        <div
+          className={cn(
+            "min-h-0 flex-1 p-3",
+            allowOverflow ? "overflow-visible" : "overflow-y-auto",
+          )}
+        >
+          {children}
+        </div>
 
         {footer === undefined ? null : (
           <div className="shrink-0 border-t border-border px-3 py-2">
