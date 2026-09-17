@@ -18,6 +18,15 @@ import { cn } from "@/lib/utils";
  * viewport behavior come from BB's official component. In particular, the
  * content is no longer a native top-layer dialog whose overflow clips nested
  * floating surfaces.
+ *
+ * `width` has to be asserted as a `max-width` as well. The registry's
+ * DialogContent caps itself at a fixed max-width, and an inline `width` does
+ * not beat a class-level `max-width` — so a dialog asking for a wide box
+ * silently rendered at the cap instead.
+ *
+ * There is deliberately no forced height. The host composer is content-height
+ * under `layout="document"`, so a definite height on the box would not give the
+ * editor room — it would show as blank space under the composer.
  */
 export function Modal({
   open,
@@ -41,6 +50,7 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const across = (value: string) => "min(" + value + ", calc(100vw - 2rem))";
   return (
     <Dialog
       open={open}
@@ -50,7 +60,7 @@ export function Modal({
     >
       <DialogContent
         hideCloseButton
-        style={{ width: "min(" + width + ", calc(100vw - 2rem))" }}
+        style={{ width: across(width), maxWidth: across(width) }}
         className={cn(
           "flex max-h-[min(85vh,44rem)] flex-col gap-0 overflow-hidden rounded-xl border-border bg-popover p-0 text-popover-foreground shadow-xl",
         )}

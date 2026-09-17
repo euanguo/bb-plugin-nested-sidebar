@@ -160,6 +160,29 @@ export function workspaceRefOf(
     };
   }
 
+  return workspaceRefOfEnvironment(descriptor, projects) ?? NO_WORKSPACE;
+}
+
+/**
+ * The ref for an environment that has no thread behind it.
+ *
+ * The workspace level exists so a worktree can be reached, and a worktree whose
+ * threads have all been settled is still one the user can start work in — the
+ * environment outlives every conversation in it. So the tree needs a ref for an
+ * environment on its own.
+ *
+ * It must be the ref its own threads would have produced: `key` is the identity
+ * the tree groups by, so any difference here would split one worktree into two
+ * rows rather than merging them into one.
+ *
+ * Null when the environment is not a workspace at all — a personal one, which
+ * `workspaceRefOf` reports as the no-workspace bucket instead.
+ */
+export function workspaceRefOfEnvironment(
+  descriptor: WorkspaceEnvironmentDescriptor,
+  projects: ReadonlyMap<string, WorkspaceProjectDescriptor> = new Map(),
+): WorkspaceRef | null {
+  if (descriptor.providerId === PERSONAL_WORKSPACE_PROVIDER) return null;
   const project = projects.get(descriptor.projectId);
   const kind = classify(descriptor, project);
   const path = normalizeWorkspacePath(descriptor.path);

@@ -94,6 +94,10 @@ import {
 } from "@/lib/clipboard";
 
 import { GroupManagerDialog } from "@/components/inbox/group-manager-dialog";
+import {
+  NewThreadDialog,
+  type NewThreadSeed,
+} from "@/components/inbox/new-thread-dialog";
 import { useGroups } from "@/hooks/use-groups";
 import { useWorkspacePaths } from "@/hooks/use-workspace-paths";
 import {
@@ -114,6 +118,14 @@ import {
 import type { WorkspaceLaunch, TreeRowHandlers } from "@/components/inbox/tree-rows";
 
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
+
+/**
+ * How long a freshly spawned thread is awaited in the sidebar's own view before
+ * the plugin stops trying to open it. Long enough for a create to round-trip
+ * through the host's cache, short enough that a thread this client will never
+ * be handed does not sit pending for the rest of the session.
+ */
+const PENDING_OPEN_TIMEOUT_MS = 15_000;
 
 /**
  * A project-first inbox. Project sections stay put; roots keep their creation
@@ -156,6 +168,8 @@ export function ThreadInbox({
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   /** The group a tab's pencil asked to rename, when the strip is the entry. */
   const sidebarActions = useSidebarThreadActions();
+  /** The workspace row a `+` asked to start a thread in, when there is one. */
+  const [newThreadSeed, setNewThreadSeed] = useState<NewThreadSeed | null>(null);
   const inboxRef = useRef<HTMLDivElement>(null);
   const selectionAnchorRootId = useRef<string | null>(null);
   /** The thread whose ancestors have already been opened for this session. */
@@ -181,6 +195,30 @@ export function ThreadInbox({
     () => mergeSettledThreads(hostThreads, settledThreads),
     [hostThreads, settledThreads],
   );
+  /**
+   * A thread this plugin just spawned, waiting to be opened.
+   *
+   * `sidebarActions.open` is a silent no-op for a thread the host's client
+   * store has not received yet — it looks the id up and returns if it is not
+   * there. A spawn is always inside that window: the create RPC answers before
+   * the sidebar's own read catches up, so opening on the spot does nothing and
+   * the user is left on the composer they just submitted. The id waits here
+   * instead and is opened on the render that brings the thread in.
+   */
+  const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
+  useEffect(() => {
+    if (pendingOpenId === null) return;
+    if (!hostThreads.some((thread) => thread.id === pendingOpenId)) return;
+    setPendingOpenId(null);
+    sidebarActions.open(pendingOpenId);
+  }, [hostThreads, pendingOpenId, sidebarActions]);
+  // A thread the sidebar never hands back — one spawned into a view this
+  // client does not hold — must not leave this waiting for the session.
+  useEffect(() => {
+    if (pendingOpenId === null) return;
+    const timer = setTimeout(() => setPendingOpenId(null), PENDING_OPEN_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [pendingOpenId]);
   const lifecycle = useLifecycle(threads);
   const showSnoozed = viewState.snoozedOpen;
   const showSettled = viewState.settledOpen;
@@ -1169,34 +1207,84 @@ export function ThreadInbox({
     }
   };
 
-  function seedFromProject(projectId: string, _projectName: string) {
-    sidebarActions.openNewThread({ projectId, focusPrompt: true });
+  /**
+   * Every new-thread entry on a row opens the same dialog, so the sidebar has
+   * one answer to "where does a new thread start" instead of two.
+   *
+   * A project row has no worktree to seed — the composer's own environment
+   * picker is where that is chosen — but the surface stays the one the
+   * workspace rows use, and `+` means the same thing on every row.
+   */
+  function seedFromProject(projectId: string, projectName: string) {
+    setNewThreadSeed({ projectId, projectName, originLabel: projectName });
   }
 
   /**
-   * "New worktree" opens the same dialog with the environment pre-set to a
-   * fresh managed worktree.
+   * "New worktree" seeds a fresh managed worktree.
    *
    * bb has no standalone "create environment" call — an environment comes into
    * being when a thread spawns into it — so creating a worktree and creating a
    * thread are one action by construction. The dialog is where that happens,
    * with the branch and base still the user's to choose.
+   *
+   * Unlike a workspace row's seed this one is not settled on submit: it is an
+   * instruction to create rather than a reference to something that already
+   * exists, so the branch picker stays the user's to change.
+   *
+   * `hostId` is not optional in practice even though the contract marks it so:
+   * the composer resolves a `host` seed with no host to `null` and silently
+   * falls back to the project's default, which is how this seed used to arrive
+   * as a plain project checkout. The project's source host is the machine the
+   * worktree belongs on.
    */
-  function seedNewWorktree(projectId: string, _projectName: string) {
-    // The host composer owns environment creation. Its public shortcut accepts
-    // the project seed; the user can choose New Worktree in that composer.
-    sidebarActions.openNewThread({ projectId, focusPrompt: true });
+  function seedNewWorktree(projectId: string, projectName: string) {
+    const hostId = paths.projects[projectId]?.sourceHostId ?? null;
+    setNewThreadSeed({
+      projectId,
+      projectName,
+      environment:
+        hostId === null
+          ? undefined
+          : {
+              type: "host",
+              hostId,
+              workspace: {
+                type: "managed-worktree",
+                baseBranch: { kind: "default" },
+              },
+            },
+      originLabel: `New worktree in ${projectName}`,
+    });
   }
 
   /**
-   * A workspace row seeds the worktree it belongs to. The environment is
-   * handed to the composer as a reuse seed so the thread lands in that exact
-   * worktree, while the composer's own picker stays free to change it — or to
-   * point at a brand-new worktree instead, which this dialog never has to
-   * model because the host composer already owns that control.
+   * A workspace row seeds the worktree it belongs to, and the dialog submits
+   * that exact environment rather than trusting the composer to keep it.
+   *
+   * It cannot be handed to `openNewThread`: that shortcut accepts only a
+   * project and a focus flag, so the worktree would be dropped and the thread
+   * would land in a brand-new worktree instead. The composer's own environment
+   * picker is no substitute either — its "reuse an existing environment" list
+   * is built by grouping *threads*, so a worktree whose threads have all been
+   * archived is simply absent from it, and a `reuse` seed the list does not
+   * contain is dropped without an error. Starting a thread in a worktree that
+   * has no threads left is exactly the case this row exists for, which is why
+   * the dialog owns both the seed and the environment it finally submits.
    */
-  function seedFromWorkspace({ projectId }: WorkspaceLaunch) {
-    sidebarActions.openNewThread({ projectId, focusPrompt: true });
+  function seedFromWorkspace({ node, projectId, projectName }: WorkspaceLaunch) {
+    const environment =
+      node.ref.environmentId === null
+        ? undefined
+        : ({ type: "reuse", environmentId: node.ref.environmentId } as const);
+    setNewThreadSeed({
+      projectId,
+      projectName,
+      environment,
+      originLabel:
+        environment === undefined
+          ? `Seeded from ${projectName}`
+          : `${projectName} → ${node.ref.label}`,
+    });
   }
 
   /**
@@ -1565,6 +1653,15 @@ export function ThreadInbox({
       groups={groupsApi.groups}
       icons={groupsApi.icons}
       onClose={() => setGroupManagerOpen(false)}
+    />
+
+    <NewThreadDialog
+      seed={newThreadSeed}
+      onClose={() => setNewThreadSeed(null)}
+      onCreated={(threadId) => {
+        setNewThreadSeed(null);
+        setPendingOpenId(threadId);
+      }}
     />
 
     </div>
