@@ -5,8 +5,10 @@ import { VIEW_PREFERENCE_CHANNEL } from "@/server";
 import {
   DEFAULT_PROJECT_SORT,
   DEFAULT_THREAD_SORT,
+  DEFAULT_WORKTREE_SORT,
   type ProjectSortMode,
   type ThreadSortMode,
+  type WorktreeSortMode,
 } from "@/lib/sort-modes";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
 import {
@@ -25,9 +27,11 @@ const viewPreferencesSnapshot = defineStoreSnapshot<ViewPreferencesSnapshot>(
 export interface ViewPreferencesApi {
   readonly projectSort: ProjectSortMode;
   readonly threadSort: ThreadSortMode;
+  readonly worktreeSort: WorktreeSortMode;
   readonly ready: boolean;
   setProjectSort: (mode: ProjectSortMode) => void;
   setThreadSort: (mode: ThreadSortMode) => void;
+  setWorktreeSort: (mode: WorktreeSortMode) => void;
 }
 
 /**
@@ -43,6 +47,9 @@ export function useViewPreferences(): ViewPreferencesApi {
     useState<ProjectSortMode>(seed?.projectSort ?? DEFAULT_PROJECT_SORT);
   const [threadSort, setThreadSortState] =
     useState<ThreadSortMode>(seed?.threadSort ?? DEFAULT_THREAD_SORT);
+  const [worktreeSort, setWorktreeSortState] = useState<WorktreeSortMode>(
+    seed?.worktreeSort ?? DEFAULT_WORKTREE_SORT,
+  );
   const [ready, setReady] = useState(seed !== undefined);
   const [nonce, setNonce] = useState(0);
 
@@ -57,9 +64,11 @@ export function useViewPreferences(): ViewPreferencesApi {
         viewPreferencesSnapshot.write({
           projectSort: result.projectSort,
           threadSort: result.threadSort,
+          worktreeSort: result.worktreeSort,
         });
         setProjectSortState(result.projectSort);
         setThreadSortState(result.threadSort);
+        setWorktreeSortState(result.worktreeSort);
         setReady(true);
       })
       .catch(() => {
@@ -93,11 +102,23 @@ export function useViewPreferences(): ViewPreferencesApi {
     [rpc, refresh],
   );
 
+  const setWorktreeSort = useCallback(
+    (mode: WorktreeSortMode) => {
+      setWorktreeSortState(mode);
+      void rpc
+        .call("setViewPreferences", { worktreeSort: mode })
+        .catch(() => refresh());
+    },
+    [rpc, refresh],
+  );
+
   return {
     projectSort,
     threadSort,
+    worktreeSort,
     ready,
     setProjectSort,
     setThreadSort,
+    setWorktreeSort,
   };
 }

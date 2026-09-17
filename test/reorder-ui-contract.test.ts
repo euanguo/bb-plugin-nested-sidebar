@@ -74,6 +74,34 @@ describe("family reorder UI contract", () => {
     assert.match(inbox, /Pinned and unpinned thread families cannot cross/);
   });
 
+  /**
+   * A drag that lands on the row it started from is the click that drifted into
+   * one: the browser starts a drag after about five pixels and then produces no
+   * click, so a press with a little wobble opened nothing. Both aggregate
+   * levels read that drop as the click it was, instead of announcing that the
+   * order had not changed.
+   */
+  it("reads a drop onto its own row as the click it was", () => {
+    assert.match(inbox, /input\.sourceProjectId === input\.targetProjectId/);
+    assert.match(inbox, /input\.sourceKey === input\.targetKey/);
+    assert.match(inbox, /viewStateApi\.setWorkspaceExpanded\(/);
+    assert.match(inbox, /viewStateApi\.setProjectCollapsed\(/);
+  });
+
+  /**
+   * All three levels are dropped only under the manual order. A drag writes the
+   * *drawn* order as the arrangement, so under a lens it would both lose the
+   * user's arrangement and leave a row that looks draggable while a click that
+   * wobbled is spent on a reorder. The worktree level was the one missed when
+   * its lens was added.
+   */
+  it("gates every level's drag on its own manual order", () => {
+    assert.match(inbox, /viewPreferences\.projectSort !== "manual"/);
+    assert.match(inbox, /viewPreferences\.threadSort !== "manual"/);
+    assert.match(inbox, /viewPreferences\.worktreeSort !== "manual"/);
+    assert.match(inbox, /Choose the Manual worktree sort to drag worktrees\./);
+  });
+
   it("keeps navigation split props and bulk selection overlays independent", () => {
     assert.match(card, /\.\.\.splitProps/);
     assert.match(card, /data-nest-selection-target/);

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { buildTree } from "../lib/tree.ts";
 import type { ProjectThreadGroup, ThreadFamily } from "../lib/inbox.ts";
+import type { WorktreeSortMode } from "../lib/sort-modes.ts";
 import {
   workspaceRefOf,
   workspaceRefOfEnvironment,
@@ -32,6 +33,7 @@ function thread(
   id: string,
   projectId: string,
   environment: ThreadEnvironment | null,
+  updatedAt: number = NOW - 1_000,
 ): PluginSidebarThread {
   return {
     id,
@@ -59,7 +61,7 @@ function thread(
     environment,
     host: null,
     createdAt: NOW - 1_000,
-    updatedAt: NOW - 1_000,
+    updatedAt,
     lastReadAt: null,
     latestAttentionAt: NOW - 1_000,
   };
@@ -69,8 +71,9 @@ function family(
   id: string,
   projectId: string,
   environment: ThreadEnvironment | null,
+  updatedAt?: number,
 ): ThreadFamily {
-  return { root: thread(id, projectId, environment), children: [] };
+  return { root: thread(id, projectId, environment, updatedAt), children: [] };
 }
 
 function group(
@@ -117,6 +120,7 @@ function tree(
   projectGroups: ProjectThreadGroup[],
   environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor> = new Map(),
   projects: ReadonlyMap<string, WorkspaceProjectDescriptor> = new Map(),
+  worktreeSort: WorktreeSortMode = "manual",
 ) {
   return buildTree({
     projectGroups,
@@ -124,6 +128,7 @@ function tree(
     assignment: {},
     groupOrder: [],
     workspaceOrder: {},
+    worktreeSort,
     ungroupedIcon: "FolderTreeIcon",
     environments,
     projects,
@@ -297,5 +302,77 @@ describe("workspaceRefOfEnvironment", () => {
       providerId: "personal-workspace",
     });
     assert.equal(workspaceRefOfEnvironment(item, new Map()), null);
+  });
+});
+
+/**
+ * The worktree lens, through the tree rather than through the comparator: this
+ * is what proves the numbers a row is ranked by really are read off the row.
+ *
+ * Three worktrees chosen so that no two modes agree — by name the order is A, M,
+ * Z; by size it is the reverse; by activity it is M, A, Z. The checkout carries
+ * no threads at all, so it is last on both of the fact-driven modes and only the
+ * exemption keeps it where it belongs.
+ */
+describe("the worktree lens", () => {
+  const checkout = descriptor("env_checkout", "p1", "/work/repo", {
+    isWorktree: false,
+    branchName: "master",
+    name: "主干",
+  });
+  const quiet = descriptor("env_quiet", "p1", "/work/trees/quiet", {
+    branchName: "quiet",
+    name: "A 分支",
+  });
+  const mid = descriptor("env_mid", "p1", "/work/trees/mid", {
+    branchName: "mid",
+    name: "M 分支",
+  });
+  const busy = descriptor("env_busy", "p1", "/work/trees/busy", {
+    branchName: "busy",
+    name: "Z 分支",
+  });
+  const environments = descriptorMap(checkout, quiet, mid, busy);
+  const projects = projectMap({
+    projectId: "p1",
+    sourcePath: "/work/repo",
+    sourceHostId: "host_1",
+  });
+  const groups = [
+    group("p1", [
+      family("t1", "p1", environmentRef("env_busy", "Z 分支", "busy"), NOW - 900),
+      family("t2", "p1", environmentRef("env_busy", "Z 分支", "busy"), NOW - 950),
+      family("t3", "p1", environmentRef("env_busy", "Z 分支", "busy"), NOW - 990),
+      family("t4", "p1", environmentRef("env_mid", "M 分支", "mid"), NOW - 100),
+      family("t5", "p1", environmentRef("env_mid", "M 分支", "mid"), NOW - 800),
+      family("t6", "p1", environmentRef("env_quiet", "A 分支", "quiet"), NOW - 500),
+    ]),
+  ];
+
+  const labels = (mode: WorktreeSortMode) => {
+    const nodes = tree(groups, environments, projects, mode);
+    return nodes.flatMap((node) =>
+      node.projects.flatMap((project) =>
+        project.workspaces.map((workspace) => workspace.ref.label),
+      ),
+    );
+  };
+
+  it("leads with the checkout under every mode", () => {
+    for (const mode of [
+      "manual",
+      "name-asc",
+      "updated-desc",
+      "threads-desc",
+      "status",
+    ] as const) {
+      assert.equal(labels(mode)[0], "主干", mode);
+    }
+  });
+
+  it("ranks the worktrees by the mode it was given", () => {
+    assert.deepEqual(labels("name-asc"), ["主干", "A 分支", "M 分支", "Z 分支"]);
+    assert.deepEqual(labels("threads-desc"), ["主干", "Z 分支", "M 分支", "A 分支"]);
+    assert.deepEqual(labels("updated-desc"), ["主干", "M 分支", "A 分支", "Z 分支"]);
   });
 });

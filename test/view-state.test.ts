@@ -9,6 +9,8 @@ import {
   readViewState,
   resolveGroupScope,
   withId,
+  foldWorkspaceExpansion,
+  workspaceExpansionKeys,
   writeViewState,
   type ViewStateStorage,
 } from "../lib/view-state.ts";
@@ -125,5 +127,54 @@ describe("resolveGroupScope", () => {
     assert.deepEqual(resolveGroupScope(UNGROUPED_SCOPE_KEY, groups), {
       kind: "ungrouped",
     });
+  });
+});
+
+/**
+ * Folding a worktree has to clear every key the row answers to. Workspaces were
+ * identified by environment id before they were identified by path, and the
+ * read keeps answering to both — so a row expanded under the old key stayed
+ * expanded for good, a disclosure that no longer responded to a click.
+ */
+describe("workspaceExpansionKeys", () => {
+  it("names the row's own key and every id it answers to", () => {
+    assert.deepEqual(
+      workspaceExpansionKeys({
+        key: "workspace:host:proj:/work/tree",
+        environmentIds: ["env_one", "env_two"],
+      }),
+      ["workspace:host:proj:/work/tree", "env_one", "env_two"],
+    );
+  });
+
+  it("still names the key when the row has no ids, which is the no-workspace bucket", () => {
+    assert.deepEqual(
+      workspaceExpansionKeys({ key: "__no_workspace__", environmentIds: [] }),
+      ["__no_workspace__"],
+    );
+  });
+});
+
+describe("foldWorkspaceExpansion", () => {
+  const keys = ["workspace:host:proj:/tree", "env_old"];
+
+  it("unfolds under the current key and clears the ones it used to answer to", () => {
+    assert.deepEqual(foldWorkspaceExpansion(["env_old"], keys, keys[0], true), [
+      keys[0],
+    ]);
+  });
+
+  it("folds away every key, which is the case a single write used to miss", () => {
+    assert.deepEqual(
+      foldWorkspaceExpansion([keys[0], "env_old"], keys, keys[0], false),
+      [],
+    );
+  });
+
+  it("leaves other rows alone", () => {
+    assert.deepEqual(
+      foldWorkspaceExpansion(["env_other", "env_old"], keys, keys[0], false),
+      ["env_other"],
+    );
   });
 });

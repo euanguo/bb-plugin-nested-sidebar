@@ -86,6 +86,7 @@ import {
   readViewState,
   resolveGroupScope,
   withId,
+  foldWorkspaceExpansion,
   writeViewState,
   type NestViewState,
 } from "@/lib/view-state";
@@ -298,6 +299,15 @@ export function ThreadInbox({
         }),
       isWorkspaceExpanded: (workspaceKey) =>
         viewState.expandedWorkspaces.includes(workspaceKey),
+      setWorkspaceFolded: ({ keys, openKey, expanded }) =>
+        patchViewState({
+          expandedWorkspaces: foldWorkspaceExpansion(
+            viewState.expandedWorkspaces,
+            keys,
+            openKey,
+            expanded,
+          ),
+        }),
       setWorkspaceExpanded: (workspaceKey, expanded) =>
         patchViewState({
           expandedWorkspaces: withId(
@@ -497,6 +507,7 @@ export function ThreadInbox({
         })),
         ungroupedIcon: groupsApi.icons.ungrouped,
         workspaceOrder: order.workspaces,
+        worktreeSort: viewPreferences.worktreeSort,
         environments: new Map(Object.entries(paths.environments)),
         projects: new Map(Object.entries(paths.projects)),
       }),
@@ -536,6 +547,7 @@ export function ThreadInbox({
     selectionMode,
     viewPreferences.projectSort,
     viewPreferences.threadSort,
+    viewPreferences.worktreeSort,
     threads,
   ]);
 
@@ -703,11 +715,20 @@ export function ThreadInbox({
       : null);
   const reorderEnabled = familyReorderDisabledReason === null;
   /*
-   * The workspace level has no sort lens — what is stored is always what is
-   * drawn — so a drag there only needs the shared blocker: a row hidden by
-   * search, a filter, or bulk selection must never move implicitly.
+   * Worktrees are dragged only under the manual order, for the same reason
+   * projects are: the drag writes the *drawn* order as the arrangement, and
+   * under a lens what is drawn is the lens's ranking, not the user's. Letting
+   * that through both loses their arrangement and leaves a row that looks
+   * draggable — the grab cursor is on the whole row — while a click that
+   * wobbled is being spent on a reorder instead of on opening the row. The
+   * shared blocker still applies on top: a row hidden by search, a filter, or
+   * bulk selection must never move implicitly.
    */
-  const workspaceReorderDisabledReason = sharedReorderBlocker;
+  const workspaceReorderDisabledReason =
+    sharedReorderBlocker ??
+    (viewPreferences.worktreeSort !== "manual"
+      ? "Choose the Manual worktree sort to drag worktrees."
+      : null);
   const workspaceReorderEnabled = workspaceReorderDisabledReason === null;
   const projectReorderDisabledReason =
     sharedReorderBlocker ??
@@ -876,6 +897,23 @@ export function ThreadInbox({
     targetKey: string;
     position: "before" | "after";
   }) => {
+    // A drag that lands on the row it started from is the click that drifted
+    // into one. The browser starts a drag after about five pixels of movement
+    // and then produces no click at all, so a press with a little wobble in it
+    // opened nothing and only announced that the order had not changed;
+    // measured on the running app, a click that travelled nine pixels fired
+    // `dragstart`, dropped on its own row, and toggled nothing. Toggle it here,
+    // which is what the press was for.
+    if (
+      input.sourceProjectId === input.targetProjectId &&
+      input.sourceKey === input.targetKey
+    ) {
+      viewStateApi.setWorkspaceExpanded(
+        input.targetKey,
+        !viewStateApi.isWorkspaceExpanded(input.targetKey),
+      );
+      return;
+    }
     if (!workspaceReorderEnabled) {
       setReorderAnnouncement(
         workspaceReorderDisabledReason ?? "Reordering is unavailable.",
@@ -1029,6 +1067,15 @@ export function ThreadInbox({
     targetProjectId: string;
     position: "before" | "after";
   }) => {
+    // A header dropped on itself is the click that drifted into a drag — see
+    // `reorderWorkspaceByDrag` for the measurement and the reasoning.
+    if (input.sourceProjectId === input.targetProjectId) {
+      viewStateApi.setProjectCollapsed(
+        input.targetProjectId,
+        !viewStateApi.isProjectCollapsed(input.targetProjectId),
+      );
+      return;
+    }
     if (!projectReorderEnabled) {
       setReorderAnnouncement(
         projectReorderDisabledReason ?? "Reordering is unavailable.",
@@ -1441,6 +1488,8 @@ export function ThreadInbox({
               onProjectSortChange={viewPreferences.setProjectSort}
               threadSort={viewPreferences.threadSort}
               onThreadSortChange={viewPreferences.setThreadSort}
+              worktreeSort={viewPreferences.worktreeSort}
+              onWorktreeSortChange={viewPreferences.setWorktreeSort}
               onCollapseAll={collapseAll}
               onResetView={resetView}
             />

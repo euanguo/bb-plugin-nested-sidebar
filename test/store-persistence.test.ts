@@ -29,6 +29,7 @@ const orderValue: OrderSnapshot = {
 const viewPreferencesValue: ViewPreferencesSnapshot = {
   projectSort: "name-asc",
   threadSort: "updated-desc",
+  worktreeSort: "threads-desc",
 };
 
 const workspacePathsValue: WorkspacePaths = {
@@ -232,6 +233,19 @@ describe("view preferences snapshot codec", () => {
     assert.equal(
       VIEW_PREFERENCES_SNAPSHOT_CODEC.decode(
         JSON.stringify({ projectSort: "manual" }),
+      ),
+      null,
+    );
+  });
+
+  // A snapshot written before the worktree lens existed. Strict on purpose:
+  // the pair below is one frame of warm paint, and the read that replaces it
+  // lands immediately, so a record this build cannot fully use is not worth
+  // guessing at.
+  it("rejects a record from before the worktree lens", () => {
+    assert.equal(
+      VIEW_PREFERENCES_SNAPSHOT_CODEC.decode(
+        JSON.stringify({ projectSort: "name-asc", threadSort: "manual" }),
       ),
       null,
     );

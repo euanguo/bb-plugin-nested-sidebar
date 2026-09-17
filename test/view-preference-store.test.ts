@@ -19,6 +19,7 @@ describe("view preference store", () => {
       assert.deepEqual(store.get(), {
         projectSort: "manual",
         threadSort: "manual",
+        worktreeSort: "manual",
       });
     } finally {
       db.close();
@@ -31,14 +32,22 @@ describe("view preference store", () => {
       assert.deepEqual(store.set({ projectSort: "status" }), {
         projectSort: "status",
         threadSort: "manual",
+        worktreeSort: "manual",
       });
       assert.deepEqual(store.set({ threadSort: "updated-desc" }), {
         projectSort: "status",
         threadSort: "updated-desc",
+        worktreeSort: "manual",
+      });
+      assert.deepEqual(store.set({ worktreeSort: "threads-desc" }), {
+        projectSort: "status",
+        threadSort: "updated-desc",
+        worktreeSort: "threads-desc",
       });
       assert.deepEqual(store.get(), {
         projectSort: "status",
         threadSort: "updated-desc",
+        worktreeSort: "threads-desc",
       });
     } finally {
       db.close();

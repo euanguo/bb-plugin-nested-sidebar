@@ -12,10 +12,13 @@ import type Database from "better-sqlite3";
 import {
   DEFAULT_PROJECT_SORT,
   DEFAULT_THREAD_SORT,
+  DEFAULT_WORKTREE_SORT,
   validProjectSort,
   validThreadSort,
+  validWorktreeSort,
   type ProjectSortMode,
   type ThreadSortMode,
+  type WorktreeSortMode,
 } from "./sort-modes.ts";
 
 export const VIEW_PREFERENCE_MIGRATION = `CREATE TABLE IF NOT EXISTS view_preferences (
@@ -27,6 +30,7 @@ export const VIEW_PREFERENCE_MIGRATION = `CREATE TABLE IF NOT EXISTS view_prefer
 export interface StoredViewPreferences {
   readonly projectSort: ProjectSortMode;
   readonly threadSort: ThreadSortMode;
+  readonly worktreeSort: WorktreeSortMode;
 }
 
 interface PreferenceRow {
@@ -57,12 +61,16 @@ export function createViewPreferenceStore(db: Database.Database) {
       threadSort: validThreadSort(values.threadSort)
         ? values.threadSort
         : DEFAULT_THREAD_SORT,
+      worktreeSort: validWorktreeSort(values.worktreeSort)
+        ? values.worktreeSort
+        : DEFAULT_WORKTREE_SORT,
     };
   };
 
   const set = (patch: {
     projectSort?: ProjectSortMode;
     threadSort?: ThreadSortMode;
+    worktreeSort?: WorktreeSortMode;
   }): StoredViewPreferences => {
     const statement = db.prepare(
       `INSERT INTO view_preferences (key, value, updated_at)
@@ -77,6 +85,12 @@ export function createViewPreferenceStore(db: Database.Database) {
       }
       if (patch.threadSort !== undefined && validThreadSort(patch.threadSort)) {
         statement.run("threadSort", patch.threadSort, now);
+      }
+      if (
+        patch.worktreeSort !== undefined &&
+        validWorktreeSort(patch.worktreeSort)
+      ) {
+        statement.run("worktreeSort", patch.worktreeSort, now);
       }
     });
     run();

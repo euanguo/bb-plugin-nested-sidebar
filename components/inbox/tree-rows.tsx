@@ -9,6 +9,7 @@ import { ThreadCard } from "@/components/inbox/thread-card";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import { useNestViewState } from "@/components/inbox/view-state-context";
+import { workspaceExpansionKeys } from "@/lib/view-state";
 import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import {
   RowActionButton,
@@ -161,7 +162,13 @@ export function WorkspaceGroup({
     viewState.isWorkspaceExpanded(node.ref.key) ||
     node.ref.environmentIds.some((id) => viewState.isWorkspaceExpanded(id));
   const setExpanded = (open: boolean) =>
-    viewState.setWorkspaceExpanded(node.ref.key, open);
+    // Every key this row answers to, in one write — a row expanded under an id
+    // it was once known by cannot be folded otherwise.
+    viewState.setWorkspaceFolded({
+      keys: workspaceExpansionKeys(node.ref),
+      openKey: node.ref.key,
+      expanded: open,
+    });
   const [renaming, setRenaming] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -269,6 +276,14 @@ export function WorkspaceGroup({
           aria-expanded={expanded}
           aria-controls={listId}
           aria-keyshortcuts={canReorder ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+          // The flag spans the whole gesture, not just the drag: a browser may
+          // follow a drag with a click, and clearing it on `dragend` left that
+          // click to toggle the row a second time — which, after the toggle the
+          // drop performed, is a row that appears not to respond at all. The
+          // next press is the first moment this gesture is over.
+          onPointerDown={() => {
+            dragStarted.current = false;
+          }}
           onClick={(event) => {
             if (dragStarted.current) {
               event.preventDefault();
@@ -290,11 +305,6 @@ export function WorkspaceGroup({
                 workspaceKey: node.ref.key,
               }),
             );
-          }}
-          onDragEnd={() => {
-            setTimeout(() => {
-              dragStarted.current = false;
-            }, 0);
           }}
           onKeyDown={(event) => {
             if (!event.altKey || !canReorder) return;
