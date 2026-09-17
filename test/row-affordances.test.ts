@@ -53,6 +53,20 @@ describe("row affordances across the four levels", () => {
     assert.match(treeRows, /label="New thread here"/);
   });
 
+  /**
+   * The personal project has no checkout, and the worktree environment provider
+   * requires one (`requires: { gitCheckout: true }`) — so a worktree there is
+   * not a thing that can be created, and offering the item opens a composer
+   * with no worktree in it.
+   */
+  it("keeps the worktree entry off the project that has no checkout", () => {
+    assert.match(projectRow, /isPersonal=\{node\.project\.isPersonal\}/);
+    assert.match(
+      projectRow,
+      /isPersonal \? null : \(\s*<MenuItem[\s\S]*?label="New worktree…"/,
+    );
+  });
+
   it("keeps rename reachable from every level", () => {
     assert.match(projectRow, /label="Rename…"/);
     // A worktree renames the environment, which is what its alias is.

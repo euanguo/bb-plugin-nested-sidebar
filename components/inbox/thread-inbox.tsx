@@ -1253,7 +1253,11 @@ export function ThreadInbox({
                 baseBranch: { kind: "default" },
               },
             },
-      originLabel: `New worktree in ${projectName}`,
+      // With no source host there is no worktree seed either, so the header
+      // says where this actually came from rather than naming a worktree that
+      // was never asked for.
+      originLabel:
+        hostId === null ? projectName : `New worktree in ${projectName}`,
     });
   }
 
