@@ -92,8 +92,24 @@ function SeedDialog({
     setBusy(true);
     setError(null);
     try {
+      // A `reuse` seed is the one the composer can drop on its own: its "reuse
+      // an existing environment" list is built by grouping *threads*, so a
+      // worktree whose threads have all been archived is absent from it, and a
+      // seed it does not hold loses to the default — silently, and in exactly
+      // the case this dialog exists for. Clicking `+` on a workspace row is the
+      // user naming the worktree themselves, so that seed is re-asserted here.
+      //
+      // Every other seed is left to the composer. A project seed has no
+      // worktree in it, and a new-worktree seed is an instruction the branch
+      // picker is free to refine; overriding either would discard a choice the
+      // user made in the composer's own controls.
+      const reused =
+        seed.environment?.type === "reuse" ? seed.environment : null;
       const created = await rpc.call("spawnThread", {
-        request: { ...request },
+        request: {
+          ...request,
+          ...(reused === null ? {} : { environment: reused }),
+        },
       });
       onCreated(created.threadId);
     } catch (caught) {
@@ -111,6 +127,11 @@ function SeedDialog({
       onClose={onClose}
       busy={busy}
       icon="Add"
+      // Roomier than the default: this is bb's whole compose surface, and the
+      // row of pickers beneath the prompt is what goes first when it is narrow.
+      // Only the width — the composer is content-height, so a forced height
+      // would show as blank space rather than as a bigger editor.
+      width="56rem"
       title={`New thread in ${seed.projectName}`}
       subtitle={seed.originLabel}
     >

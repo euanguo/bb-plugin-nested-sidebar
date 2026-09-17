@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 
 const modal = await readFile(new URL("../components/ui/modal.tsx", import.meta.url), "utf8");
 const inbox = await readFile(new URL("../components/inbox/thread-inbox.tsx", import.meta.url), "utf8");
+const newThread = await readFile(new URL("../components/inbox/new-thread-dialog.tsx", import.meta.url), "utf8");
 const menu = await readFile(new URL("../components/ui/menu.tsx", import.meta.url), "utf8");
 const hoverCard = await readFile(new URL("../components/ui/hover-card.tsx", import.meta.url), "utf8");
 const select = await readFile(new URL("../components/ui/select.tsx", import.meta.url), "utf8");
@@ -11,9 +12,47 @@ const groupManager = await readFile(new URL("../components/inbox/group-manager-d
 const portalScope = await readFile(new URL("../lib/portal-scope.ts", import.meta.url), "utf8");
 
 describe("modal and overlay contracts", () => {
-  it("routes row new-thread actions through the host composer", () => {
-    assert.match(inbox, /sidebarActions\.openNewThread/);
-    assert.doesNotMatch(inbox, /<NewThreadDialog/);
+  /**
+   * One surface for every row. A project row seeds a project, a workspace row
+   * seeds the worktree it names, and "New worktree" seeds a fresh one; the
+   * sidebar's own `openNewThread` shortcut is gone, because it accepts a project
+   * and a focus flag and nothing else — a worktree handed to it is dropped.
+   */
+  it("routes every row's new-thread action through the seeded dialog", () => {
+    assert.match(inbox, /<NewThreadDialog/);
+    // The prose still names the shortcut it explains why not to use, so this
+    // asserts on the call rather than on the word.
+    assert.doesNotMatch(inbox, /sidebarActions\.openNewThread/);
+    assert.match(inbox, /type: "reuse", environmentId: node\.ref\.environmentId/);
+    assert.match(inbox, /type: "managed-worktree"/);
+    assert.match(inbox, /baseBranch: \{ kind: "default" \}/);
+    // A `host` seed with no host resolves to null inside the composer, so the
+    // project's source host has to travel with it.
+    assert.match(inbox, /sourceHostId/);
+  });
+
+  /**
+   * Only a worktree the user named is settled on submit, because only a `reuse`
+   * seed can be dropped by the composer — its "reuse an existing environment"
+   * list is built from threads, so a worktree whose threads have all been
+   * archived is absent from it. A project seed and a new-worktree seed belong to
+   * the composer's own pickers.
+   */
+  it("settles a workspace row's environment on submit, and only that one", () => {
+    assert.match(newThread, /seed\.environment\?\.type === "reuse"/);
+    assert.match(newThread, /environment: reused/);
+  });
+
+  /**
+   * `sidebarActions.open` silently ignores an id the host's client store does
+   * not hold, and a spawn answers before the sidebar's read catches up — so
+   * opening on the spot leaves the user on the composer. The row must wait for
+   * the thread to arrive in the sidebar's own live view.
+   */
+  it("waits for the sidebar to hold a spawned thread before opening it", () => {
+    assert.match(inbox, /setPendingOpenId\(threadId\)/);
+    assert.doesNotMatch(inbox, /sidebarActions\.open\(threadId\)/);
+    assert.match(inbox, /hostThreads\.some\(\(thread\) => thread\.id === pendingOpenId\)/);
   });
 
   it("uses the official BB dialog instead of a native dialog", () => {

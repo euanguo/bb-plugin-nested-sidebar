@@ -8,7 +8,7 @@ import {
   type ThreadFamily,
 } from "./inbox.ts";
 import { rollupThreads, mergeRollups, type StatusRollup } from "./rollup.ts";
-import { disambiguateWorkspaceLabels, mergeWorkspaceRefs, shouldShowWorkspaces, workspaceRefOf, type WorkspaceEnvironmentDescriptor, type WorkspaceProjectDescriptor, type WorkspaceRef } from "./workspace.ts";
+import { disambiguateWorkspaceLabels, mergeWorkspaceRefs, shouldShowWorkspaces, workspaceRefOf, workspaceRefOfEnvironment, type WorkspaceEnvironmentDescriptor, type WorkspaceProjectDescriptor, type WorkspaceRef } from "./workspace.ts";
 import { orderWorkspaces } from "./workspace-order.ts";
 import type { ManualOrderMap } from "./manual-order.ts";
 import type { GroupIconName } from "./groups.ts";
@@ -163,6 +163,21 @@ function buildProjectNode(
     if (existing !== undefined) bucket.ref = mergeWorkspaceRefs(existing.ref, ref);
     bucket.families.push(family);
     workspacesById.set(ref.key, bucket);
+  }
+
+  // Every workspace this project has on disk, not only the ones its threads
+  // happen to occupy. An environment outlives the conversations in it: once the
+  // last thread in a worktree is settled its family leaves the tree, and
+  // without this the worktree would leave with it — taking the row, and with it
+  // the `+` that is the only way back into that worktree, off the sidebar for
+  // good. Merging here keeps such a row identical to the one its threads built.
+  for (const descriptor of environments.values()) {
+    if (descriptor.projectId !== project.id) continue;
+    const ref = workspaceRefOfEnvironment(descriptor, projects);
+    if (ref === null) continue;
+    const existing = workspacesById.get(ref.key);
+    if (existing === undefined) workspacesById.set(ref.key, { ref, families: [] });
+    else existing.ref = mergeWorkspaceRefs(existing.ref, ref);
   }
 
   const refs = disambiguateWorkspaceLabels([...workspacesById.values()].map(({ ref }) => ref));
