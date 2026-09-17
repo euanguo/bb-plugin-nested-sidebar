@@ -45,6 +45,11 @@ const workspacePathsSnapshot = defineStoreSnapshot<WorkspacePaths>(
  * The trigger is deliberately narrow: a sorted, de-duplicated signature of the
  * environment facts, so thread activity that says nothing new about an
  * environment does not cost a read.
+ *
+ * It is also incomplete, in the way any signal borrowed from threads must be: a
+ * change with no thread behind it is invisible to it. So the window coming back
+ * to the front re-reads too — see the second effect below for what that covers
+ * and why it is a guess rather than a signal.
  */
 export function useWorkspacePaths(): WorkspacePaths {
   const rpc = useRpc<typeof nestRpcContract>();
@@ -52,6 +57,8 @@ export function useWorkspacePaths(): WorkspacePaths {
   const [paths, setPaths] = useState<WorkspacePaths>(
     () => workspacePathsSnapshot.read() ?? EMPTY,
   );
+  /** Bumped by anything that suggests the environments may have moved. */
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const environmentFacts = useMemo(() => {
     const facts = new Set<string>();
@@ -88,7 +95,31 @@ export function useWorkspacePaths(): WorkspacePaths {
     return () => {
       cancelled = true;
     };
-  }, [rpc, environmentFacts]);
+  }, [rpc, environmentFacts, refreshToken]);
+
+  /**
+   * Re-read when the window comes back to the front.
+   *
+   * The facts above only travel with a thread view refresh, so a change made
+   * without any thread doing anything — a hand run `git checkout` in a
+   * terminal, or a worktree that holds no threads at all — never reaches this
+   * client, and the row keeps naming the branch from page load. bb has no
+   * signal to hand a plugin for that; this is the cheap guess in its place.
+   * Coming back to the window is the moment the user is about to look, and it
+   * is also the moment after the kind of change that leaves no other trace.
+   */
+  useEffect(() => {
+    const wake = () => {
+      if (document.visibilityState !== "visible") return;
+      setRefreshToken((token) => token + 1);
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+    return () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+    };
+  }, []);
 
   return paths;
 }
