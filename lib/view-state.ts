@@ -169,6 +169,42 @@ export function writeViewState(
 }
 
 /** Add or remove one id from a stored list, preserving the existing order. */
+/**
+ * Every key a worktree row has to be cleared under to be folded away.
+ *
+ * A row answers to its own key and to each environment id it was once known by
+ * — `workspaceRefOf` reads both, because workspaces were identified by
+ * environment before they were identified by path. Folding therefore has to
+ * write both: clearing only the current key left a row expanded under an older
+ * one expanded for good, which is a disclosure that no longer responds to being
+ * clicked at all.
+ */
+export function workspaceExpansionKeys(ref: {
+  readonly key: string;
+  readonly environmentIds: readonly string[];
+}): string[] {
+  return [ref.key, ...ref.environmentIds];
+}
+
+/**
+ * The expansion list after folding or unfolding one worktree.
+ *
+ * One list, because the caller has one write: `patchViewState` builds each patch
+ * from the state in its closure, so a second call in the same tick would be
+ * built from the state before the first and silently drop it.
+ */
+export function foldWorkspaceExpansion(
+  ids: readonly string[],
+  keys: readonly string[],
+  openKey: string,
+  expanded: boolean,
+): string[] {
+  return keys.reduce<string[]>(
+    (current, key) => withId(current, key, expanded && key === openKey),
+    [...ids],
+  );
+}
+
 export function withId(
   ids: readonly string[],
   id: string,

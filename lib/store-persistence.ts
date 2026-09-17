@@ -42,8 +42,10 @@ import {
 import {
   validProjectSort,
   validThreadSort,
+  validWorktreeSort,
   type ProjectSortMode,
   type ThreadSortMode,
+  type WorktreeSortMode,
 } from "./sort-modes.ts";
 import type {
   WorkspaceEnvironmentDescriptor,
@@ -67,6 +69,7 @@ export interface OrderSnapshot {
 export interface ViewPreferencesSnapshot {
   readonly projectSort: ProjectSortMode;
   readonly threadSort: ThreadSortMode;
+  readonly worktreeSort: WorktreeSortMode;
 }
 
 /**
@@ -238,6 +241,7 @@ export const VIEW_PREFERENCES_SNAPSHOT_CODEC: StoreSnapshotCodec<ViewPreferences
       JSON.stringify({
         projectSort: value.projectSort,
         threadSort: value.threadSort,
+        worktreeSort: value.worktreeSort,
       }),
     decode: (stored) => {
       let parsed: unknown;
@@ -249,9 +253,11 @@ export const VIEW_PREFERENCES_SNAPSHOT_CODEC: StoreSnapshotCodec<ViewPreferences
       if (!isRecord(parsed)) return null;
       if (!validProjectSort(parsed.projectSort)) return null;
       if (!validThreadSort(parsed.threadSort)) return null;
+      if (!validWorktreeSort(parsed.worktreeSort)) return null;
       return {
         projectSort: parsed.projectSort,
         threadSort: parsed.threadSort,
+        worktreeSort: parsed.worktreeSort,
       };
     },
   };

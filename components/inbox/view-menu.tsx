@@ -18,10 +18,14 @@ import {
   PROJECT_SORT_MODES,
   THREAD_SORT_LABELS,
   THREAD_SORT_MODES,
+  WORKTREE_SORT_LABELS,
+  WORKTREE_SORT_MODES,
   validProjectSort,
   validThreadSort,
+  validWorktreeSort,
   type ProjectSortMode,
   type ThreadSortMode,
+  type WorktreeSortMode,
 } from "@/lib/sort-modes";
 
 /**
@@ -43,6 +47,8 @@ export function ViewMenu({
   onProjectSortChange,
   threadSort,
   onThreadSortChange,
+  worktreeSort,
+  onWorktreeSortChange,
   onCollapseAll,
   onResetView,
 }: {
@@ -52,14 +58,20 @@ export function ViewMenu({
   onProjectSortChange: (value: ProjectSortMode) => void;
   threadSort: ThreadSortMode;
   onThreadSortChange: (value: ThreadSortMode) => void;
+  worktreeSort: WorktreeSortMode;
+  onWorktreeSortChange: (value: WorktreeSortMode) => void;
   onCollapseAll: () => void;
   onResetView: () => void;
 }) {
   const filterLabel = THREAD_FILTER_LABELS[filter];
   const projectSortLabel = PROJECT_SORT_LABELS[projectSort];
   const threadSortLabel = THREAD_SORT_LABELS[threadSort];
+  const worktreeSortLabel = WORKTREE_SORT_LABELS[worktreeSort];
   const active =
-    filter !== "all" || projectSort !== "manual" || threadSort !== "manual";
+    filter !== "all" ||
+    projectSort !== "manual" ||
+    threadSort !== "manual" ||
+    worktreeSort !== "manual";
 
   return (
     <Menu
@@ -67,7 +79,7 @@ export function ViewMenu({
       trigger={
         <button
           type="button"
-          aria-label={`View options. Filter ${filterLabel}; projects ${projectSortLabel}; threads ${threadSortLabel}.`}
+          aria-label={`View options. Filter ${filterLabel}; projects ${projectSortLabel}; threads ${threadSortLabel}; worktrees ${worktreeSortLabel}.`}
           title="View options"
           data-bb-icon-button=""
           className={cn(
@@ -138,6 +150,23 @@ export function ViewMenu({
               key={mode}
               value={mode}
               label={THREAD_SORT_LABELS[mode]}
+            />
+          ))}
+        </MenuRadioGroup>
+      </MenuSub>
+
+      <MenuSub label="Sort worktrees" icon="GitBranch" hint={worktreeSortLabel}>
+        <MenuRadioGroup
+          value={worktreeSort}
+          onValueChange={(next) => {
+            if (validWorktreeSort(next)) onWorktreeSortChange(next);
+          }}
+        >
+          {WORKTREE_SORT_MODES.map((mode) => (
+            <MenuRadioItem
+              key={mode}
+              value={mode}
+              label={WORKTREE_SORT_LABELS[mode]}
             />
           ))}
         </MenuRadioGroup>

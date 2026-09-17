@@ -122,6 +122,14 @@ export function ProjectNode({
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           aria-label={`${expanded ? "Collapse" : "Expand"} ${node.project.name}. ${projectReorder.enabled ? "Drag this header to reorder projects, or press Alt+Up or Alt+Down." : "Project reordering is unavailable."}`}
           title={node.project.name}
+          // The flag spans the whole gesture, not just the drag: a browser may
+          // follow a drag with a click, and clearing it on `dragend` left that
+          // click to toggle the row a second time — which, after the toggle the
+          // drop performed, is a row that appears not to respond at all. The
+          // next press is the first moment this gesture is over.
+          onPointerDown={() => {
+            dragStarted.current = false;
+          }}
           onClick={(event) => {
             if (dragStarted.current) {
               event.preventDefault();
@@ -140,11 +148,6 @@ export function ProjectNode({
               "application/x-nest-project",
               JSON.stringify({ projectId: node.project.id }),
             );
-          }}
-          onDragEnd={() => {
-            setTimeout(() => {
-              dragStarted.current = false;
-            }, 0);
           }}
           onKeyDown={(event) => {
             if (!event.altKey) return;

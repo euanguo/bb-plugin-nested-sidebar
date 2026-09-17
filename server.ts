@@ -74,6 +74,7 @@ import { MANUAL_ORDER_MIGRATION, createOrderStore } from "./lib/order-store.ts";
 import {
   PROJECT_SORT_MODES,
   THREAD_SORT_MODES,
+  WORKTREE_SORT_MODES,
 } from "./lib/sort-modes.ts";
 import {
   VIEW_PREFERENCE_MIGRATION,
@@ -216,6 +217,7 @@ const orderMapSchema = z
   });
 const projectSortSchema = z.enum(PROJECT_SORT_MODES);
 const threadSortSchema = z.enum(THREAD_SORT_MODES);
+const worktreeSortSchema = z.enum(WORKTREE_SORT_MODES);
 
 /**
  * What bb can say about one workspace before anything is touched. The counts are
@@ -471,16 +473,19 @@ export const nestRpcContract = defineRpcContract({
     output: z.object({
       projectSort: projectSortSchema,
       threadSort: threadSortSchema,
+      worktreeSort: worktreeSortSchema,
     }),
   },
   setViewPreferences: {
     input: z.object({
       projectSort: projectSortSchema.optional(),
       threadSort: threadSortSchema.optional(),
+      worktreeSort: worktreeSortSchema.optional(),
     }),
     output: z.object({
       projectSort: projectSortSchema,
       threadSort: threadSortSchema,
+      worktreeSort: worktreeSortSchema,
     }),
   },
   /**

@@ -5,12 +5,54 @@
  * always there, and it leads under every arrangement — so only worktrees are
  * ordered here, and the list that gets stored holds only their keys.
  *
+ * The lens is the same idea as the other two levels, with that one exception
+ * built in: `manual` reads what the user dragged, every other mode ranks the
+ * worktrees by a fact about them, and the checkout sits above the result either
+ * way rather than being ranked with them. It is a place the user did not choose
+ * to work in, so a ranking by activity or status would push the worktrees that
+ * are actually moving below a header that never does anything.
+ *
  * A key is a workspace's own key, which is its environment id. What the user is
  * arranging is a place on disk, not a branch name that two places can share.
  */
 
 import { validOrderId, validOrderItems } from "./manual-order.ts";
+import { familyUpdatedAt } from "./thread-management.ts";
+import { statusKindRank, type StatusRollup } from "./rollup.ts";
+import type { ThreadFamily } from "./inbox.ts";
+import type { WorktreeSortMode } from "./sort-modes.ts";
 import { workspaceSortOrder, type WorkspaceRef } from "./workspace.ts";
+
+/** What a worktree's lens reads. All of it is already on the row. */
+export interface SortableWorkspace {
+  readonly ref: WorkspaceRef;
+  readonly families: readonly ThreadFamily[];
+  readonly rollup: StatusRollup;
+}
+
+/** The numbers a lens ranks by, computed once per row. */
+export interface WorkspaceSortFacts {
+  /** Latest activity across the workspace's own threads. */
+  readonly updatedAt: number;
+  /** How many thread families live in it. */
+  readonly families: number;
+  /** Its rollup kind, on the same ladder the status dots fold with. */
+  readonly statusRank: number;
+}
+
+/** The facts of a row the tree has already rolled up. */
+export function workspaceSortFacts(
+  workspace: SortableWorkspace,
+): WorkspaceSortFacts {
+  return {
+    updatedAt: workspace.families.reduce(
+      (latest, family) => Math.max(latest, familyUpdatedAt(family)),
+      0,
+    ),
+    families: workspace.families.length,
+    statusRank: statusKindRank(workspace.rollup.kind),
+  };
+}
 
 export type WorkspaceMoveResult =
   | { readonly ok: true; readonly keys: string[] }
@@ -96,13 +138,35 @@ export function keyboardWorkspaceMove(
 /**
  * A project's workspaces in the order they are drawn.
  *
- * The checkout leads because `workspaceSortOrder` says so, whatever the stored
- * arrangement says; then the worktrees the user arranged; then, for a worktree
- * the stored list does not mention — one that was just created, or created on
- * another machine — its label, which is the order everything had before any of
- * it was arranged.
+ * Under `manual` — the default — the checkout leads because
+ * `workspaceSortOrder` says so, whatever the stored arrangement says; then the
+ * worktrees the user arranged; then, for a worktree the stored list does not
+ * mention — one that was just created, or created on another machine — its
+ * label, which is the order everything had before any of it was arranged.
+ *
+ * Under a lens the same rule survives in the one place it matters: the checkout
+ * is still first, and the lens ranks everything under it.
  */
 export function orderWorkspaces<T extends { readonly ref: WorkspaceRef }>(
+  workspaces: readonly T[],
+  storedKeys: readonly string[] | undefined,
+  lens?: {
+    readonly mode: Exclude<WorktreeSortMode, "manual">;
+    readonly facts: (workspace: T) => WorkspaceSortFacts;
+  },
+): T[] {
+  if (lens === undefined) return inArrangedOrder(workspaces, storedKeys);
+  const compare = worktreeComparator(lens.mode, lens.facts);
+  return [...workspaces].sort((left, right) => {
+    const byCheckout = checkoutRank(left) - checkoutRank(right);
+    if (byCheckout !== 0) return byCheckout;
+    // The label last, so two rows a lens cannot separate still hold one order
+    // between renders rather than following the input array's.
+    return compare(left, right) || left.ref.label.localeCompare(right.ref.label);
+  });
+}
+
+function inArrangedOrder<T extends { readonly ref: WorkspaceRef }>(
   workspaces: readonly T[],
   storedKeys: readonly string[] | undefined,
 ): T[] {
@@ -118,6 +182,29 @@ export function orderWorkspaces<T extends { readonly ref: WorkspaceRef }>(
     if (leftRank !== rightRank) return leftRank - rightRank;
     return left.ref.label.localeCompare(right.ref.label);
   });
+}
+
+/** Zero for the checkout, one for everything else: the whole exemption. */
+function checkoutRank(workspace: { readonly ref: WorkspaceRef }): number {
+  return workspace.ref.kind === "project-checkout" ? 0 : 1;
+}
+
+function worktreeComparator<T extends { readonly ref: WorkspaceRef }>(
+  mode: Exclude<WorktreeSortMode, "manual">,
+  facts: (workspace: T) => WorkspaceSortFacts,
+): (left: T, right: T) => number {
+  switch (mode) {
+    case "name-asc":
+      return (left, right) => left.ref.label.localeCompare(right.ref.label);
+    case "updated-desc":
+      return (left, right) => facts(right).updatedAt - facts(left).updatedAt;
+    case "threads-desc":
+      return (left, right) => facts(right).families - facts(left).families;
+    case "status":
+      return (left, right) =>
+        facts(left).statusRank - facts(right).statusRank ||
+        facts(right).updatedAt - facts(left).updatedAt;
+  }
 }
 
 function rankForWorkspace(

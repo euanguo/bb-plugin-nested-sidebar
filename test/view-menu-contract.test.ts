@@ -23,10 +23,15 @@ describe("view menu contract", () => {
 
   it("marks the trigger when anything is off its default", () => {
     assert.match(viewMenu, /const active =/);
-    assert.match(
-      viewMenu,
-      /filter !== "all" \|\| projectSort !== "manual" \|\| threadSort !== "manual"/,
-    );
+    // Every lens counts, not just the ones the menu opened with.
+    for (const clause of [
+      'filter !== "all"',
+      'projectSort !== "manual"',
+      'threadSort !== "manual"',
+      'worktreeSort !== "manual"',
+    ]) {
+      assert.ok(viewMenu.includes(clause), clause);
+    }
   });
 
   it("offers collapse-all and a reset back to the defaults", () => {

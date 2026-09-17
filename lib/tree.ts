@@ -9,7 +9,8 @@ import {
 } from "./inbox.ts";
 import { rollupThreads, mergeRollups, type StatusRollup } from "./rollup.ts";
 import { disambiguateWorkspaceLabels, mergeWorkspaceRefs, shouldShowWorkspaces, workspaceRefOf, workspaceRefOfEnvironment, type WorkspaceEnvironmentDescriptor, type WorkspaceProjectDescriptor, type WorkspaceRef } from "./workspace.ts";
-import { orderWorkspaces } from "./workspace-order.ts";
+import { orderWorkspaces, workspaceSortFacts } from "./workspace-order.ts";
+import type { WorktreeSortMode } from "./sort-modes.ts";
 import type { ManualOrderMap } from "./manual-order.ts";
 import type { GroupIconName } from "./groups.ts";
 
@@ -61,6 +62,13 @@ export function buildTree(input: {
   groupOrder: readonly { id: string; name: string; icon: GroupIconName }[];
   /** Project id -> worktree keys, the arrangement the user made. */
   workspaceOrder: ManualOrderMap;
+  /**
+   * The lens over the worktree level. `manual` — the default — reads the
+   * arrangement above; every other mode ranks the worktrees by a fact about
+   * them and leaves that arrangement on disk untouched. The checkout leads
+   * either way.
+   */
+  worktreeSort?: WorktreeSortMode;
   /** The icon the implicit Ungrouped section carries, chosen by the user. */
   ungroupedIcon: GroupIconName;
   environments?: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>;
@@ -68,6 +76,7 @@ export function buildTree(input: {
 }): GroupNode[] {
   const { projectGroups, now, assignment, groupOrder, ungroupedIcon } = input;
   const { workspaceOrder } = input;
+  const worktreeSort = input.worktreeSort ?? "manual";
   const environments = input.environments ?? new Map<string, WorkspaceEnvironmentDescriptor>();
   const projects = input.projects ?? new Map<string, WorkspaceProjectDescriptor>();
 
@@ -78,6 +87,7 @@ export function buildTree(input: {
       group.families,
       now,
       workspaceOrder[group.project.id],
+      worktreeSort,
       environments,
       projects,
     );
@@ -145,6 +155,7 @@ function buildProjectNode(
   families: readonly ThreadFamily[],
   now: number,
   storedWorkspaceKeys: readonly string[] | undefined,
+  worktreeSort: WorktreeSortMode,
   environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>,
   projects: ReadonlyMap<string, WorkspaceProjectDescriptor>,
 ): ProjectNode {
@@ -192,6 +203,11 @@ function buildProjectNode(
       ),
     })),
     storedWorkspaceKeys,
+    // The lens is the whole of "not manual": `manual` reads the arrangement,
+    // and every other mode needs the numbers the rows were just rolled up with.
+    worktreeSort === "manual"
+      ? undefined
+      : { mode: worktreeSort, facts: workspaceSortFacts },
   );
 
   return {

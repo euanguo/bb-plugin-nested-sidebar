@@ -23,6 +23,15 @@ export interface NestViewStateApi {
   isWorkspaceExpanded: (workspaceKey: string) => boolean;
   setWorkspaceExpanded: (workspaceKey: string, expanded: boolean) => void;
   /**
+   * Fold a worktree that answers to more than one key, in a single write. See
+   * `foldWorkspaceExpansion` for why it cannot be one call per key.
+   */
+  setWorkspaceFolded: (input: {
+    readonly keys: readonly string[];
+    readonly openKey: string;
+    readonly expanded: boolean;
+  }) => void;
+  /**
    * A thread family's explicit override, or null to follow the preference.
    * The override is what a user's own disclosure click writes.
    */
