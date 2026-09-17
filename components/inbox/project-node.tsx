@@ -194,6 +194,7 @@ export function ProjectNode({
             projectId={node.project.id}
             projectName={node.project.name}
             projectPath={projectPath}
+            isPersonal={node.project.isPersonal}
             groups={groups}
             currentGroupId={currentGroupId}
             expanded={expanded}
@@ -321,6 +322,7 @@ function ProjectMenu({
   projectId,
   projectName,
   projectPath,
+  isPersonal,
   groups,
   currentGroupId,
   expanded,
@@ -333,6 +335,7 @@ function ProjectMenu({
   projectId: string;
   projectName: string;
   projectPath: string | null;
+  isPersonal: boolean;
   groups: readonly ProjectGroup[];
   currentGroupId: string | null;
   expanded: boolean;
@@ -363,11 +366,18 @@ function ProjectMenu({
           label="New thread"
           onSelect={onNewThread}
         />
-        <MenuItem
-          icon="GitBranch"
-          label="New worktree…"
-          onSelect={onNewWorktree}
-        />
+        {/* The personal project has no checkout, and the worktree environment
+            provider requires one (`requires: { gitCheckout: true }`) — so a
+            worktree here is not a thing that can be created. Offering it would
+            be a menu item whose only outcome is a composer with no worktree in
+            it. */}
+        {isPersonal ? null : (
+          <MenuItem
+            icon="GitBranch"
+            label="New worktree…"
+            onSelect={onNewWorktree}
+          />
+        )}
         <MenuSeparator />
         <MenuItem
           icon="ChevronDown"
