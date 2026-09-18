@@ -21,6 +21,7 @@ import {
 } from "@/components/inbox/project-node";
 import type { GroupNode } from "@/lib/tree";
 import type { ProjectGroup } from "@/lib/groups";
+import type { ProjectIcon } from "@/lib/project-icons";
 import { renameIntent } from "@/lib/groups";
 import type {
   TreeRowHandlers,
@@ -54,6 +55,7 @@ export function GroupSection({
   onNewWorktree,
   onNewThreadInWorkspace,
   projectColorOverrides,
+  projectIcons,
   projectReorder,
 }: {
   node: GroupNode;
@@ -64,6 +66,7 @@ export function GroupSection({
   onNewWorktree: (projectId: string, projectName: string) => void;
   onNewThreadInWorkspace: (launch: WorkspaceLaunch) => void;
   projectColorOverrides: ReadonlyMap<string, string>;
+  projectIcons: ReadonlyMap<string, ProjectIcon>;
   projectReorder: {
     enabled: boolean;
     next: (projectId: string, delta: -1 | 1) => void;
@@ -174,6 +177,7 @@ export function GroupSection({
               onNewWorktree={onNewWorktree}
               onNewThreadInWorkspace={onNewThreadInWorkspace}
               projectColorOverrides={projectColorOverrides}
+              projectIcons={projectIcons}
               projectReorder={projectReorder}
             />
           ))}

@@ -40,6 +40,10 @@ import {
   createProjectColorStore,
 } from "./lib/project-color-store.ts";
 import {
+  PROJECT_ICON_MIGRATION,
+  createProjectIconStore,
+} from "./lib/project-icon-store.ts";
+import {
   SCOPE_ICON_MIGRATION,
   createScopeIconStore,
 } from "./lib/scope-icon-store.ts";
@@ -85,6 +89,12 @@ import {
   MAX_PROJECT_COLOR_ROWS,
   MAX_PROJECT_ID_LENGTH,
 } from "./lib/project-colors.ts";
+import {
+  MAX_PROJECT_ICON_ROWS,
+  PROJECT_ICON_SOURCES,
+  canonicalProjectIcon,
+  type ProjectIcon,
+} from "./lib/project-icons.ts";
 
 const groupIconSchema = z.string().refine(validGroupIcon, {
   message: "Unknown group icon.",
@@ -108,6 +118,7 @@ const migrations = [
   MANUAL_ORDER_MIGRATION,
   VIEW_PREFERENCE_MIGRATION,
   SCOPE_ICON_MIGRATION,
+  PROJECT_ICON_MIGRATION,
 ];
 
 export interface StoredLifecycleRow {
@@ -176,6 +187,22 @@ const projectColorSchema = z
 const storedProjectColorSchema = z.object({
   projectId: projectIdSchema,
   color: projectColorSchema,
+});
+const projectIconSchema = z.object({
+  src: z.string(),
+  label: z.string(),
+  source: z.enum(PROJECT_ICON_SOURCES),
+});
+/**
+ * One project's stored answer, miss included.
+ *
+ * The null is on the wire on purpose: it is how the sidebar tells a project
+ * that was already looked at — and has no icon — from one nobody has looked at
+ * yet, without asking again for the first kind.
+ */
+const projectIconEntrySchema = z.object({
+  projectId: projectIdSchema,
+  icon: projectIconSchema.nullable(),
 });
 const bulkDeleteSkipReasonSchema = z.enum([
   "missing",
@@ -284,6 +311,30 @@ export const nestRpcContract = defineRpcContract({
   resetProjectColor: {
     input: z.object({ projectId: projectIdSchema }),
     output: z.object({ projectId: projectIdSchema, reset: z.boolean() }),
+  },
+  /**
+   * Every project icon this build can still stand behind, misses included.
+   *
+   * Rows are filtered against what bb says each project's source is right now,
+   * so an answer is only ever about a checkout the project still points at —
+   * and a miss ages out (see `PROJECT_ICON_MISS_TTL_MS`) so a favicon added
+   * later still turns up. Whatever is absent here is what the caller probes.
+   */
+  listProjectIcons: {
+    input: z.object({}),
+    output: z.object({
+      icons: z.array(projectIconEntrySchema).max(MAX_PROJECT_ICON_ROWS),
+    }),
+  },
+  /**
+   * Look for a project's icon in its checkout, once.
+   *
+   * `icon: null` covers both "this checkout has none" and "there is nothing to
+   * probe", and the caller treats them the same: the row keeps its letter.
+   */
+  detectProjectIcon: {
+    input: z.object({ projectId: projectIdSchema }),
+    output: projectIconEntrySchema,
   },
   // Project groups: the level above projects. Everything on a group row
   // (counts, worst status) is derived from its threads at render time, so the
@@ -656,6 +707,7 @@ export const nestRpcContract = defineRpcContract({
 /** Channel the frontend re-reads on. */
 export const LIFECYCLE_CHANNEL = "lifecycle";
 export const PROJECT_COLOR_CHANNEL = "project-colors";
+export const PROJECT_ICON_CHANNEL = "project-icons";
 export const GROUP_CHANNEL = "groups";
 
 /**
@@ -676,6 +728,20 @@ const WORKSPACE_PATH_LIMIT = 500;
 /** Deleting a large working copy is slow; the dialog waits, so allow for it. */
 const WORKTREE_REMOVAL_TIMEOUT_MS = 120_000;
 
+/** A handful of stats and small reads inside one checkout. */
+const PROJECT_ICON_DETECT_TIMEOUT_MS = 10_000;
+
+/**
+ * How long a stored miss is believed.
+ *
+ * A miss is worth storing — it is what keeps every mount from re-walking the
+ * same hundred paths — but it is a claim about a checkout that keeps changing,
+ * and the one way it goes wrong is the favicon added after the probe. A week
+ * is the compromise: no mount pays for a re-probe, and the icon still turns up
+ * on its own.
+ */
+const PROJECT_ICON_MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** A terminal that has not exited, so the directory is still open in a shell. */
 const OPEN_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
   "running",
@@ -686,7 +752,9 @@ export const ORDER_CHANNEL = "manual-order";
 export const VIEW_PREFERENCE_CHANNEL = "view-preferences";
 
 export default function plugin(bb: BbPluginApi) {
-  bb.settings.define({
+  // The handle, not just the call: a probe is decided here, and the toggle has
+  // to be readable at the moment it would run.
+  const settings = bb.settings.define({
     palettePreset: {
       type: "select",
       label: "Palette preset",
@@ -820,11 +888,19 @@ export default function plugin(bb: BbPluginApi) {
       label: "Show thread branch or host",
       default: true,
     },
+    autoProjectIcons: {
+      type: "boolean",
+      label: "Detect project icons",
+      description:
+        "Look for a favicon, logo, or app icon in a project's checkout and use it as the project's badge. Only conventional locations are read, on the machine that owns the checkout, and nothing is written there.",
+      default: true,
+    },
   });
 
   const db = bb.storage.database();
   bb.storage.migrate(db, nestMigrations(db, migrations));
   const projectColors = createProjectColorStore(db);
+  const projectIcons = createProjectIconStore(db);
   const groups = createGroupStore(db);
   const scopeIcons = createScopeIconStore(db);
   const orders = createOrderStore(db);
@@ -1223,6 +1299,26 @@ export default function plugin(bb: BbPluginApi) {
     }
   };
 
+  /**
+   * The checkout a project is configured against, and the machine holding it.
+   *
+   * `null` is the personal project and any project whose source bb cannot name.
+   * Those have no checkout to read, so they keep the letter badge — and they
+   * are why every icon answer is allowed to be "nothing".
+   */
+  const projectSource = async (
+    projectId: string,
+  ): Promise<{ path: string; hostId: string } | null> => {
+    const project = await bb.sdk.projects.get({ projectId });
+    const source =
+      project.sources.find((candidate) => candidate.isDefault) ??
+      project.sources[0];
+    const path = source?.path ?? null;
+    const hostId = source?.hostId ?? null;
+    if (path === null || hostId === null) return null;
+    return { path, hostId };
+  };
+
   bb.rpc.register(nestRpcContract, {
     async listProjectColors() {
       return { colors: projectColors.list() };
@@ -1238,6 +1334,101 @@ export default function plugin(bb: BbPluginApi) {
       const reset = projectColors.reset(projectId);
       bb.realtime.publish(PROJECT_COLOR_CHANNEL, { projectId });
       return { projectId, reset };
+    },
+    async listProjectIcons() {
+      const projects = await bb.sdk.projects.list({});
+      const sources = new Map<
+        string,
+        { path: string | null; hostId: string | null }
+      >();
+      for (const project of projects) {
+        const source =
+          project.sources.find((candidate) => candidate.isDefault) ??
+          project.sources[0];
+        sources.set(project.id, {
+          path: source?.path ?? null,
+          hostId: source?.hostId ?? null,
+        });
+      }
+      const now = Date.now();
+      const icons: Array<{ projectId: string; icon: ProjectIcon | null }> = [];
+      for (const row of projectIcons.list()) {
+        const current = sources.get(row.projectId);
+        // A project bb no longer has, or one that now points at a different
+        // checkout: the row describes something this project is not.
+        if (current === undefined) continue;
+        if (
+          current.path !== row.sourcePath ||
+          current.hostId !== row.sourceHostId
+        ) {
+          continue;
+        }
+        // An aged miss is left out rather than returned, which is what puts
+        // that project back in front of the detector.
+        if (row.icon === null && now - row.updatedAt >= PROJECT_ICON_MISS_TTL_MS) {
+          continue;
+        }
+        icons.push({ projectId: row.projectId, icon: row.icon });
+        if (icons.length === MAX_PROJECT_ICON_ROWS) break;
+      }
+      return { icons };
+    },
+    async detectProjectIcon({ projectId }) {
+      const source = await projectSource(projectId);
+      const cached = projectIcons.get(projectId);
+      const cachedMatches =
+        cached !== undefined &&
+        source !== null &&
+        cached.sourcePath === source.path &&
+        cached.sourceHostId === source.hostId;
+      // A stored answer that still describes this checkout is the answer, even
+      // with detection switched off — turning the toggle back on must not cost
+      // a probe it already paid for.
+      if (cachedMatches) return { projectId, icon: cached.icon };
+
+      // Off means off: no probe, nothing stored, and the row keeps its letter.
+      const values = await settings.get();
+      if (values.autoProjectIcons !== true || source === null) {
+        return { projectId, icon: null };
+      }
+
+      const attempt = await worktreeHost
+        .call(
+          "detectProjectIcon",
+          { path: source.path },
+          { hostId: source.hostId, timeoutMs: PROJECT_ICON_DETECT_TIMEOUT_MS },
+        )
+        // An unreachable machine is not a checkout without an icon. Storing it
+        // as one would hide the project's icon for a week for a reason that had
+        // nothing to do with the project.
+        .catch(() => ({ status: "failed" as const, message: "unreachable" }));
+
+      if (attempt.status === "none") {
+        const stored = projectIcons.set({
+          projectId,
+          icon: null,
+          sourcePath: source.path,
+          sourceHostId: source.hostId,
+        });
+        bb.realtime.publish(PROJECT_ICON_CHANNEL, { projectId });
+        return { projectId, icon: stored.icon };
+      }
+      if (attempt.status === "failed") return { projectId, icon: null };
+
+      const icon = canonicalProjectIcon({
+        src: attempt.src,
+        label: attempt.label,
+        source: attempt.source,
+      });
+      if (icon === null) return { projectId, icon: null };
+      const stored = projectIcons.set({
+        projectId,
+        icon,
+        sourcePath: source.path,
+        sourceHostId: source.hostId,
+      });
+      bb.realtime.publish(PROJECT_ICON_CHANNEL, { projectId });
+      return { projectId, icon: stored.icon };
     },
     async listGroups() {
       return {

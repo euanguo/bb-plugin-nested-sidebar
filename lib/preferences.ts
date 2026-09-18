@@ -84,6 +84,12 @@ export interface NestPreferences {
   showRelativeTime: boolean;
   showChildCount: boolean;
   showThreadLocation: boolean;
+  /**
+   * Whether a project's own icon replaces its letter badge. The detection
+   * itself runs on the server, against the checkout; this decides whether the
+   * sidebar asks for it and whether the answer is drawn.
+   */
+  autoProjectIcons: boolean;
 }
 
 export const CUSTOM_COLOR_DEFAULTS = {
@@ -251,6 +257,7 @@ export function resolveNestPreferences(
     showRelativeTime: readBoolean(values?.showRelativeTime, true),
     showChildCount: readBoolean(values?.showChildCount, true),
     showThreadLocation: readBoolean(values?.showThreadLocation, true),
+    autoProjectIcons: readBoolean(values?.autoProjectIcons, true),
   };
 }
 

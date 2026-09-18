@@ -29,6 +29,7 @@ import {
 import { useLifecycle } from "@/hooks/use-lifecycle";
 import { useSettledThreads } from "@/hooks/use-settled-threads";
 import { useProjectColors } from "@/hooks/use-project-colors";
+import { useProjectIcons } from "@/hooks/use-project-icons";
 import {
   mergeSettledThreads,
   pendingSettledCount,
@@ -146,6 +147,14 @@ export function ThreadInbox({
     [settings.values],
   );
   const { overrides: projectColorOverrides } = useProjectColors();
+  const projectIds = useMemo(
+    () => projects.map((project) => project.id),
+    [projects],
+  );
+  const { icons: projectIcons } = useProjectIcons({
+    projectIds,
+    enabled: preferences.autoProjectIcons,
+  });
   const groupsApi = useGroups();
   const paths = useWorkspacePaths();
   /**
@@ -1651,6 +1660,7 @@ export function ThreadInbox({
                 onNewWorktree={seedNewWorktree}
                 onNewThreadInWorkspace={seedFromWorkspace}
                 projectColorOverrides={projectColorOverrides}
+                projectIcons={projectIcons}
                 projectReorder={{
                   enabled: projectReorderEnabled,
                   next: reorderProjectByKeyboard,
