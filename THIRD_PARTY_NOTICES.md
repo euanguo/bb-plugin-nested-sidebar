@@ -24,6 +24,21 @@ Source: <https://github.com/get-bb/bb>
 
 ---
 
+## Orca — `stablyai/orca`
+
+MIT License, Copyright (c) 2026 Lovecast Inc.
+
+The project-icon auto-detection — probing a checkout's conventional icon paths,
+sniffing PNG/WebP bytes, resolving a declared `<link rel="icon">` href, and the
+`package.json` website-favicon fallback — is ported from Orca at commit
+`ca2ae890115faf66ee97e7335caeac061a350524` (2026-09-18). The derived code ships in
+`dist/host.js` from `host/project-icon.ts`, and its vocabulary and validation ship in
+`dist/server.js` from `lib/project-icons.ts`.
+
+Source: <https://github.com/stablyai/orca>
+
+---
+
 ## shadcn/ui
 
 MIT License, Copyright (c) 2023 shadcn.

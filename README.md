@@ -395,6 +395,15 @@ You can also choose row density, the worktree row label, default child
 expansion, provider marks, parent-only PR metadata, and relative-time
 visibility.
 
+**Detect project icons** (on by default) gives a project its own badge. The
+machine that owns the checkout looks in the conventional places — `favicon.png`,
+`logo.webp`, `public/icon.png`, Tauri's `src-tauri/icons/icon.png`, and the rest
+— then at what the project's own `index.html` or route root declares as its
+icon, and finally, failing both, at the website in `package.json`. The result is
+cached per project. A project with nothing to find keeps its colored letter, and
+moving a project's source makes Nest look again. Turning it off stops the
+lookups; it does not discard what was already found.
+
 Those display settings stay in Settings — the frontend can read `bb.settings`
 but not write it — so the sidebar footer carries a **Nest settings** button as
 the one-click route to them.

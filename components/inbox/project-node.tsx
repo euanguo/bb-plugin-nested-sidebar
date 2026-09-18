@@ -38,7 +38,9 @@ import type { ProjectGroup } from "@/lib/groups";
 import {
   projectBadgeLetter,
   projectBadgePresentation,
+  type ProjectBadgePresentation,
 } from "@/lib/project-colors";
+import type { ProjectIcon } from "@/lib/project-icons";
 
 /**
  * One project. The workspace level appears only when the project's threads
@@ -54,6 +56,7 @@ export function ProjectNode({
   onNewWorktree,
   onNewThreadInWorkspace,
   projectColorOverrides,
+  projectIcons,
   projectReorder,
 }: {
   node: ProjectNodeModel;
@@ -65,6 +68,7 @@ export function ProjectNode({
   onNewWorktree: (projectId: string, projectName: string) => void;
   onNewThreadInWorkspace: (launch: WorkspaceLaunch) => void;
   projectColorOverrides: ReadonlyMap<string, string>;
+  projectIcons: ReadonlyMap<string, ProjectIcon>;
   projectReorder: {
     enabled: boolean;
     next: (projectId: string, delta: -1 | 1) => void;
@@ -161,17 +165,12 @@ export function ProjectNode({
           }}
           className="absolute inset-0 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
-        <span
-          aria-hidden
-          data-nest-project-badge={node.project.id}
-          className="pointer-events-none relative flex size-5 shrink-0 items-center justify-center rounded-md border border-black/15 text-2xs font-semibold uppercase shadow-sm"
-          style={{
-            backgroundColor: badge.backgroundColor,
-            color: badge.foregroundColor,
-          }}
-        >
-          {projectBadgeLetter(node.project.name)}
-        </span>
+        <ProjectBadge
+          projectId={node.project.id}
+          name={node.project.name}
+          badge={badge}
+          icon={projectIcons.get(node.project.id)}
+        />
         <span className="pointer-events-none relative min-w-0 flex-1 truncate text-xs font-semibold text-foreground/90">
           {node.project.name}
         </span>
@@ -296,6 +295,58 @@ export function ProjectNode({
         )
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The project's badge: its own icon when its checkout has one, and the colored
+ * letter otherwise.
+ *
+ * The letter is not a placeholder to be replaced — it is what a project looks
+ * like before anything has been probed, and what it keeps looking like when
+ * there is nothing to find. The image only ever paints over it.
+ */
+function ProjectBadge({
+  projectId,
+  name,
+  badge,
+  icon,
+}: {
+  projectId: string;
+  name: string;
+  badge: ProjectBadgePresentation;
+  icon: ProjectIcon | undefined;
+}) {
+  /**
+   * The source that failed to paint, not a boolean.
+   *
+   * Detection can replace a favicon URL with a file icon under a row that has
+   * already drawn once, and a boolean would keep suppressing the replacement:
+   * the failure belongs to the string, and dies with it.
+   */
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
+  return (
+    <span
+      aria-hidden
+      data-nest-project-badge={projectId}
+      className="pointer-events-none relative flex size-5 shrink-0 items-center justify-center rounded-md border border-black/15 text-2xs font-semibold uppercase shadow-sm"
+      style={{
+        backgroundColor: badge.backgroundColor,
+        color: badge.foregroundColor,
+      }}
+    >
+      {icon !== undefined && icon.src !== failedSrc ? (
+        <img
+          alt=""
+          src={icon.src}
+          onError={() => setFailedSrc(icon.src)}
+          className="size-full rounded-md object-contain"
+        />
+      ) : (
+        projectBadgeLetter(name)
+      )}
+    </span>
   );
 }
 

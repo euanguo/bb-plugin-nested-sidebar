@@ -24,6 +24,14 @@ const projectColorsHook = await readFile(
   new URL("../hooks/use-project-colors.ts", import.meta.url),
   "utf8",
 );
+const preferences = await readFile(
+  new URL("../lib/preferences.ts", import.meta.url),
+  "utf8",
+);
+const contract = await readFile(
+  new URL("../host/contract.ts", import.meta.url),
+  "utf8",
+);
 
 describe("Nest settings contract", () => {
   it("declares every palette and behavior setting with safe defaults", () => {
@@ -138,5 +146,70 @@ describe("Nest settings contract", () => {
     assert.match(card, /disabled=\{selectionMode\}/);
     assert.match(card, /selectionMode && "pointer-events-none"/);
     assert.match(card, /actions\.open\(thread\.id/);
+  });
+});
+
+const readSource = (relative: string) =>
+  readFile(new URL(`../${relative}`, import.meta.url), "utf8");
+
+/**
+ * Project icons arrive from Orca (see THIRD_PARTY_NOTICES.md), and they arrive
+ * in pieces that have to agree: a host that reads the checkout, a store that
+ * remembers what it said, an RPC that carries it, and a badge that draws it.
+ * These pin each seam, and pin the switch that turns the whole chain off.
+ */
+describe("Nest project icon contract", () => {
+  it("declares detection as a setting that is on unless it is turned off", () => {
+    const start = server.indexOf("autoProjectIcons: {");
+    assert.notEqual(start, -1, "server declares the toggle");
+    const descriptor = server.slice(start, start + 400);
+    assert.match(descriptor, /type: "boolean"/);
+    assert.match(descriptor, /default: true/);
+    // The sidebar reads it with the same fallback, so a value the app has not
+    // loaded yet still means "on".
+    assert.match(
+      preferences,
+      /autoProjectIcons: readBoolean\(values\?\.autoProjectIcons, true\)/,
+    );
+  });
+
+  it("reads the checkout through the host, never through the server", async () => {
+    const hostEntry = await readSource("host.ts");
+    assert.match(contract, /detectProjectIcon: \{/);
+    assert.match(hostEntry, /detectProjectIcon: async \(input\)/);
+    assert.match(server, /worktreeHost\s*\.call\(\s*"detectProjectIcon"/);
+    // The server is bundled for a browser-ish resolver, so a filesystem import
+    // there is a build error rather than a mistake to review.
+    assert.doesNotMatch(server, /from "node:fs/);
+  });
+
+  it("stores what was found and what was looked for", () => {
+    assert.match(server, /PROJECT_ICON_MIGRATION/);
+    assert.match(server, /createProjectIconStore\(db\)/);
+    assert.match(server, /listProjectIcons: \{/);
+    assert.match(server, /detectProjectIcon: \{/);
+    assert.match(server, /listProjectIcons\(\)/);
+    assert.match(server, /PROJECT_ICON_CHANNEL/);
+    assert.match(server, /bb\.realtime\.publish\(PROJECT_ICON_CHANNEL/);
+    assert.match(server, /canonicalProjectIcon\(/);
+    // Off means off: no probe is dialled while the setting is false.
+    assert.match(server, /values\.autoProjectIcons !== true/);
+  });
+
+  it("asks once per project and draws the answer over the letter", async () => {
+    const hook = await readSource("hooks/use-project-icons.ts");
+    assert.match(hook, /useRealtime\("project-icons"/);
+    assert.match(hook, /rpc\.call\("detectProjectIcon", \{ projectId \}\)/);
+    assert.match(hook, /asked\.current\.has\(id\)/);
+    assert.match(hook, /defineStoreSnapshot<ProjectIconsSnapshot>/);
+    assert.match(inbox, /useProjectIcons\(/);
+    assert.match(inbox, /projectIcons=\{projectIcons\}/);
+    assert.match(projectGroup, /projectIcons: ReadonlyMap<string, ProjectIcon>/);
+    assert.match(projectGroup, /icon=\{projectIcons\.get\(node\.project\.id\)\}/);
+    // The letter is what a project looks like with nothing to draw, so the
+    // image may only ever be painted over it.
+    assert.match(projectGroup, /<img/);
+    assert.match(projectGroup, /onError=\{\(\) => setFailedSrc\(icon\.src\)\}/);
+    assert.match(projectGroup, /projectBadgeLetter\(name\)/);
   });
 });
