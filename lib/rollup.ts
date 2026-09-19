@@ -136,18 +136,49 @@ function leadThreadFor(
   }
 }
 
+/** One non-zero signal in a rollup. */
+export interface RollupCount {
+  readonly kind: FamilyStatusKind;
+  readonly count: number;
+}
+
+/**
+ * The non-zero signals, most urgent first.
+ *
+ * The one place the order lives. A folded row draws a dot per entry and reads
+ * the same list out as a sentence, so the dots and the screen-reader text cannot
+ * disagree about which signal came first — and `failed > needs you > working >
+ * unread` is the order that puts a blocked thread ahead of a running one, which
+ * is the whole point of a rollup.
+ */
+export function rollupCounts(rollup: StatusRollup): RollupCount[] {
+  const counts: RollupCount[] = [];
+  if (rollup.failed > 0) counts.push({ kind: "failed", count: rollup.failed });
+  if (rollup.needsYou > 0) {
+    counts.push({ kind: "needs-you", count: rollup.needsYou });
+  }
+  if (rollup.working > 0) counts.push({ kind: "working", count: rollup.working });
+  if (rollup.unread > 0) counts.push({ kind: "unread", count: rollup.unread });
+  return counts;
+}
+
+/** The word each counted signal is read out as. */
+const COUNT_LABELS: Readonly<Partial<Record<FamilyStatusKind, string>>> = {
+  failed: "failed",
+  "needs-you": "needs you",
+  working: "working",
+  unread: "unread",
+};
+
 /**
  * The short string a folded header shows next to its status dot: only the
  * counts that are non-zero, most urgent first. Kept terse because this sits on
  * a row the user scans, and with many worktrees the row has little room.
  */
 export function rollupSummary(rollup: StatusRollup): string {
-  const parts: string[] = [];
-  if (rollup.failed > 0) parts.push(String(rollup.failed) + " failed");
-  if (rollup.needsYou > 0) parts.push(String(rollup.needsYou) + " needs you");
-  if (rollup.working > 0) parts.push(String(rollup.working) + " working");
-  if (rollup.unread > 0) parts.push(String(rollup.unread) + " unread");
-  return parts.join(" · ");
+  return rollupCounts(rollup)
+    .map((entry) => `${entry.count} ${COUNT_LABELS[entry.kind] ?? entry.kind}`)
+    .join(" · ");
 }
 
 /** Merge child rollups into a parent one. Counts add; the worst kind wins. */

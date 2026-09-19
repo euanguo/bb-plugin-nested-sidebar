@@ -8,7 +8,6 @@ import {
 } from "react";
 import {
   experimental_useProviders as useProviders,
-  experimental_useSidebarThreads as useSidebarThreads,
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   useRpc,
   useSettings,
@@ -27,6 +26,34 @@ import {
   type BulkDeletePreviewView,
 } from "@/components/inbox/bulk-delete-dialog";
 import { useLifecycle } from "@/hooks/use-lifecycle";
+import { useThreadView } from "@/hooks/use-thread-view";
+import { useProjectArchivedThreads } from "@/hooks/use-project-archived-threads";
+import { usePinnedOrder } from "@/hooks/use-pinned-order";
+import {
+  orderPinnedFamilies,
+  pinnedRootIds,
+  splitPinnedFamilies,
+} from "@/lib/pinned";
+import {
+  DEFAULT_ORGANIZATION_MODE,
+  fallbackSectionIcon,
+  hostNamesFrom,
+  machineSections,
+  organizationFor,
+} from "@/lib/organization";
+import { PinnedSection } from "@/components/inbox/pinned-section";
+import { resolveSnoozePresets } from "@/lib/lifecycle";
+import {
+  forgetNestActions,
+  publishNestActions,
+  type PublishedNestActions,
+} from "@/lib/palette-bridge";
+import {
+  OrderChangedNotice,
+  ThreadLoadFailure,
+  ThreadViewNotice,
+} from "@/components/inbox/thread-view-status";
+import { threadViewNotice } from "@/lib/thread-snapshot";
 import { useSettledThreads } from "@/hooks/use-settled-threads";
 import { useProjectColors } from "@/hooks/use-project-colors";
 import { useProjectIcons } from "@/hooks/use-project-icons";
@@ -50,7 +77,6 @@ import {
   includeSelectedFamilies,
   pruneSelectedRootIds,
   selectableRootIds,
-  type ThreadFilterPreset,
   type RootSelectionIntent,
 } from "@/lib/thread-management";
 import {
@@ -76,7 +102,6 @@ import {
 import { useNestOrder } from "@/hooks/use-nest-order";
 import { useViewPreferences } from "@/hooks/use-view-preferences";
 import { GroupTabs, type GroupTab } from "@/components/inbox/group-tabs";
-import { ProjectNode as ProjectNodeView } from "@/components/inbox/project-node";
 import {
   NestViewStateProvider,
   type NestViewStateApi,
@@ -92,7 +117,7 @@ import {
   type NestViewState,
 } from "@/lib/view-state";
 import {
-  COPY_ANNOUNCEMENT_EVENT,
+  SIDEBAR_ANNOUNCEMENT_EVENT,
 } from "@/lib/clipboard";
 
 import { GroupManagerDialog } from "@/components/inbox/group-manager-dialog";
@@ -106,7 +131,6 @@ import {
   groupScopeKey,
   projectInScope,
   shouldShowUngroupedTab,
-  type GroupAssignment,
   type GroupScope,
 } from "@/lib/groups";
 import {
@@ -134,6 +158,28 @@ const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const PENDING_OPEN_TIMEOUT_MS = 15_000;
 
 /**
+ * How many archived threads one project's shelf shows.
+ *
+ * Deliberately not a setting. A shelf is for recognising a thread you remember,
+ * not for browsing the archive — bb has its own archived view for that — and a
+ * number the user has to choose would make the surface look like a second
+ * archive rather than a way back to one thread.
+ */
+const ARCHIVED_SHELF_LIMIT = 10;
+
+/**
+ * The tree's scroll area — and the same box bb's own list is drawn in.
+ *
+ * One constant rather than two literals, because the reserved scrollbar lane and
+ * the horizontal clip are the contract this sidebar documents, and bb's own list
+ * inside a box that lacked them would reintroduce the sideways jump the contract
+ * exists to stop. The host draws its own list in exactly this box when a plugin
+ * is not the provider, so the two occupants are the same surface.
+ */
+const TREE_SCROLL_CLASS =
+  "min-h-0 flex-1 overflow-y-auto overflow-x-clip pl-1.5 pr-0.5 pb-2 [scrollbar-gutter:stable]";
+
+/**
  * A project-first inbox. Project sections stay put; roots keep their creation
  * order; active root/child families expand in place instead of jumping around.
  */
@@ -141,8 +187,22 @@ export function ThreadInbox({
   activeThreadId,
   onNavigate,
   searchQuery,
+  Original,
 }: PluginThreadListProps) {
-  const { status, threads: hostThreads, projects } = useSidebarThreads();
+  /**
+   * The rows to draw, which is not the same thing as the host's state.
+   *
+   * `useThreadView` keeps the last good answer so a failed refresh leaves the
+   * tree standing rather than blanking it, and can read the live view from bb's
+   * own SDK when there is nothing left to fall back on. `status` is the host's
+   * state as-is, which the render still needs to tell a first load, which draws
+   * nothing, apart from a cold failure, which draws the retry.
+   */
+  const { view, status, recovering, recoveryError, recover } = useThreadView();
+  const hostThreads = view.threads;
+  const projects = view.projects;
+  /** The one line a degraded view owes the user, or null when it owes none. */
+  const viewNotice = threadViewNotice(view.source);
   const { providers } = useProviders();
   const rpc = useRpc<typeof nestRpcContract>();
   const settings = useSettings();
@@ -171,14 +231,6 @@ export function ThreadInbox({
    * cannot leave a filter from one session over a scope from another.
    */
   const [viewState, setViewState] = useState<NestViewState>(readViewState);
-  const groupScope: GroupScope = useMemo(
-    () =>
-      resolveGroupScope(
-        viewState.scope,
-        new Set(groupsApi.groups.map((group) => group.id)),
-      ),
-    [groupsApi.groups, viewState.scope],
-  );
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   /** The group a tab's pencil asked to rename, when the strip is the entry. */
   const sidebarActions = useSidebarThreadActions();
@@ -225,7 +277,11 @@ export function ThreadInbox({
     if (!hostThreads.some((thread) => thread.id === pendingOpenId)) return;
     setPendingOpenId(null);
     sidebarActions.open(pendingOpenId);
-  }, [hostThreads, pendingOpenId, sidebarActions]);
+    // The host's `onNavigate` is the one thing that closes the mobile drawer,
+    // and every other route into a thread calls it. This one skipped it, so a
+    // thread started from a row on a phone opened behind an open sidebar.
+    onNavigate();
+  }, [hostThreads, pendingOpenId, sidebarActions, onNavigate]);
   // A thread the sidebar never hands back — one spawned into a view this
   // client does not hold — must not leave this waiting for the session.
   useEffect(() => {
@@ -244,22 +300,82 @@ export function ThreadInbox({
    */
   const order = useNestOrder();
   const viewPreferences = useViewPreferences();
+
+  /**
+   * The machine every project's checkout lives on, and what each machine is
+   * called. The names come from the threads this client holds, because that is
+   * the only place a host's name is resolved for a plugin.
+   */
+  const machine = useMemo(
+    () =>
+      machineSections({
+        projects,
+        paths,
+        hostNames: hostNamesFrom(view.threads),
+      }),
+    [projects, paths, view.threads],
+  );
+
+  /**
+   * What the tree's first level is, for the mode in force.
+   *
+   * The group mode's answer is the user's own groups; the machine mode's is
+   * derived. Both are "an id, a name, and an icon" — which is why the tree
+   * builder below needs no branch for either.
+   */
+  const organization = useMemo(
+    () =>
+      organizationFor({
+        mode: viewPreferences.organizationMode,
+        groupAssignment: groupsApi.assignment,
+        groupSections: groupsApi.groups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          icon: group.icon,
+        })),
+        machine,
+      }),
+    [
+      viewPreferences.organizationMode,
+      groupsApi.assignment,
+      groupsApi.groups,
+      machine,
+    ],
+  );
+
+  /**
+   * The scope strip's ids, which follow the organization rather than the groups:
+   * a strip listing groups while the tree draws machines would be a control that
+   * points at nothing.
+   *
+   * Resolving the stored scope against these is also what makes a mode change
+   * safe. A group id is not a machine id, so a scope left on a group degrades to
+   * All the moment the tree stops drawing groups.
+   */
+  const organizationIds = useMemo(
+    () => new Set(organization.sections.map((section) => section.id)),
+    [organization.sections],
+  );
+  const groupScope: GroupScope = useMemo(
+    () => resolveGroupScope(viewState.scope, organizationIds),
+    [organizationIds, viewState.scope],
+  );
   const [reorderAnnouncement, setReorderAnnouncement] = useState("");
   /**
    * Copy feedback from the row menus, which live too far below this surface to
    * hand a callback through. The live region stays here, where it is announced
    * once for the whole tree.
    */
-  const [copyAnnouncement, setCopyAnnouncement] = useState("");
+  const [sidebarAnnouncement, setSidebarAnnouncement] = useState("");
   useEffect(() => {
     const onAnnounce = (event: Event) => {
       if (event instanceof CustomEvent && typeof event.detail === "string") {
-        setCopyAnnouncement(event.detail);
+        setSidebarAnnouncement(event.detail);
       }
     };
-    window.addEventListener(COPY_ANNOUNCEMENT_EVENT, onAnnounce);
+    window.addEventListener(SIDEBAR_ANNOUNCEMENT_EVENT, onAnnounce);
     return () =>
-      window.removeEventListener(COPY_ANNOUNCEMENT_EVENT, onAnnounce);
+      window.removeEventListener(SIDEBAR_ANNOUNCEMENT_EVENT, onAnnounce);
   }, []);
   const [selectedRootIds, setSelectedRootIds] = useState<Set<string>>(
     () => new Set(),
@@ -287,6 +403,78 @@ export function ThreadInbox({
       return next;
     });
   };
+
+  /**
+   * What the palette's rows reach when they run.
+   *
+   * Written during render, like the retained thread view, and for the same
+   * reason: the dispatcher below is published once and reads through this, so it
+   * never needs replacing. Republishing on every render would work but is worse —
+   * React runs a cleanup before the next effect, so the slot would blink to null
+   * on every render, and the palette's `isAvailable` runs while the palette is
+   * open, which is exactly when a blink would hide a row.
+   */
+  const paletteRef = useRef({ lifecycle, threads, patchViewState });
+  paletteRef.current = { lifecycle, threads, patchViewState };
+
+  useEffect(() => {
+    /**
+     * A thread the list is not drawing cannot be parked from here: the park rules
+     * read fields only the drawn rows carry, so a hidden or archived id has no
+     * answer to give.
+     */
+    const canParkFromPalette = (threadId: string): boolean => {
+      const { lifecycle: current, threads: currentThreads } =
+        paletteRef.current;
+      const thread = currentThreads.find(
+        (candidate) => candidate.id === threadId,
+      );
+      return thread !== undefined && current.canPark(thread);
+    };
+
+    const actions: PublishedNestActions = {
+      settle(threadId) {
+        if (!canParkFromPalette(threadId)) return;
+        paletteRef.current.lifecycle.settle(threadId);
+      },
+      snoozeUntilTomorrow(threadId) {
+        if (!canParkFromPalette(threadId)) return;
+        // The same preset the row's own hover button uses: tomorrow at 09:00.
+        const tomorrow = resolveSnoozePresets(new Date()).find(
+          (preset) => preset.id === "tomorrow",
+        );
+        if (tomorrow === undefined) return;
+        paletteRef.current.lifecycle.snooze(threadId, tomorrow.snoozedUntil);
+      },
+      wake(threadId) {
+        const row = paletteRef.current.lifecycle.parkedRows.get(threadId);
+        if (row === undefined) return;
+        // Whichever shelf it is on. A row is on one or the other, never both,
+        // so the order here is a reading order rather than a precedence.
+        if (row.snoozedUntil !== null) {
+          paletteRef.current.lifecycle.unsnooze(threadId);
+        } else if (row.settledAt !== null) {
+          paletteRef.current.lifecycle.unsettle(threadId);
+        }
+      },
+      canPark: canParkFromPalette,
+      isParked(threadId) {
+        const row = paletteRef.current.lifecycle.parkedRows.get(threadId);
+        return (
+          row !== undefined &&
+          (row.snoozedUntil !== null || row.settledAt !== null)
+        );
+      },
+      showNeedsYou() {
+        paletteRef.current.patchViewState({ filter: "needs-you" });
+      },
+    };
+    publishNestActions(actions);
+    return () => forgetNestActions(actions);
+    // Published once on purpose; every verb reads the latest values through
+    // `paletteRef`. See the note above it.
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, []);
 
   const viewStateApi: NestViewStateApi = useMemo(
     () => ({
@@ -328,6 +516,12 @@ export function ThreadInbox({
             workspaceKey,
             expanded,
           ),
+        }),
+      isArchivedShelfOn: (projectId) =>
+        viewState.archivedProjects.includes(projectId),
+      setArchivedShelf: (projectId, on) =>
+        patchViewState({
+          archivedProjects: withId(viewState.archivedProjects, projectId, on),
         }),
       familyOverride: (rootId) => {
         if (viewState.collapsedFamilies.includes(rootId)) return false;
@@ -383,8 +577,15 @@ export function ThreadInbox({
     [providers],
   );
 
-  const { unfilteredProjectGroups, projectGroups, snoozed, settled, groupTabs, treeNodes } = useMemo(() => {
-    const validGroupIds = new Set(groupsApi.groups.map((group) => group.id));
+  const {
+    unfilteredProjectGroups,
+    projectGroups,
+    snoozed,
+    settled,
+    groupTabs,
+    treeNodes,
+    pinnedFamilies,
+  } = useMemo(() => {
     const visible = visibleInboxThreads(threads, lifecycle.parkedThreadIds);
     const active: PluginSidebarThread[] = [];
     const onSnoozeShelf: PluginSidebarThread[] = [];
@@ -397,14 +598,19 @@ export function ThreadInbox({
       else active.push(thread);
     }
 
-    // Projects are ordered per group, then each project's families by the
+    // Projects are ordered per section, then each project's families by the
     // thread lens. Both run before filtering and search, so a hidden row never
     // moves and the visible order is always a slice of the complete one.
+    //
+    // The section is the organization's, not the groups': the arrangement is
+    // bucketed by whatever the tree's first level is, so in machine mode a
+    // project sorts inside its machine rather than inside a group the tree is
+    // not drawing.
     const unfilteredProjectGroups = orderProjectGroups(
       buildProjectGroups(active, projects),
       {
-        assignment: groupsApi.assignment,
-        groupOrder: groupsApi.groups.map((group) => group.id),
+        assignment: organization.assignment,
+        groupOrder: organization.sections.map((section) => section.id),
         manual: order.projects,
         mode: viewPreferences.projectSort,
         now,
@@ -427,11 +633,22 @@ export function ThreadInbox({
       filteredProjectGroups,
       searchQuery,
     );
-    const scopedProjectGroups = searchedProjectGroups.filter((group) =>
+    /*
+     * Pinned roots leave the tree and go to their own section.
+     *
+     * Taken after search and the filter, so a pinned row obeys both — and before
+     * the group scope, which it deliberately ignores: a pin that vanishes because
+     * the user is looking at another group is the failure the section exists to
+     * fix. Bulk selection is not a concern here, because a pinned thread is never
+     * bulk-eligible in the first place.
+     */
+    const { pinned: pinnedFamilies, rest: unpinnedProjectGroups } =
+      splitPinnedFamilies(searchedProjectGroups);
+    const scopedProjectGroups = unpinnedProjectGroups.filter((group) =>
       projectInScope(
         groupScope,
         groupsApi.assignment,
-        validGroupIds,
+        organizationIds,
         group.project.id,
       ),
     );
@@ -447,7 +664,7 @@ export function ThreadInbox({
     // survived search, so the numbers do not shift while the user types.
     const countFor = (scope: GroupScope) =>
       unfilteredProjectGroups.filter((group) =>
-        projectInScope(scope, groupsApi.assignment, validGroupIds, group.project.id),
+        projectInScope(scope, organization.assignment, organizationIds, group.project.id),
       ).length;
     // Each tab shows the worst state anywhere beneath it, folded from the same
     // rollups the tree rows use, so the strip and the tree never disagree about
@@ -456,8 +673,8 @@ export function ThreadInbox({
       const scoped = unfilteredProjectGroups.filter((group) =>
         projectInScope(
           scope,
-          groupsApi.assignment,
-          validGroupIds,
+          organization.assignment,
+          organizationIds,
           group.project.id,
         ),
       );
@@ -479,13 +696,13 @@ export function ThreadInbox({
         icon: groupsApi.icons.all,
         statusKind: kindFor({ kind: "all" }),
       },
-      ...groupsApi.groups.map((group) => {
-        const scope: GroupScope = { kind: "group", groupId: group.id };
+      ...organization.sections.map((section) => {
+        const scope: GroupScope = { kind: "group", groupId: section.id };
         return {
           scope,
-          label: group.name,
+          label: section.name,
           count: countFor(scope),
-          icon: group.icon,
+          icon: section.icon,
           statusKind: kindFor(scope),
         };
       }),
@@ -493,9 +710,16 @@ export function ThreadInbox({
     // "Ungrouped" is a real destination, but only once groups exist and only
     // while something is in it. A project filed out of its last group brings
     // the tab straight back.
+    //
+    // There is no equivalent in machine mode: a project whose machine bb does
+    // not know lands in a *named* section of its own, rather than in a bucket
+    // called "ungrouped" that would say nothing about why it is there.
     const ungroupedScope: GroupScope = { kind: "ungrouped" };
     const ungroupedCount = countFor(ungroupedScope);
-    if (shouldShowUngroupedTab(groupsApi.groups.length, ungroupedCount)) {
+    if (
+      viewPreferences.organizationMode === "project" &&
+      shouldShowUngroupedTab(groupsApi.groups.length, ungroupedCount)
+    ) {
       groupTabs.push({
         scope: ungroupedScope,
         label: "Ungrouped",
@@ -512,13 +736,9 @@ export function ThreadInbox({
       buildTree({
         projectGroups,
         now,
-        assignment: groupsApi.assignment,
-        groupOrder: groupsApi.groups.map((group) => ({
-          id: group.id,
-          name: group.name,
-          icon: group.icon,
-        })),
-        ungroupedIcon: groupsApi.icons.ungrouped,
+        assignment: organization.assignment,
+        groupOrder: organization.sections,
+        ungroupedIcon: fallbackSectionIcon(viewPreferences.organizationMode),
         workspaceOrder: order.workspaces,
         worktreeSort: viewPreferences.worktreeSort,
         environments: new Map(Object.entries(paths.environments)),
@@ -532,6 +752,7 @@ export function ThreadInbox({
       projectGroups,
       groupTabs,
       treeNodes,
+      pinnedFamilies,
       snoozed: searchThreadsByTitle(
         [...onSnoozeShelf].sort(
           (left, right) =>
@@ -554,15 +775,68 @@ export function ThreadInbox({
     now,
     order.families,
     order.projects,
+    organization,
+    organizationIds,
     projects,
     searchQuery,
     selectedRootIds,
     selectionMode,
+    viewPreferences.organizationMode,
     viewPreferences.projectSort,
     viewPreferences.threadSort,
     viewPreferences.worktreeSort,
     threads,
   ]);
+
+  /**
+   * The pinned section's rows, in bb's own pin order.
+   *
+   * The read is keyed on the *set* of pinned roots rather than on their order: a
+   * reorder writes bb's order and then re-reads, and a key that changed on every
+   * reorder would leave those two reads racing each other.
+   */
+  const pinnedIdsKey = useMemo(
+    () => [...pinnedRootIds(pinnedFamilies)].sort().join("\u0000"),
+    [pinnedFamilies],
+  );
+  const pinnedOrder = usePinnedOrder(pinnedIdsKey);
+  const orderedPinnedFamilies = useMemo(
+    () => orderPinnedFamilies(pinnedFamilies, pinnedOrder.order),
+    [pinnedFamilies, pinnedOrder.order],
+  );
+
+  /**
+   * The archived shelf, read only for the projects whose shelf is on.
+   *
+   * One read for the whole list rather than one per project row: a subscription
+   * per row would re-read every open project's archive on every lifecycle
+   * publish, which is exactly the read amplification the realtime coalescing
+   * exists to avoid.
+   */
+  const archived = useProjectArchivedThreads({
+    projectIds: viewState.archivedProjects,
+    limit: ARCHIVED_SHELF_LIMIT,
+  });
+
+  /**
+   * One press, one position.
+   *
+   * The neighbour is the row the move lands against, so a move up places before
+   * it and a move down places after it. The other way round would make one of the
+   * two keys look like it did nothing.
+   */
+  const reorderPinnedByKeyboard = (rootId: string, direction: -1 | 1) => {
+    const ids = pinnedRootIds(orderedPinnedFamilies);
+    const index = ids.indexOf(rootId);
+    if (index < 0) return;
+    const targetId = ids[index + direction];
+    if (targetId === undefined) return;
+    pinnedOrder.move({
+      sourceId: rootId,
+      targetId,
+      position: direction === -1 ? "before" : "after",
+    });
+  };
 
   /**
    * Ungrouped leaves the strip when nothing is in it, so a selection sitting on
@@ -740,6 +1014,12 @@ export function ThreadInbox({
     (viewPreferences.worktreeSort !== "manual"
       ? "Choose the Manual worktree sort to drag worktrees."
       : null);
+  /*
+   * The pinned order has no sort lens over it — what bb holds is what is drawn —
+   * so only the shared blocker applies, exactly like the worktree arrangement.
+   */
+  const pinnedReorderDisabledReason = sharedReorderBlocker;
+  const pinnedReorderEnabled = pinnedReorderDisabledReason === null;
   const workspaceReorderEnabled = workspaceReorderDisabledReason === null;
   const projectReorderDisabledReason =
     sharedReorderBlocker ??
@@ -1425,11 +1705,18 @@ export function ThreadInbox({
     });
   };
 
-  /** Back to the default view: no filter, both orders read the manual list. */
+  /**
+   * Back to the default view: no filter, every order reading the manual list,
+   * and the tree's first level back to the user's own groups.
+   */
   const resetView = () => {
     patchViewState({ filter: "all" });
     viewPreferences.setProjectSort("manual");
     viewPreferences.setThreadSort("manual");
+    // The worktree lens was the one this forgot, so a user who had switched it
+    // to a sort could not get back to their own arrangement from here.
+    viewPreferences.setWorktreeSort("manual");
+    viewPreferences.setOrganizationMode(DEFAULT_ORGANIZATION_MODE);
   };
 
   const treeHandlers: TreeRowHandlers = {
@@ -1450,6 +1737,11 @@ export function ThreadInbox({
     reorderDisabledReason: familyReorderDisabledReason,
     onReorder: reorderByDrag,
     onKeyboardMove: reorderByKeyboard,
+    archivedByProject: archived.byProject,
+    onUnarchiveArchived: archived.unarchive,
+    pinnedReorderEnabled,
+    pinnedReorderDisabledReason,
+    onPinnedKeyboardMove: reorderPinnedByKeyboard,
     workspaceReorderEnabled,
     workspaceReorderDisabledReason,
     onWorkspaceReorder: reorderWorkspaceByDrag,
@@ -1465,6 +1757,25 @@ export function ThreadInbox({
     onRenameWorktree: renameWorktree,
   };
 
+  /**
+   * bb's own list, on request.
+   *
+   * The host hands its list over for exactly this: a user whose sidebar is not
+   * behaving gets a working list without going into Settings, and a replaced
+   * sidebar cannot take the list away from them. It is offered where the failure
+   * is — the cold-failure state below — rather than behind a setting nobody would
+   * find while looking at a sidebar that is not working.
+   */
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  if (showOriginal) {
+    return (
+      <div className={TREE_SCROLL_CLASS}>
+        <Original />
+      </div>
+    );
+  }
+
   return (
     <NestViewStateProvider value={viewStateApi}>
     <div
@@ -1478,7 +1789,7 @@ export function ThreadInbox({
         {reorderAnnouncement}
       </output>
       <output className="sr-only" aria-live="polite" aria-atomic="true">
-        {copyAnnouncement}
+        {sidebarAnnouncement}
       </output>
       <div className="shrink-0">
         <GroupTabs
@@ -1491,6 +1802,8 @@ export function ThreadInbox({
         >
           {selectionMode ? null : (
             <ViewMenu
+              organizationMode={viewPreferences.organizationMode}
+              onOrganizationModeChange={viewPreferences.setOrganizationMode}
               filter={filterPreset}
               onFilterChange={(filter) => patchViewState({ filter })}
               projectSort={viewPreferences.projectSort}
@@ -1636,12 +1949,23 @@ export function ThreadInbox({
         are bounded by the row they hang off instead, which is what those rows'
         `@container` is for.
       */}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-clip pl-1.5 pr-0.5 pb-2 [scrollbar-gutter:stable]">
-        {status === "loading" ? null : status === "error" ? (
-          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
-          <p role="status" className={EMPTY_STATE_CLASS}>
-            Could not load threads.
-          </p>
+      <div
+        data-nest-scroll=""
+        className={TREE_SCROLL_CLASS}
+      >
+        {viewNotice === null ? null : <ThreadViewNotice text={viewNotice} />}
+        {order.changedElsewhere ? (
+          <OrderChangedNotice onReload={order.reload} />
+        ) : null}
+        {view.source === "none" ? (
+          status === "error" ? (
+            <ThreadLoadFailure
+              recovering={recovering}
+              error={recoveryError}
+              onRetry={recover}
+              onUseOriginal={() => setShowOriginal(true)}
+            />
+          ) : null
         ) : !lifecycle.shelvesReady ? null : nothingToShow ? (
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
           <p role="status" className={EMPTY_STATE_CLASS}>
@@ -1653,6 +1977,13 @@ export function ThreadInbox({
           </p>
         ) : (
           <>
+            <PinnedSection
+              pinned={orderedPinnedFamilies}
+              handlers={treeHandlers}
+              reorderEnabled={pinnedReorderEnabled}
+              reorderDisabledReason={pinnedReorderDisabledReason}
+              onReorder={pinnedOrder.move}
+            />
             {treeNodes.map((node) => (
               <GroupSection
                 key={node.groupId ?? "__ungrouped__"}

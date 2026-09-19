@@ -55,6 +55,18 @@ describe("modal and overlay contracts", () => {
     assert.match(inbox, /hostThreads\.some\(\(thread\) => thread\.id === pendingOpenId\)/);
   });
 
+  /**
+   * The spawn path was the last route into a thread that skipped `onNavigate`.
+   * On a phone that left the drawer open over the thread the user had just
+   * created, which is the one moment the sidebar is certainly done with.
+   */
+  it("closes the mobile drawer on the spawn path too", () => {
+    assert.match(
+      inbox,
+      /sidebarActions\.open\(pendingOpenId\);\s*\n(?:\s*\/\/[^\n]*\n)*\s*onNavigate\(\);/,
+    );
+  });
+
   it("uses the official BB dialog instead of a native dialog", () => {
     assert.match(modal, /from "@\/components\/ui\/dialog"/);
     assert.match(modal, /<Dialog[\s\S]*<DialogContent/);

@@ -282,7 +282,27 @@ and each of those pieces can be turned off:
 
 Rollups on folded rows follow the same rule: a coloured dot plus the count
 (`● 2  ● 1`) instead of `2 needs you · 1 working`, most urgent first. The
-wording is still in the tooltip and the accessible label.
+wording is still in the tooltip and the accessible label. A family's own
+collapsed row draws the same breakdown, so a folded branch says how much of what
+is under it rather than only that something is.
+
+A row also carries a **subagent** count when the agent is running helpers inside
+its turn, as a badge separate from the child-thread disclosure. They are
+different things — a fork is a thread under this one, a subagent is activity on
+it — and one merged number would say a thread has four children when it has one
+child and three helpers.
+
+### Pinned
+
+Pinned threads gather in a **Pinned** section above the tree, from every project,
+and leave their own project's list so nothing is drawn twice. The order is bb's
+own: a pin moved in bb's built-in sidebar is in the same place here, and dragging
+a pinned row writes that same order back. Alt+Up/Alt+Down moves one position from
+the row's status icon.
+
+The section obeys search and the filter and **ignores the group tab**, which is
+deliberate: a pin that vanishes because you are looking at another group is the
+one thing a pin is for.
 
 ### Projects and parked shelves
 
@@ -301,6 +321,18 @@ wording is still in the tooltip and the accessible label.
 - **Settled** — work you are done with, collapsed to one line and shown for 24 hours. Settling also **archives the thread in bb**, so every other surface agrees, and new attention un-settles and unarchives it. After a day the row stops being drawn but stays archived.
 
 An empty shelf disappears.
+
+### Archived threads under a project
+
+A project's own menu carries **Show archived threads**. Turn it on and that
+project's newest ten archived threads appear under its list, dimmed, with the age
+that matters — when you last worked on them. Clicking one reads it **without
+unarchiving it**, so looking costs nothing; the restore button on the row is what
+takes bb's archive off.
+
+It is per project and per browser, off by default, and bounded: a shelf is for
+recognising a thread you remember, not for browsing the archive — bb's own
+archived view is that. A project with nothing archived draws no shelf at all.
 
 ### Cards
 
@@ -327,6 +359,14 @@ never hidden.
 
 The hover button snoozes until **09:00 tomorrow**.
 
+A snoozed thread is still in bb's own list — snoozing is this sidebar's idea, not
+bb's — so when bb's list is the one on screen, Nest marks those rows with a clock
+and "Snoozed by Nest · wakes in …". It is the one thing Nest adds to a sidebar it
+does not own, and it clears itself the moment the wake time passes. The marker
+comes from the last state Nest wrote rather than a live read: with Nest not the
+provider its own reads are not running, so a snooze set on another machine shows
+up once Nest is the provider again.
+
 ### Inline agents
 
 A root with child threads gets an agent count and disclosure. The stack opens by
@@ -340,12 +380,49 @@ a direct route back up.
 ### The rest
 
 - Collapsible project and agent groups.
+- **bb's own thread list is one click away.** When the list cannot be read, the
+  failure state offers **Use bb's list** beside **Try again**, and the tree hands
+  the scroll area to bb's own rows. A retry can fail, and a sidebar that is not
+  working is the worst possible moment to send someone into Settings to fix it.
+- The row above the tree is **bb's own navigation row**, untouched. Its
+  destinations — New thread, Search threads, Plugins, Skills, and every installed
+  plugin's panel — are shared chrome that other plugins live in, and Nest does not
+  rearrange them.
+- Rename in the row, at every level that has one: press **Rename** in a row's
+  menu and the title becomes a field. Enter commits, Escape cancels, and leaving
+  the field commits — a rename you finished typing is not lost by clicking away.
+  A rename the host refuses is announced; the title on screen is the one the
+  store still holds, so the row is already telling the truth.
+- bb's quick palette (**Mod+Shift+P**) carries this sidebar's verbs, so they are
+  reachable without it: settle, snooze until tomorrow, wake, and "show threads
+  that need you". A row is listed only while it can act — a settle is not
+  offered for a thread that is working, and a wake only for one that is parked.
 - Right-click for the full thread menu: open in split, copy thread link, copy
   thread ID, mark read/unread, pin, rename, archive, delete.
-- Drag a card to a split pane, or Cmd/Ctrl-click to open one.
+- Drag a card to a split pane, or Cmd/Ctrl-click to open one. A parked row on
+  the Snoozed or Settled shelf is a split source too.
 - Status-icon reordering is separate from BB's card-to-split drag target and
-  adds no extra row icon.
+  adds no extra row icon. The two coexist because they are grabbed in different
+  places: the status icon reorders, and everywhere else on the row starts bb's
+  split gesture.
 - bb's search, its thread shortcuts, and modifier-click split-open all keep working.
+
+### When the thread list cannot be read
+
+bb hands this sidebar its threads through a hook with no way to be retried, so a
+failed refresh used to replace the whole tree with one line — losing the user's
+place, their scroll, and every row they were reading, over a hiccup that fixes
+itself. Three things stand in the way of that now:
+
+- A failed refresh **keeps the last known state** and says so above the tree.
+  The rows are real, one refresh behind.
+- A first load that fails offers **Try again**, which reads the live view
+  straight from bb's own thread table through the plugin's backend. That is the
+  one route back a plugin actually has.
+- A burst of realtime publishes — a bulk operation, or a settled thread taking
+  several turns — collapses into at most two reads: one at once, one after the
+  burst. The first read is immediate on purpose, because settling is not
+  optimistic here; the subscription is what moves the row.
 
 ### It remembers where you were
 
@@ -427,6 +504,12 @@ Those timing constants are not configurable.
 **My sidebar looks the same after installing.** Choose Nest in Settings →
 Appearance → Sidebar. Installing alone changes nothing.
 
+**The tree says it could not refresh.** That is the retained state, not an
+error: the rows below are the last ones bb reported, and the line goes away the
+moment bb answers again. If the tree is empty instead and offers **Try again**,
+that reads the threads from bb's own table rather than from the view that
+failed, so it can succeed where a plain refresh would not.
+
 **A thread I settled is not on the Settled shelf.** The shelf only reaches back 24
 hours. Older work is still settled and still archived — look for it in bb's archived
 view.
@@ -436,7 +519,10 @@ it starts working or asks you a question.
 
 **Un-settling did not bring the thread back.** Archive and unarchive run on the
 thread's host, which can be offline. When an unarchive fails, bb keeps the thread
-archived and the thread leaves the sidebar until you unarchive it in bb yourself.
+archived and the thread leaves the sidebar — and Nest asks rather than going
+quiet: a prompt names the failure, shows what bb said, and offers **Try again**.
+Leave it and the thread stays in bb's archived view, which is where it always
+was.
 
 **Uninstalling left data behind.** The shelves live in the plugin's own database,
 which bb removes with the plugin — but a copy of them is cached in the browser's

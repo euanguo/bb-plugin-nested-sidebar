@@ -10,6 +10,11 @@
 
 import type Database from "better-sqlite3";
 import {
+  DEFAULT_ORGANIZATION_MODE,
+  validOrganizationMode,
+  type OrganizationMode,
+} from "./organization.ts";
+import {
   DEFAULT_PROJECT_SORT,
   DEFAULT_THREAD_SORT,
   DEFAULT_WORKTREE_SORT,
@@ -31,6 +36,13 @@ export interface StoredViewPreferences {
   readonly projectSort: ProjectSortMode;
   readonly threadSort: ThreadSortMode;
   readonly worktreeSort: WorktreeSortMode;
+  /**
+   * What the tree's first level is: the user's groups, or the machines their
+   * projects live on. Stored here rather than in `bb.settings` for the same
+   * reason the sort modes are — the view menu owns the choice and the frontend
+   * cannot write settings.
+   */
+  readonly organizationMode: OrganizationMode;
 }
 
 interface PreferenceRow {
@@ -64,6 +76,9 @@ export function createViewPreferenceStore(db: Database.Database) {
       worktreeSort: validWorktreeSort(values.worktreeSort)
         ? values.worktreeSort
         : DEFAULT_WORKTREE_SORT,
+      organizationMode: validOrganizationMode(values.organizationMode)
+        ? values.organizationMode
+        : DEFAULT_ORGANIZATION_MODE,
     };
   };
 
@@ -71,6 +86,7 @@ export function createViewPreferenceStore(db: Database.Database) {
     projectSort?: ProjectSortMode;
     threadSort?: ThreadSortMode;
     worktreeSort?: WorktreeSortMode;
+    organizationMode?: OrganizationMode;
   }): StoredViewPreferences => {
     const statement = db.prepare(
       `INSERT INTO view_preferences (key, value, updated_at)
@@ -91,6 +107,12 @@ export function createViewPreferenceStore(db: Database.Database) {
         validWorktreeSort(patch.worktreeSort)
       ) {
         statement.run("worktreeSort", patch.worktreeSort, now);
+      }
+      if (
+        patch.organizationMode !== undefined &&
+        validOrganizationMode(patch.organizationMode)
+      ) {
+        statement.run("organizationMode", patch.organizationMode, now);
       }
     });
     run();

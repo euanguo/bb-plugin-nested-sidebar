@@ -1,17 +1,25 @@
 import { cn } from "@/lib/utils";
 import { StatusDot } from "@/components/inbox/family-status";
+import { familyStatusPresentation } from "@/lib/family-status";
 import {
-  familyStatusPresentation,
-  type FamilyStatusKind,
-} from "@/lib/family-status";
-import { rollupSummary, type StatusRollup } from "@/lib/rollup";
+  rollupCounts,
+  rollupSummary,
+  type StatusRollup,
+} from "@/lib/rollup";
 
 /**
- * The folded-row status is deliberately one dot. Counts are useful in a
- * report, but they are not useful in this narrow navigation surface: the dot
- * answers the only question the collapsed row needs to answer — is anything
- * below active or waiting? The full state and counts remain in the title and
- * accessible label, so the visual row does not spend width on them.
+ * A folded row's status: one dot per signal that is present, each with its
+ * count, most urgent first — `● 2  ● 1` rather than a bare dot.
+ *
+ * This started as a single dot, on the argument that a narrow navigation surface
+ * has no room for counts. That argument was wrong in the one place it mattered:
+ * a folded row is *skimmed*, and the question being skimmed for is not "is
+ * anything happening" but "how much, and of what". Two working threads and one
+ * waiting on you are the same dot and very different mornings. The wording is
+ * still in the title and the accessible label, so nothing here is only a colour.
+ *
+ * The width is bounded by construction: at most four dots, one per signal that
+ * `rollupCounts` can return, and a quiet subtree draws nothing at all.
  */
 export function RollupBadge({
   rollup,
@@ -20,24 +28,43 @@ export function RollupBadge({
   rollup: StatusRollup;
   className?: string;
 }) {
-  // A quiet subtree has no status signal to communicate. In particular, do
-  // not render the inactive/stale dot on every project: the dot means
-  // something below needs attention or is active, not merely that the row has
-  // children.
-  if (rollup.total === 0 || rollup.kind === "inactive" || rollup.kind === "stale") return null;
+  // A quiet subtree has no status signal to communicate. In particular, do not
+  // render the inactive/stale dot on every project: the dot means something
+  // below needs attention or is active, not merely that the row has children.
+  if (
+    rollup.total === 0 ||
+    rollup.kind === "inactive" ||
+    rollup.kind === "stale"
+  ) {
+    return null;
+  }
   const presentation = familyStatusPresentation(rollup.kind);
   const summary = rollupSummary(rollup);
+  const counts = rollupCounts(rollup);
+  /**
+   * The summary, or the label when there is no count to name.
+   *
+   * The summary already lists the states in priority order and its first entry
+   * is the dominant one, so prefixing the label said the same thing twice: a
+   * folded row was read out as "Working · 1 working" in the running app. The
+   * label survives as the fallback for a rollup with no counts — unreachable
+   * behind the guard above, but a fallback that is never wrong costs less than a
+   * title that sometimes is.
+   */
+  const label = summary === "" ? presentation.label : summary;
 
   return (
     <span
-      className={cn("flex size-3 shrink-0 items-center justify-center", className)}
-      title={`${presentation.label}${summary ? ` · ${summary}` : ""}`}
+      className={cn("flex shrink-0 items-center gap-1", className)}
+      title={label}
     >
-      <StatusDot status={presentation} />
-      <span className="sr-only">
-        {presentation.label}
-        {summary ? `, ${summary}` : ""}
-      </span>
+      {counts.map((entry) => (
+        <span key={entry.kind} className="flex items-center gap-0.5">
+          <StatusDot status={familyStatusPresentation(entry.kind)} />
+          <span className="tabular-nums">{entry.count}</span>
+        </span>
+      ))}
+      <span className="sr-only">{label}</span>
     </span>
   );
 }

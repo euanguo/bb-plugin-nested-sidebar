@@ -1,13 +1,18 @@
+import { useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
+  experimental_useSidebarThreadSplit as useSidebarThreadSplit,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { RowContextMenu } from "@/components/inbox/row-context-menu";
+import { RenameField } from "@/components/inbox/rename-field";
 import { StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeWakeLabel } from "@/lib/lifecycle";
+import { renameIntent } from "@/lib/groups";
+import { announceToSidebar } from "@/lib/clipboard";
 
 /**
  * A parked thread: one line instead of a card. Density comes from the user
@@ -34,15 +39,43 @@ export function SlimRow({
   onRestore: () => void;
 }) {
   const actions = useSidebarThreadActions();
+  /**
+   * A parked row is still a thread, so it is still a split source.
+   *
+   * The shelves used to be the one place a row could not be dragged out to a
+   * pane: modifier-click opened one, but the drag did not, and a thread open in
+   * another pane went untinted. `layout` is read for that tint and `isAvailable`
+   * is not consulted, because a parked row draws no open-in-split affordance of
+   * its own — the gesture is the whole of it.
+   */
+  const { splitProps, layout } = useSidebarThreadSplit(thread.id);
   const title = threadDisplayTitle(thread);
+  // A parked thread renames in place like every other row. The shelf is where
+  // work waits, not where it stops being editable.
+  const [renaming, setRenaming] = useState(false);
+  const commitRename = (draft: string) => {
+    setRenaming(false);
+    const next = renameIntent(draft, title);
+    if (next === null) return;
+    void actions.rename(thread.id, next).catch(() => {
+      announceToSidebar("The thread could not be renamed");
+    });
+  };
 
   return (
-    <RowContextMenu thread={thread} onUnarchive={onRestore}>
+    <RowContextMenu
+      thread={thread}
+      onUnarchive={onRestore}
+      onRename={() => setRenaming(true)}
+    >
       <li className="list-none">
         <div
           className={cn(
             "group/slim relative flex h-8 items-center gap-2 rounded-md px-2.5 text-xs",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+            // A thread open in another pane gets a weaker tint than the active
+            // row, so the two states stay distinguishable.
+            !isActive && layout !== null && "bg-sidebar-accent/25",
           )}
         >
           {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
@@ -53,6 +86,7 @@ export function SlimRow({
             data-sidebar-thread-id={thread.id}
             href="#"
             aria-label={title}
+            {...splitProps}
             onClick={(event) => {
               event.preventDefault();
               actions.open(thread.id, {
@@ -62,15 +96,24 @@ export function SlimRow({
             }}
             className="absolute inset-0 cursor-pointer rounded-md"
           />
-          <span
-            className={cn(
-              "pointer-events-none relative min-w-0 flex-1 truncate",
-              "text-foreground",
-              "group-hover/slim:text-foreground",
-            )}
-          >
-            {title}
-          </span>
+          {renaming ? (
+            <RenameField
+              initial={title}
+              ariaLabel={`Rename ${title}`}
+              onCommit={commitRename}
+              onCancel={() => setRenaming(false)}
+            />
+          ) : (
+            <span
+              className={cn(
+                "pointer-events-none relative min-w-0 flex-1 truncate",
+                "text-foreground",
+                "group-hover/slim:text-foreground",
+              )}
+            >
+              {title}
+            </span>
+          )}
           {/* The age is intrinsic. Restore is a hover-only overlay, so it does
               not make every parked row reserve an action-sized column. */}
           <span

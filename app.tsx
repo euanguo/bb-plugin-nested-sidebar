@@ -5,8 +5,27 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
 import { ParentChip } from "@/components/inbox/parent-chip";
 import { NestSettingsSection } from "@/components/settings/nest-settings";
+import { nestActions } from "@/lib/palette-bridge";
+import { UNARCHIVE_RETRY_RENDERER_ID } from "@/lib/unarchive-retry";
+import { UnarchiveRetryPrompt } from "@/components/inbox/unarchive-retry-prompt";
+import { mountNestRowStatus } from "@/lib/row-status-mount";
 
 export default definePluginApp((app) => {
+  /**
+   * The additive half: one marker on bb's own rows, whether or not Nest is the
+   * chosen list.
+   *
+   * Everything else in this file needs Nest to be the provider. This does not:
+   * it decorates the sidebar bb draws, saying the one thing bb's own list cannot
+   * — that Nest is holding a thread back until a time the user chose. A content
+   * script is the only surface that runs in both cases, and the host owns the
+   * glyph, so this cannot leave a broken list behind it.
+   */
+  app.contentScripts.register({
+    id: "nest-row-status",
+    mount: mountNestRowStatus,
+  });
+
   app.slots.settingsSection({
     id: "appearance",
     title: "Appearance & behavior",
@@ -39,5 +58,67 @@ export default definePluginApp((app) => {
     title: "Nest settings",
     icon: "Settings",
     run: (context) => context.openSettings(),
+  });
+
+  /**
+   * The one question this sidebar asks outside its own dialogs.
+   *
+   * Un-settling takes bb's archive off a thread, and that runs on the thread's
+   * own machine. When it cannot be reached the thread stays archived and leaves
+   * the sidebar — which used to be a silent failure the user had to diagnose
+   * from a missing row. The backend raises this renderer through
+   * `bb.ui.requestInput`, and the retry becomes a button.
+   */
+  app.slots.pendingInteraction({
+    id: UNARCHIVE_RETRY_RENDERER_ID,
+    component: UnarchiveRetryPrompt,
+  });
+
+  /**
+   * bb's quick palette, so Nest's verbs are reachable without the sidebar.
+   *
+   * These rows are registered outside React and run outside the inbox's tree, so
+   * they reach it through `lib/palette-bridge`. Every one of them asks the
+   * mounted inbox first: a user who has pinned bb's own list has no Nest inbox to
+   * act on, and a row that is offered and then does nothing is worse than a row
+   * that is not offered at all.
+   */
+  app.slots.commandPaletteAction({
+    id: "settle-thread",
+    title: "Nest: settle thread",
+    isAvailable: ({ threadId }) =>
+      threadId !== null && nestActions()?.canPark(threadId) === true,
+    run: ({ threadId }) => {
+      if (threadId !== null) nestActions()?.settle(threadId);
+    },
+  });
+
+  app.slots.commandPaletteAction({
+    id: "snooze-thread",
+    title: "Nest: snooze thread until tomorrow",
+    isAvailable: ({ threadId }) =>
+      threadId !== null && nestActions()?.canPark(threadId) === true,
+    run: ({ threadId }) => {
+      if (threadId !== null) nestActions()?.snoozeUntilTomorrow(threadId);
+    },
+  });
+
+  // The inverse, and gated on the inverse: a wake is only meaningful for a
+  // thread that is actually parked.
+  app.slots.commandPaletteAction({
+    id: "wake-thread",
+    title: "Nest: wake thread",
+    isAvailable: ({ threadId }) =>
+      threadId !== null && nestActions()?.isParked(threadId) === true,
+    run: ({ threadId }) => {
+      if (threadId !== null) nestActions()?.wake(threadId);
+    },
+  });
+
+  app.slots.commandPaletteAction({
+    id: "show-needs-you",
+    title: "Nest: show threads that need you",
+    isAvailable: () => nestActions() !== null,
+    run: () => nestActions()?.showNeedsYou(),
   });
 });

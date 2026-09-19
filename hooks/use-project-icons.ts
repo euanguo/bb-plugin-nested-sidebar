@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  useRealtime,
   useRealtimeConnectionState,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { useRetryingRead } from "@/hooks/use-retrying-read";
+import { useCoalescedRealtime } from "@/hooks/use-coalesced-realtime";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
 import type { ProjectIcon } from "@/lib/project-icons";
 
@@ -91,7 +91,7 @@ export function useProjectIcons({
   const refresh = useRetryingRead(read);
 
   useEffect(() => refresh(), [refresh]);
-  useRealtime("project-icons", () => refresh());
+  useCoalescedRealtime("project-icons", refresh);
 
   const connectionState = useRealtimeConnectionState();
   const previousConnectionState = useRef(connectionState);

@@ -20,6 +20,15 @@ export interface NestViewStateApi {
   setGroupCollapsed: (groupId: string, collapsed: boolean) => void;
   isProjectCollapsed: (projectId: string) => boolean;
   setProjectCollapsed: (projectId: string, collapsed: boolean) => void;
+  /**
+   * Whether a project's archived shelf is drawn.
+   *
+   * Defaults to off, like a workspace's expansion — so the set holds the ones
+   * the user turned **on**, not the ones they turned off. An archive is a
+   * deliberate look, not something a project should arrive showing.
+   */
+  isArchivedShelfOn: (projectId: string) => boolean;
+  setArchivedShelf: (projectId: string, on: boolean) => void;
   isWorkspaceExpanded: (workspaceKey: string) => boolean;
   setWorkspaceExpanded: (workspaceKey: string, expanded: boolean) => void;
   /**

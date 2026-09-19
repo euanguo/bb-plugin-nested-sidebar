@@ -1,4 +1,3 @@
-import { useState, type ReactNode } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   type PluginSidebarThread,
@@ -6,8 +5,6 @@ import {
 import type { IconName } from "@/components/ui/icon";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import { threadLinkUrl } from "@/lib/thread-link";
-import { threadDisplayTitle } from "@/lib/inbox";
-import { ThreadRenameDialog } from "@/components/inbox/thread-rename-dialog";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
 
 /**
@@ -36,8 +33,6 @@ export interface ThreadMenuItem {
 
 export interface ThreadMenuActions {
   readonly items: readonly ThreadMenuItem[];
-  /** Mounted by the caller so both surfaces share one dialog instance. */
-  readonly dialog: ReactNode;
 }
 
 export function useThreadMenuActions({
@@ -49,6 +44,7 @@ export function useThreadMenuActions({
   onSettle,
   onSnooze,
   canPark,
+  onRename,
   onUnarchive,
   splitAvailable,
 }: {
@@ -60,6 +56,14 @@ export function useThreadMenuActions({
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
   canPark: boolean;
+  /**
+   * Switch the row into inline editing.
+   *
+   * The rename itself is not done here, and deliberately: the field has to
+   * replace the title it is renaming, and a menu cannot draw inside the row it
+   * was opened from. The row owns the field; the menu only asks for it.
+   */
+  onRename: () => void;
   /**
    * Restore an archived thread. The SDK exposes `archive` but no inverse, so
    * the plugin's own lifecycle owns the restore and hands it in. Absent for a
@@ -74,7 +78,6 @@ export function useThreadMenuActions({
   splitAvailable: boolean;
 }): ThreadMenuActions {
   const actions = useSidebarThreadActions();
-  const [renaming, setRenaming] = useState(false);
   const tomorrow = () => {
     const preset = resolveTomorrow();
     if (preset !== null) onSnooze(preset);
@@ -134,9 +137,11 @@ export function useThreadMenuActions({
     {
       key: "rename",
       icon: "Edit",
-      label: "Rename…",
+      // No ellipsis: it means "this opens a dialog", and this one edits the row
+      // in place.
+      label: "Rename",
       separatorBefore: true,
-      onSelect: () => setRenaming(true),
+      onSelect: onRename,
     },
   );
 
@@ -182,16 +187,7 @@ export function useThreadMenuActions({
     },
   );
 
-  return {
-    items,
-    dialog: renaming ? (
-      <ThreadRenameDialog
-        threadId={thread.id}
-        currentTitle={threadDisplayTitle(thread)}
-        onClose={() => setRenaming(false)}
-      />
-    ) : null,
-  };
+  return { items };
 }
 
 /**

@@ -11,11 +11,18 @@
  * them into the shape the rest of the list already speaks. These functions are
  * that mapping, kept pure so they can be tested without a bb server.
  */
-import type {
-  PluginSidebarThread,
-  PluginSidebarThreadIndicator,
-} from "@get-bb/plugin-sdk";
+import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import type { ThreadLifecycleRow } from "@/lib/lifecycle";
+import {
+  deriveIndicator,
+  isUnread,
+  originKindFor,
+  type SidebarThreadRowBase,
+} from "./sidebar-thread-row.ts";
+
+// The shared vocabulary's own names, so this module's callers keep one import
+// site and the two row sources cannot drift apart.
+export { isUnread };
 
 /**
  * How far back the settled shelf reaches.
@@ -41,91 +48,15 @@ export function isWithinSettledWindow(
   return settledAt > now - windowMs;
 }
 
-/** One archived, settled thread as the plugin's backend reports it. */
-export interface SettledThreadRow {
-  id: string;
+/**
+ * One archived, settled thread as the plugin's backend reports it.
+ *
+ * The shared row fields come from `SidebarThreadRowBase`; the settle timestamp
+ * is this shelf's own, and is what its window is measured on.
+ */
+export interface SettledThreadRow extends SidebarThreadRowBase {
   /** When this plugin settled it. The shelf's window is measured on this. */
   settledAt: number;
-  projectId: string;
-  title: string | null;
-  titleFallback: string | null;
-  parentThreadId: string | null;
-  sectionId: string | null;
-  /** bb's `originKind`; anything this sidebar does not draw becomes null. */
-  originKind: string | null;
-  originPluginId: string | null;
-  providerId: string;
-  /** bb's thread status: "active", "starting", "stopping", "idle", "error". */
-  status: string;
-  hasPendingInteraction: boolean;
-  isPinned: boolean;
-  activity: {
-    workflows: number;
-    backgroundAgents: number;
-    backgroundCommands: number;
-    planMode: number;
-    goals: number;
-  };
-  createdAt: number;
-  updatedAt: number;
-  lastReadAt: number | null;
-  latestAttentionAt: number;
-}
-
-/** bb's own rule: read means the last read caught up with the last attention. */
-export function isUnread(row: SettledThreadRow): boolean {
-  return (row.lastReadAt ?? 0) < row.latestAttentionAt;
-}
-
-function isWorkingStatus(status: string): boolean {
-  return status === "active" || status === "starting" || status === "stopping";
-}
-
-/**
- * The glyph a settled row would draw.
- *
- * Almost always "none": live work and a raised hand un-settle a thread, so a
- * row that is still settled is a quiet one. It is mapped faithfully anyway,
- * because it is also what `resolveShelf` reads to decide the thread has come
- * back — a row that reported itself quiet while it worked would stay parked.
- */
-export function settledIndicator(row: SettledThreadRow): {
-  indicator: PluginSidebarThreadIndicator;
-  indicatorLabel: string | null;
-} {
-  if (row.hasPendingInteraction) {
-    return {
-      indicator: "waiting-for-input",
-      indicatorLabel: "Thread needs user input",
-    };
-  }
-  const { activity } = row;
-  const hasLiveWork =
-    activity.workflows > 0 ||
-    activity.backgroundAgents > 0 ||
-    activity.backgroundCommands > 0 ||
-    activity.planMode > 0 ||
-    activity.goals > 0;
-  if (hasLiveWork || isWorkingStatus(row.status)) {
-    return { indicator: "runtime", indicatorLabel: "Thread is working" };
-  }
-  if (isUnread(row)) {
-    return row.status === "error"
-      ? {
-          indicator: "unread-error",
-          indicatorLabel: "Thread ended with an error",
-        }
-      : {
-          indicator: "unread-success",
-          indicatorLabel: "Thread has unread activity",
-        };
-  }
-  return { indicator: "none", indicatorLabel: null };
-}
-
-/** Only the two kinds this sidebar draws a parent chip for survive. */
-function originKindFor(value: string | null): "fork" | "side-chat" | null {
-  return value === "fork" || value === "side-chat" ? value : null;
 }
 
 /**
@@ -136,7 +67,7 @@ function originKindFor(value: string | null): "fork" | "side-chat" | null {
  * from a second lookup would buy pixels nobody renders.
  */
 export function toSidebarThread(row: SettledThreadRow): PluginSidebarThread {
-  const { indicator, indicatorLabel } = settledIndicator(row);
+  const { indicator, indicatorLabel } = deriveIndicator(row);
   return {
     id: row.id,
     projectId: row.projectId,
@@ -144,11 +75,7 @@ export function toSidebarThread(row: SettledThreadRow): PluginSidebarThread {
     titleFallback: row.titleFallback,
     parentThreadId: row.parentThreadId,
     sectionId: row.sectionId,
-    // bb 0.40 adds the legacy `side-chat` value to this sidebar field. The
-    // plugin still ships declarations compatible with older bb releases,
-    // where the same field was typed as `"fork" | null`; keep the runtime
-    // value so archived legacy side chats remain identifiable across both.
-    originKind: originKindFor(row.originKind) as PluginSidebarThread["originKind"],
+    originKind: originKindFor(row.originKind),
     originPluginId: row.originPluginId,
     providerId: row.providerId,
     hasPendingInteraction: row.hasPendingInteraction,

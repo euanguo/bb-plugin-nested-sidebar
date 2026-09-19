@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { useRpc, useRealtime } from "@get-bb/plugin-sdk/app";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { ORDER_CHANNEL } from "@/server";
 import type { ManualOrderMap } from "@/lib/manual-order";
 import { clearFamilyOrder, readFamilyOrder } from "@/lib/family-order";
 import { clearProjectOrder, readProjectOrder } from "@/lib/project-order";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
+import { useCoalescedRealtime } from "@/hooks/use-coalesced-realtime";
 import {
   ORDER_SNAPSHOT_CODEC,
   type OrderSnapshot,
@@ -27,6 +28,16 @@ export interface NestOrderApi {
   /** Project id -> worktree keys, in the order they are drawn. */
   readonly workspaces: ManualOrderMap;
   readonly ready: boolean;
+  /**
+   * True when this client's arrangement is not the one the server holds.
+   *
+   * A write built on a stale revision is refused rather than merged, so the
+   * screen is showing an order nobody else has. It is a state to tell the user
+   * about, not an error to log.
+   */
+  readonly changedElsewhere: boolean;
+  /** Take the server's arrangement and clear the stale state. */
+  reload: () => void;
   reorderProjects: (
     groupId: string,
     projectIds: readonly string[],
@@ -72,6 +83,15 @@ export function useNestOrder(): NestOrderApi {
   );
   const [ready, setReady] = useState(seed !== undefined);
   const [nonce, setNonce] = useState(0);
+  const [changedElsewhere, setChangedElsewhere] = useState(false);
+  /**
+   * The revision the next write should be built on.
+   *
+   * A ref rather than the state: a write reads it at the moment the user drops a
+   * row, and a value closed over by the handler would be the revision of the
+   * render that created it.
+   */
+  const revisionRef = useRef(0);
 
   const refresh = useCallback(() => setNonce((value) => value + 1), []);
 
@@ -103,10 +123,14 @@ export function useNestOrder(): NestOrderApi {
           families: result.families,
           workspaces: result.workspaces,
         });
+        revisionRef.current = result.revision;
         setProjects(result.projects);
         setFamilies(result.families);
         setWorkspaces(result.workspaces);
         setReady(true);
+        // `changedElsewhere` is deliberately not cleared here. A read follows a
+        // refused write as well as a reload, so clearing it here would hide the
+        // notice the refusal had just raised.
       } catch {
         // A failed read must not blank the tree: everything still renders, in
         // the default order, until the next read succeeds.
@@ -119,19 +143,25 @@ export function useNestOrder(): NestOrderApi {
     };
   }, [nonce, rpc]);
 
-  useRealtime(ORDER_CHANNEL, refresh);
+  useCoalescedRealtime(ORDER_CHANNEL, refresh);
 
-  const reorderProjects = useCallback(
-    async (groupId: string, projectIds: readonly string[]) => {
-      const next = [...projectIds];
-      // Echo the move immediately; the publish that follows re-reads and
-      // confirms it, so a drag does not wait on a round trip to land.
-      setProjects((current) => ({ ...current, [groupId]: next }));
+  /**
+   * One write, whatever scope it is for.
+   *
+   * The echo of the move happens first so a drag does not wait on a round trip,
+   * and is taken back when the write did not land — a stale refusal means the
+   * echoed order is not the one the server holds, and leaving it on screen would
+   * show an arrangement that does not exist.
+   */
+  const writeOrder = useCallback(
+    async <T extends { ok: boolean; stale: boolean; revision: number }>(
+      send: (baseRevision: number) => Promise<T>,
+    ): Promise<boolean> => {
       try {
-        const result = await rpc.call("reorderProjects", {
-          groupId,
-          projectIds: next,
-        });
+        const result = await send(revisionRef.current);
+        revisionRef.current = result.revision;
+        if (result.ok) setChangedElsewhere(false);
+        else if (result.stale) setChangedElsewhere(true);
         if (!result.ok) refresh();
         return result.ok;
       } catch (error) {
@@ -139,55 +169,61 @@ export function useNestOrder(): NestOrderApi {
         throw error;
       }
     },
-    [rpc, refresh],
+    [refresh],
+  );
+
+  const reorderProjects = useCallback(
+    (groupId: string, projectIds: readonly string[]) => {
+      const next = [...projectIds];
+      setProjects((current) => ({ ...current, [groupId]: next }));
+      return writeOrder((baseRevision) =>
+        rpc.call("reorderProjects", { groupId, projectIds: next, baseRevision }),
+      );
+    },
+    [rpc, writeOrder],
   );
 
   const reorderWorkspaces = useCallback(
-    async (projectId: string, workspaceKeys: readonly string[]) => {
+    (projectId: string, workspaceKeys: readonly string[]) => {
       const next = [...workspaceKeys];
       setWorkspaces((current) => ({ ...current, [projectId]: next }));
-      try {
-        const result = await rpc.call("reorderWorkspaces", {
+      return writeOrder((baseRevision) =>
+        rpc.call("reorderWorkspaces", {
           projectId,
           workspaceKeys: next,
-        });
-        if (!result.ok) refresh();
-        return result.ok;
-      } catch (error) {
-        refresh();
-        throw error;
-      }
+          baseRevision,
+        }),
+      );
     },
-    [rpc, refresh],
+    [rpc, writeOrder],
   );
 
   const reorderFamilies = useCallback(
-    async (projectId: string, rootIds: readonly string[]) => {
+    (projectId: string, rootIds: readonly string[]) => {
       const next = [...rootIds];
       setFamilies((current) => ({ ...current, [projectId]: next }));
-      try {
-        const result = await rpc.call("reorderFamilies", {
-          projectId,
-          rootIds: next,
-        });
-        if (!result.ok) refresh();
-        return result.ok;
-      } catch (error) {
-        refresh();
-        throw error;
-      }
+      return writeOrder((baseRevision) =>
+        rpc.call("reorderFamilies", { projectId, rootIds: next, baseRevision }),
+      );
     },
-    [rpc, refresh],
+    [rpc, writeOrder],
   );
+
+  const reload = useCallback(() => {
+    setChangedElsewhere(false);
+    refresh();
+  }, [refresh]);
 
   return {
     projects,
     families,
     workspaces,
     ready,
+    changedElsewhere,
     reorderProjects,
     reorderFamilies,
     reorderWorkspaces,
+    reload,
     refresh,
   };
 }

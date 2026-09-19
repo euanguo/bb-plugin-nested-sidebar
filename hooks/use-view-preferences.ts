@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useRpc, useRealtime } from "@get-bb/plugin-sdk/app";
+import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { VIEW_PREFERENCE_CHANNEL } from "@/server";
 import {
@@ -10,7 +10,12 @@ import {
   type ThreadSortMode,
   type WorktreeSortMode,
 } from "@/lib/sort-modes";
+import {
+  DEFAULT_ORGANIZATION_MODE,
+  type OrganizationMode,
+} from "@/lib/organization";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
+import { useCoalescedRealtime } from "@/hooks/use-coalesced-realtime";
 import {
   VIEW_PREFERENCES_SNAPSHOT_CODEC,
   type ViewPreferencesSnapshot,
@@ -28,10 +33,13 @@ export interface ViewPreferencesApi {
   readonly projectSort: ProjectSortMode;
   readonly threadSort: ThreadSortMode;
   readonly worktreeSort: WorktreeSortMode;
+  /** What the tree's first level is: the user's groups, or their machines. */
+  readonly organizationMode: OrganizationMode;
   readonly ready: boolean;
   setProjectSort: (mode: ProjectSortMode) => void;
   setThreadSort: (mode: ThreadSortMode) => void;
   setWorktreeSort: (mode: WorktreeSortMode) => void;
+  setOrganizationMode: (mode: OrganizationMode) => void;
 }
 
 /**
@@ -50,6 +58,10 @@ export function useViewPreferences(): ViewPreferencesApi {
   const [worktreeSort, setWorktreeSortState] = useState<WorktreeSortMode>(
     seed?.worktreeSort ?? DEFAULT_WORKTREE_SORT,
   );
+  const [organizationMode, setOrganizationModeState] =
+    useState<OrganizationMode>(
+      seed?.organizationMode ?? DEFAULT_ORGANIZATION_MODE,
+    );
   const [ready, setReady] = useState(seed !== undefined);
   const [nonce, setNonce] = useState(0);
 
@@ -65,10 +77,12 @@ export function useViewPreferences(): ViewPreferencesApi {
           projectSort: result.projectSort,
           threadSort: result.threadSort,
           worktreeSort: result.worktreeSort,
+          organizationMode: result.organizationMode,
         });
         setProjectSortState(result.projectSort);
         setThreadSortState(result.threadSort);
         setWorktreeSortState(result.worktreeSort);
+        setOrganizationModeState(result.organizationMode);
         setReady(true);
       })
       .catch(() => {
@@ -80,7 +94,7 @@ export function useViewPreferences(): ViewPreferencesApi {
     };
   }, [nonce, rpc]);
 
-  useRealtime(VIEW_PREFERENCE_CHANNEL, refresh);
+  useCoalescedRealtime(VIEW_PREFERENCE_CHANNEL, refresh);
 
   const setProjectSort = useCallback(
     (mode: ProjectSortMode) => {
@@ -112,13 +126,25 @@ export function useViewPreferences(): ViewPreferencesApi {
     [rpc, refresh],
   );
 
+  const setOrganizationMode = useCallback(
+    (mode: OrganizationMode) => {
+      setOrganizationModeState(mode);
+      void rpc
+        .call("setViewPreferences", { organizationMode: mode })
+        .catch(() => refresh());
+    },
+    [rpc, refresh],
+  );
+
   return {
     projectSort,
     threadSort,
     worktreeSort,
+    organizationMode,
     ready,
     setProjectSort,
     setThreadSort,
     setWorktreeSort,
+    setOrganizationMode,
   };
 }

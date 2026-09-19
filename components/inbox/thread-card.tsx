@@ -15,6 +15,7 @@ import {
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { RowContextMenu } from "@/components/inbox/row-context-menu";
+import { RenameField } from "@/components/inbox/rename-field";
 import {
   Menu,
   MenuItem,
@@ -30,13 +31,18 @@ import {
 } from "@/components/inbox/provider-glyph";
 import { StatusGlyph } from "@/components/inbox/status-glyph";
 import { threadStatus } from "@/components/inbox/status-slot";
-import { PullRequestMetadata } from "@/components/inbox/row-metadata";
+import {
+  PullRequestMetadata,
+  SubagentBadge,
+} from "@/components/inbox/row-metadata";
 import {
   FamilyStatusIcon,
 } from "@/components/inbox/family-status";
 import { familyWaitingForAgents } from "@/lib/attention-state";
 import { familyStatus } from "@/lib/family-status";
 import { threadDisplayTitle, threadIsWorking } from "@/lib/inbox";
+import { renameIntent } from "@/lib/groups";
+import { announceToSidebar } from "@/lib/clipboard";
 import { resolveFamilyExpanded } from "@/lib/thread-management";
 import type { RootSelectionIntent } from "@/lib/thread-management";
 import type { NestPreferences } from "@/lib/preferences";
@@ -97,7 +103,17 @@ export function ThreadCard({
 }) {
   const actions = useSidebarThreadActions();
   const reveal = useRowReveal();
-  const { splitProps, layout } = useSidebarThreadSplit(thread.id);
+  /**
+   * Two different questions, and neither answers the other.
+   *
+   * `isAvailable` is whether an open-in-split affordance may be drawn at all:
+   * false on a compact viewport, when the user has turned splits off, and for
+   * a thread the host does not know. `layout` is where this thread sits right
+   * now, which is what a tint reads. Gating the affordance on `layout` offered
+   * "Open in split" on viewports that cannot split, and withheld it from a
+   * thread that could split but is simply not in a pane yet.
+   */
+  const { splitProps, isAvailable, layout } = useSidebarThreadSplit(thread.id);
   const { pullRequest } = useSidebarThreadPullRequest(thread.id);
   const childListId = useId();
   /**
@@ -139,6 +155,27 @@ export function ThreadCard({
     setExpandedOverride(!expanded);
     viewState.setFamilyOverride(thread.id, !expanded);
   };
+  const [renaming, setRenaming] = useState(false);
+  /**
+   * Commit an inline rename.
+   *
+   * `renameIntent` is the rule the group and worktree levels already share: an
+   * empty or unchanged draft is not a rename, so clearing the field cannot
+   * silently rename a thread to nothing.
+   *
+   * A refusal from the host is announced rather than shown on the row. By the
+   * time it arrives the field is gone, and the title on screen is the one the
+   * store still holds — so the row is already telling the truth, and the only
+   * thing left to do is say that the write did not land.
+   */
+  const commitRename = (draft: string) => {
+    setRenaming(false);
+    const next = renameIntent(draft, threadDisplayTitle(thread));
+    if (next === null) return;
+    void actions.rename(thread.id, next).catch(() => {
+      announceToSidebar("The thread could not be renamed");
+    });
+  };
   const waitingForAgents = familyWaitingForAgents(childThreads);
   const childProviderIds = useMemo(
     () => [...new Set(childThreads.map((child) => child.providerId))].slice(0, 2),
@@ -156,7 +193,11 @@ export function ThreadCard({
   const hasRootMetadata =
     thread.isPinned ||
     (showRowDetails &&
-      ((preferences.showPullRequestMetadata && pullRequest != null) ||
+      // The subagent count sits here rather than behind a preference of its own:
+      // it is a fact about the thread, like a pin, and the rail already only
+      // draws while the row has room for details.
+      (thread.activity.backgroundAgents > 0 ||
+        (preferences.showPullRequestMetadata && pullRequest != null) ||
         (childThreads.length > 0 && preferences.showChildCount) ||
         preferences.showProviderIcons));
   const showRootParkActions =
@@ -177,7 +218,8 @@ export function ThreadCard({
       onSettle={onSettle}
       onSnooze={onSnooze}
       canPark={canPark}
-      splitAvailable={layout !== null}
+      onRename={() => setRenaming(true)}
+      splitAvailable={isAvailable}
     >
       <li
         className="list-none"
@@ -353,17 +395,26 @@ export function ThreadCard({
                     "flex-1",
                 )}
               >
-                <span
-                  title={threadDisplayTitle(thread)}
-                  className={cn(
-                    // One type size for a title in both layouts: the row is
-                    // denser than bb's own list, and a title that changes size
-                    // when the layout changes reads as a different list.
-                    "min-w-0 flex-1 truncate text-xs text-foreground",
-                  )}
-                >
-                  {threadDisplayTitle(thread)}
-                </span>
+                {renaming ? (
+                  <RenameField
+                    initial={threadDisplayTitle(thread)}
+                    ariaLabel={`Rename ${threadDisplayTitle(thread)}`}
+                    onCommit={commitRename}
+                    onCancel={() => setRenaming(false)}
+                  />
+                ) : (
+                  <span
+                    title={threadDisplayTitle(thread)}
+                    className={cn(
+                      // One type size for a title in both layouts: the row is
+                      // denser than bb's own list, and a title that changes size
+                      // when the layout changes reads as a different list.
+                      "min-w-0 flex-1 truncate text-xs text-foreground",
+                    )}
+                  >
+                    {threadDisplayTitle(thread)}
+                  </span>
+                )}
                 {/* One-line layout: the branch rides beside the title, so the
                     row costs a single line of height. */}
                 {preferences.rowLayout === "one-line" &&
@@ -428,12 +479,13 @@ export function ThreadCard({
                   expanded={expanded}
                   childCount={childThreads.length}
                   canToggleChildren={childThreads.length > 0}
-                  splitAvailable={layout !== null}
+                  splitAvailable={isAvailable}
                   revealed={reveal.revealed}
                   onToggleChildren={toggleChildren}
                   onSettle={onSettle}
                   onSnooze={onSnooze}
                   canPark={canPark}
+                  onRename={() => setRenaming(true)}
                 />
               ) : null}
               {hasRootMetadata ? (
@@ -452,6 +504,13 @@ export function ThreadCard({
                       className="size-3 text-muted-foreground/70"
                     />
                   </span>
+                ) : null}
+                {showRowDetails && thread.activity.backgroundAgents > 0 ? (
+                  // Separate from the child disclosure below, and deliberately
+                  // not added to it: a subagent is activity on this thread, a
+                  // child is a thread under it, and one number for both would
+                  // misreport which is which.
+                  <SubagentBadge count={thread.activity.backgroundAgents} />
                 ) : null}
                 {showRowDetails &&
                 preferences.showPullRequestMetadata &&
@@ -582,6 +641,7 @@ function ThreadMenu({
   onSettle,
   onSnooze,
   canPark,
+  onRename,
 }: {
   thread: PluginSidebarThread;
   expanded: boolean;
@@ -593,8 +653,10 @@ function ThreadMenu({
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
   canPark: boolean;
+  /** Ask the row to edit its title in place; the field lives there, not here. */
+  onRename: () => void;
 }) {
-  const { items, dialog } = useThreadMenuActions({
+  const { items } = useThreadMenuActions({
     thread,
     expanded,
     childCount,
@@ -603,33 +665,31 @@ function ThreadMenu({
     onSettle,
     onSnooze,
     canPark,
+    onRename,
     splitAvailable,
   });
   return (
-    <>
-      <Menu
-        label={`Actions for ${threadDisplayTitle(thread)}`}
-        trigger={
-          <RowMenuTrigger
-            label={`Actions for ${threadDisplayTitle(thread)}`}
-            revealed={revealed}
+    <Menu
+      label={`Actions for ${threadDisplayTitle(thread)}`}
+      trigger={
+        <RowMenuTrigger
+          label={`Actions for ${threadDisplayTitle(thread)}`}
+          revealed={revealed}
+        />
+      }
+    >
+      {items.map((item) => (
+        <Fragment key={item.key}>
+          {item.separatorBefore ? <MenuSeparator /> : null}
+          <MenuItem
+            icon={item.icon}
+            label={item.label}
+            destructive={item.destructive ?? false}
+            onSelect={item.onSelect}
           />
-        }
-      >
-        {items.map((item) => (
-          <Fragment key={item.key}>
-            {item.separatorBefore ? <MenuSeparator /> : null}
-            <MenuItem
-              icon={item.icon}
-              label={item.label}
-              destructive={item.destructive ?? false}
-              onSelect={item.onSelect}
-            />
-          </Fragment>
-        ))}
-      </Menu>
-      {dialog}
-    </>
+        </Fragment>
+      ))}
+    </Menu>
   );
 }
 
@@ -649,18 +709,33 @@ function ChildThreadRow({
   preferences: NestPreferences;
 }) {
   const actions = useSidebarThreadActions();
-  const { splitProps, layout } = useSidebarThreadSplit(thread.id);
+  // `isAvailable` gates the affordance; `layout` only paints the pane tint.
+  const { splitProps, isAvailable, layout } = useSidebarThreadSplit(thread.id);
   const reveal = useRowReveal();
-  const status = threadStatus(thread);
   const isWorking = threadIsWorking(thread);
   const showRowDetails = preferences.rowDetails !== "hover";
   const showChildMenu = reveal.revealed;
   const showChildTime = showRowDetails && preferences.showRelativeTime;
   const showChildProvider = showRowDetails && preferences.showProviderIcons;
   const showChildRail = showChildMenu || showChildTime || showChildProvider;
+  // The child renames in place for the same reason its parent does: the title is
+  // right there, and a modal for one word costs a decision nobody needed.
+  const [renaming, setRenaming] = useState(false);
+  const commitRename = (draft: string) => {
+    setRenaming(false);
+    const next = renameIntent(draft, threadDisplayTitle(thread));
+    if (next === null) return;
+    void actions.rename(thread.id, next).catch(() => {
+      announceToSidebar("The thread could not be renamed");
+    });
+  };
 
   return (
-    <RowContextMenu thread={thread} splitAvailable={layout !== null}>
+    <RowContextMenu
+      thread={thread}
+      splitAvailable={isAvailable}
+      onRename={() => setRenaming(true)}
+    >
       <li className="relative list-none py-px">
         <span
           aria-hidden
@@ -704,14 +779,23 @@ function ChildThreadRow({
           <ThreadStateGlyph thread={thread} />
           <div className="pointer-events-none relative min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
-              <span
-                title={threadDisplayTitle(thread)}
-                className={cn(
-                  "min-w-0 flex-1 truncate text-xs text-foreground",
-                )}
-              >
-                {threadDisplayTitle(thread)}
-              </span>
+              {renaming ? (
+                <RenameField
+                  initial={threadDisplayTitle(thread)}
+                  ariaLabel={`Rename ${threadDisplayTitle(thread)}`}
+                  onCommit={commitRename}
+                  onCancel={() => setRenaming(false)}
+                />
+              ) : (
+                <span
+                  title={threadDisplayTitle(thread)}
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-xs text-foreground",
+                  )}
+                >
+                  {threadDisplayTitle(thread)}
+                </span>
+              )}
             </div>
             {showRowDetails &&
             (preferences.rowLayout === "two-line" ||
@@ -731,12 +815,13 @@ function ChildThreadRow({
                 expanded={false}
                 childCount={0}
                 canToggleChildren={false}
-                splitAvailable={layout !== null}
+                splitAvailable={isAvailable}
                 revealed={reveal.revealed}
                 onToggleChildren={() => undefined}
                 onSettle={() => undefined}
                 onSnooze={() => undefined}
                 canPark={false}
+                onRename={() => setRenaming(true)}
               />
             ) : null}
             {showChildTime ? (
@@ -877,17 +962,5 @@ function ParkButton({
     >
       <Icon name={icon} className="size-3.5" />
     </button>
-  );
-}
-
-function ActivityCount({ label, count }: { label: string; count: number }) {
-  return (
-    <span
-      aria-label={`${count} ${label}`}
-      title={`${count} ${label}`}
-      className="shrink-0 rounded bg-muted px-1 font-mono text-2xs text-muted-foreground"
-    >
-      {count}
-    </span>
   );
 }

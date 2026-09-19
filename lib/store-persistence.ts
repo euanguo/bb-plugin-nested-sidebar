@@ -40,6 +40,10 @@ import {
   type ManualOrderMap,
 } from "./manual-order.ts";
 import {
+  validOrganizationMode,
+  type OrganizationMode,
+} from "./organization.ts";
+import {
   validProjectSort,
   validThreadSort,
   validWorktreeSort,
@@ -70,6 +74,7 @@ export interface ViewPreferencesSnapshot {
   readonly projectSort: ProjectSortMode;
   readonly threadSort: ThreadSortMode;
   readonly worktreeSort: WorktreeSortMode;
+  readonly organizationMode: OrganizationMode;
 }
 
 /**
@@ -242,6 +247,7 @@ export const VIEW_PREFERENCES_SNAPSHOT_CODEC: StoreSnapshotCodec<ViewPreferences
         projectSort: value.projectSort,
         threadSort: value.threadSort,
         worktreeSort: value.worktreeSort,
+        organizationMode: value.organizationMode,
       }),
     decode: (stored) => {
       let parsed: unknown;
@@ -254,10 +260,12 @@ export const VIEW_PREFERENCES_SNAPSHOT_CODEC: StoreSnapshotCodec<ViewPreferences
       if (!validProjectSort(parsed.projectSort)) return null;
       if (!validThreadSort(parsed.threadSort)) return null;
       if (!validWorktreeSort(parsed.worktreeSort)) return null;
+      if (!validOrganizationMode(parsed.organizationMode)) return null;
       return {
         projectSort: parsed.projectSort,
         threadSort: parsed.threadSort,
         worktreeSort: parsed.worktreeSort,
+        organizationMode: parsed.organizationMode,
       };
     },
   };
