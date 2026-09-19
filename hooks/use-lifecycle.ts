@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  useRealtime,
   useRealtimeConnectionState,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
+import { useCoalescedRealtime } from "@/hooks/use-coalesced-realtime";
 import type { nestRpcContract } from "@/server";
 import {
   canPark,
@@ -157,9 +157,10 @@ export function useLifecycle(
     refresh();
   }, [refresh]);
 
-  useRealtime("lifecycle", () => {
-    refresh();
-  });
+  // A burst of publishes — a bulk operation, or a settled thread taking several
+  // turns in a row — collapses into at most two reads. Leading edge, because a
+  // settle is not optimistic: this subscription is what moves the row.
+  useCoalescedRealtime("lifecycle", refresh);
 
   // `rpc.call` is a plain fetch with no timeout, so a backend that accepts the
   // connection and never answers neither resolves nor rejects: no branch of the

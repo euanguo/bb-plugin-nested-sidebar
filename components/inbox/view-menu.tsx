@@ -14,6 +14,13 @@ import {
   type ThreadFilterPreset,
 } from "@/lib/thread-management";
 import {
+  ORGANIZATION_LABELS,
+  ORGANIZATION_MODES,
+  DEFAULT_ORGANIZATION_MODE,
+  validOrganizationMode,
+  type OrganizationMode,
+} from "@/lib/organization";
+import {
   PROJECT_SORT_LABELS,
   PROJECT_SORT_MODES,
   THREAD_SORT_LABELS,
@@ -41,6 +48,8 @@ import {
  * item could not change them.
  */
 export function ViewMenu({
+  organizationMode,
+  onOrganizationModeChange,
   filter,
   onFilterChange,
   projectSort,
@@ -52,6 +61,8 @@ export function ViewMenu({
   onCollapseAll,
   onResetView,
 }: {
+  organizationMode: OrganizationMode;
+  onOrganizationModeChange: (value: OrganizationMode) => void;
   filter: ThreadFilterPreset;
   onFilterChange: (value: ThreadFilterPreset) => void;
   projectSort: ProjectSortMode;
@@ -67,7 +78,9 @@ export function ViewMenu({
   const projectSortLabel = PROJECT_SORT_LABELS[projectSort];
   const threadSortLabel = THREAD_SORT_LABELS[threadSort];
   const worktreeSortLabel = WORKTREE_SORT_LABELS[worktreeSort];
+  const organizationLabel = ORGANIZATION_LABELS[organizationMode];
   const active =
+    organizationMode !== DEFAULT_ORGANIZATION_MODE ||
     filter !== "all" ||
     projectSort !== "manual" ||
     threadSort !== "manual" ||
@@ -79,7 +92,7 @@ export function ViewMenu({
       trigger={
         <button
           type="button"
-          aria-label={`View options. Filter ${filterLabel}; projects ${projectSortLabel}; threads ${threadSortLabel}; worktrees ${worktreeSortLabel}.`}
+          aria-label={`View options. Organize ${organizationLabel}; filter ${filterLabel}; projects ${projectSortLabel}; threads ${threadSortLabel}; worktrees ${worktreeSortLabel}.`}
           title="View options"
           data-bb-icon-button=""
           className={cn(
@@ -102,6 +115,28 @@ export function ViewMenu({
         </button>
       }
     >
+      {/*
+        Organize leads, because it is the only row here that changes what the
+        tree *is* rather than how it is read. Everything below it is a lens over
+        the same rows.
+      */}
+      <MenuSub label="Organize" icon="Layer" hint={organizationLabel}>
+        <MenuRadioGroup
+          value={organizationMode}
+          onValueChange={(next) => {
+            if (validOrganizationMode(next)) onOrganizationModeChange(next);
+          }}
+        >
+          {ORGANIZATION_MODES.map((mode) => (
+            <MenuRadioItem
+              key={mode}
+              value={mode}
+              label={ORGANIZATION_LABELS[mode]}
+            />
+          ))}
+        </MenuRadioGroup>
+      </MenuSub>
+
       <MenuSub label="Filter" icon="Filter" hint={filterLabel}>
         <MenuRadioGroup
           value={filter}

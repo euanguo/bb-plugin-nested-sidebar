@@ -30,6 +30,7 @@ const viewPreferencesValue: ViewPreferencesSnapshot = {
   projectSort: "name-asc",
   threadSort: "updated-desc",
   worktreeSort: "threads-desc",
+  organizationMode: "machine",
 };
 
 const workspacePathsValue: WorkspacePaths = {
@@ -246,6 +247,34 @@ describe("view preferences snapshot codec", () => {
     assert.equal(
       VIEW_PREFERENCES_SNAPSHOT_CODEC.decode(
         JSON.stringify({ projectSort: "name-asc", threadSort: "manual" }),
+      ),
+      null,
+    );
+  });
+
+  // The same rule for the field after it: strict, for the same reason.
+  it("rejects a record from before the organization mode", () => {
+    assert.equal(
+      VIEW_PREFERENCES_SNAPSHOT_CODEC.decode(
+        JSON.stringify({
+          projectSort: "name-asc",
+          threadSort: "manual",
+          worktreeSort: "manual",
+        }),
+      ),
+      null,
+    );
+  });
+
+  it("rejects an organization mode this build does not know", () => {
+    assert.equal(
+      VIEW_PREFERENCES_SNAPSHOT_CODEC.decode(
+        JSON.stringify({
+          projectSort: "name-asc",
+          threadSort: "manual",
+          worktreeSort: "manual",
+          organizationMode: "by-vibes",
+        }),
       ),
       null,
     );

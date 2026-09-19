@@ -88,3 +88,32 @@ export function WaitingForAgentsMetadata() {
     </span>
   );
 }
+
+/**
+ * In-turn subagents: activity on this thread rather than threads under it.
+ *
+ * bb's own documentation draws the line explicitly. A fork or a side chat is a
+ * **child thread**; a subagent the agent spawns inside a turn is
+ * `activity.backgroundAgents` on its parent. The two overlap — an agent that
+ * forks a thread and then waits on it shows both — but they are not the same
+ * thing, so they get separate badges instead of one merged number. A single
+ * figure would tell the user a thread has four children when it has one child
+ * and three helpers.
+ *
+ * The glyph is a stand-in: the icon set this sidebar vendors has no agent mark,
+ * so the count and the label carry the meaning and the glyph only says "this is
+ * a count of work", the way the child disclosure's chevron says "this opens".
+ */
+export function SubagentBadge({ count }: { count: number }) {
+  const label = `${count} subagent${count === 1 ? "" : "s"} running`;
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className="pointer-events-none flex h-4 shrink-0 items-center gap-0.5 rounded bg-muted px-1 text-2xs tabular-nums text-muted-foreground"
+    >
+      <Icon name="Workflow" className="size-3" aria-hidden />
+      {count}
+    </span>
+  );
+}

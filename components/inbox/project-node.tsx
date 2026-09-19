@@ -6,13 +6,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { Modal } from "@/components/ui/modal";
+import { ArchivedShelf } from "@/components/inbox/archived-shelf";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
 import {
   Menu,
   MenuCheckboxItem,
   MenuItem,
-  MenuLabel,
   MenuSeparator,
   MenuSub,
 } from "@/components/ui/menu";
@@ -208,7 +207,14 @@ export function ProjectNode({
             currentGroupId={currentGroupId}
             expanded={expanded}
             revealed={reveal.revealed}
+            archivedShelfOn={viewState.isArchivedShelfOn(node.project.id)}
             onToggleExpanded={() => setExpanded(!expanded)}
+            onToggleArchivedShelf={() =>
+              viewState.setArchivedShelf(
+                node.project.id,
+                !viewState.isArchivedShelfOn(node.project.id),
+              )
+            }
             onNewThread={() =>
               onNewThreadInProject(node.project.id, node.project.name)
             }
@@ -285,31 +291,52 @@ export function ProjectNode({
     >
       <InfoCard trigger={projectRow} label={node.project.name} rows={infoRows} />
       {expanded ? (
-        node.showWorkspaces ? (
-          <div id={listId} className="mt-0.5 flex flex-col gap-0.5">
-            {node.workspaces.map((workspace) => (
-              <WorkspaceGroup
-                key={workspace.ref.key}
-                node={workspace}
+        <>
+          {node.showWorkspaces ? (
+            <div id={listId} className="mt-0.5 flex flex-col gap-0.5">
+              {node.workspaces.map((workspace) => (
+                <WorkspaceGroup
+                  key={workspace.ref.key}
+                  node={workspace}
+                  projectId={node.project.id}
+                  projectName={node.project.name}
+                  handlers={workspaceHandlers}
+                />
+              ))}
+            </div>
+          ) : node.families.length === 0 ? (
+            <p id={listId} className={EMPTY_PROJECT_CLASS}>
+              No threads yet
+            </p>
+          ) : (
+            <div id={listId} className="mt-0.5">
+              <FlatFamilies
+                families={node.families}
                 projectId={node.project.id}
-                projectName={node.project.name}
                 handlers={workspaceHandlers}
               />
-            ))}
-          </div>
-        ) : node.families.length === 0 ? (
-          <p id={listId} className={EMPTY_PROJECT_CLASS}>
-            No threads yet
-          </p>
-        ) : (
-          <div id={listId} className="mt-0.5">
-            <FlatFamilies
-              families={node.families}
-              projectId={node.project.id}
-              handlers={workspaceHandlers}
+            </div>
+          )}
+          {/*
+            The archived shelf sits inside the expanded project, because a list
+            under a collapsed header is a list nobody asked to see. It draws
+            nothing when the project has no archive to show, so a toggle that
+            finds nothing costs one read rather than an empty header.
+          */}
+          {viewState.isArchivedShelfOn(node.project.id) ? (
+            <ArchivedShelf
+              threads={
+                handlers.archivedByProject.get(node.project.id) ?? []
+              }
+              now={handlers.now}
+              onOpen={(threadId) => {
+                actions.open(threadId);
+                handlers.onNavigate();
+              }}
+              onUnarchive={handlers.onUnarchiveArchived}
             />
-          </div>
-        )
+          ) : null}
+        </>
       ) : null}
     </section>
   );
@@ -398,7 +425,9 @@ function ProjectMenu({
   currentGroupId,
   expanded,
   revealed,
+  archivedShelfOn,
   onToggleExpanded,
+  onToggleArchivedShelf,
   onNewThread,
   onNewWorktree,
   onAssignGroup,
@@ -411,7 +440,10 @@ function ProjectMenu({
   currentGroupId: string | null;
   expanded: boolean;
   revealed: boolean;
+  /** Whether this project's archived shelf is drawn. */
+  archivedShelfOn: boolean;
   onToggleExpanded: () => void;
+  onToggleArchivedShelf: () => void;
   onNewThread: () => void;
   onNewWorktree: () => void;
   onAssignGroup: (groupId: string | null) => void;
@@ -459,6 +491,15 @@ function ProjectMenu({
           icon="Edit"
           label="Rename…"
           onSelect={() => setDialog("rename")}
+        />
+        {/*
+          A project's archive is a deliberate look, not a section that is always
+          there: it costs a read, and most of the time the answer is "nothing".
+        */}
+        <MenuCheckboxItem
+          label="Show archived threads"
+          checked={archivedShelfOn}
+          onSelect={onToggleArchivedShelf}
         />
         {/* Membership is a rarer decision than acting on the project itself,
             so it lives one level down instead of crowding this list. */}

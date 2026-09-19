@@ -22,6 +22,7 @@ export function RowContextMenu({
   onSettle,
   onSnooze,
   canPark = false,
+  onRename,
   onUnarchive,
   splitAvailable = false,
   children,
@@ -35,13 +36,18 @@ export function RowContextMenu({
   onSettle?: () => void;
   onSnooze?: (snoozedUntil: number) => void;
   canPark?: boolean;
+  /**
+   * Switch the row into inline editing. The row owns the field, because it has
+   * to replace the title it renames; this surface only asks for it.
+   */
+  onRename: () => void;
   /** Restore an archived thread; the plugin's lifecycle owns the inverse. */
   onUnarchive?: () => void;
   /** Whether the thread can open in a split pane. */
   splitAvailable?: boolean;
   children: ReactNode;
 }) {
-  const { items, dialog } = useThreadMenuActions({
+  const { items } = useThreadMenuActions({
     thread,
     expanded,
     childCount,
@@ -50,6 +56,7 @@ export function RowContextMenu({
     onSettle: onSettle ?? (() => undefined),
     onSnooze: onSnooze ?? (() => undefined),
     canPark,
+    onRename,
     onUnarchive,
     splitAvailable,
   });
@@ -77,7 +84,6 @@ export function RowContextMenu({
           </ContextMenu.Content>
         </ContextMenu.Portal>
       </ContextMenu.Root>
-      {dialog}
     </>
   );
 }

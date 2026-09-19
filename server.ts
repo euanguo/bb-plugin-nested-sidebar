@@ -75,11 +75,23 @@ import {
   UNGROUPED_ORDER_SCOPE,
 } from "./lib/manual-order.ts";
 import { MANUAL_ORDER_MIGRATION, createOrderStore } from "./lib/order-store.ts";
+import type { OrderWrite } from "./lib/order-store.ts";
+import {
+  ORDER_REVISION_MIGRATION,
+  ORDER_REVISION_SEED,
+} from "./lib/order-store.ts";
 import {
   PROJECT_SORT_MODES,
   THREAD_SORT_MODES,
   WORKTREE_SORT_MODES,
 } from "./lib/sort-modes.ts";
+import { ORGANIZATION_MODES } from "./lib/organization.ts";
+import {
+  UNARCHIVE_RETRY_RENDERER_ID,
+  UNARCHIVE_RETRY_TIMEOUT_MS,
+  unarchiveRetryApproved,
+  unarchiveRetryPayload,
+} from "./lib/unarchive-retry.ts";
 import {
   VIEW_PREFERENCE_MIGRATION,
   createViewPreferenceStore,
@@ -119,6 +131,10 @@ const migrations = [
   VIEW_PREFERENCE_MIGRATION,
   SCOPE_ICON_MIGRATION,
   PROJECT_ICON_MIGRATION,
+  // Appended, never inserted: bb checks the journal by index, so a statement
+  // added in the middle rewrites the history of every database that already
+  // ran it.
+  ORDER_REVISION_MIGRATION,
 ];
 
 export interface StoredLifecycleRow {
@@ -169,6 +185,90 @@ interface AuthoritativeThreadRow {
         | "stopping"
         | "waiting-for-host";
   };
+}
+
+/**
+ * The fields the recovery read needs from `bb.sdk.threads.list`.
+ *
+ * A deliberate subset, the way `AuthoritativeThreadRow` is: the SDK read is the
+ * source and this is the shape the backend promises to hand on, so a field bb
+ * stops returning is a compile error here rather than an `undefined` on the
+ * wire. Unlike the bulk-delete subset this one carries the environment, the
+ * host, and the origin, because a recovery row has to draw a workspace level.
+ */
+interface RecoverySdkThreadRow {
+  id: string;
+  projectId: string;
+  title: string | null;
+  titleFallback: string | null;
+  parentThreadId: string | null;
+  sectionId: string | null;
+  originKind: "fork" | null;
+  originPluginId: string | null;
+  providerId: string;
+  status: "active" | "error" | "idle" | "pending" | "starting" | "stopping";
+  hasPendingInteraction: boolean;
+  pinnedAt: number | null;
+  /**
+   * bb's own ordering key for a pinned thread, compared as a string by codepoint
+   * — which is why it is a string and not a number. Null for a thread pinned
+   * before the key existed, and for every unpinned thread.
+   */
+  pinSortKey: string | null;
+  /** When bb archived this thread. Null while it is live. */
+  archivedAt: number | null;
+  deletedAt: number | null;
+  /**
+   * Read by the bulk-delete preview and by nothing else here. It is on this
+   * interface so the one paged read can serve every caller: a second read with a
+   * narrower type would be a second place for the paging to be wrong.
+   */
+  runtime: {
+    displayStatus:
+      | "active"
+      | "error"
+      | "host-reconnecting"
+      | "idle"
+      | "pending"
+      | "provisioning"
+      | "starting"
+      | "stopping"
+      | "waiting-for-host";
+  };
+  visibility: "hidden" | "visible";
+  environmentId: string | null;
+  environmentName: string | null;
+  environmentBranchName: string | null;
+  environmentProviderId: string | null;
+  environmentHostId: string | null;
+  environmentWorkspaceDisplayKind:
+    | "managed-worktree"
+    | "unmanaged-worktree"
+    | "other";
+  lastReadAt: number | null;
+  latestAttentionAt: number;
+  createdAt: number;
+  updatedAt: number;
+  activity: {
+    activeWorkflowCount: number;
+    activeBackgroundAgentCount: number;
+    activeBackgroundCommandCount: number;
+    activePlanModeCount: number;
+    activeGoalCount: number;
+  };
+}
+
+/**
+ * Three-way compare by codepoint, which is how bb orders its pin sort keys.
+ *
+ * Not `localeCompare`: the keys are opaque and the host compares them as byte
+ * strings, so a locale-aware compare would order them differently on a machine
+ * whose locale disagrees with the host's — which is the drift this exists to
+ * avoid.
+ */
+function compareCodepoints(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
@@ -242,9 +342,23 @@ const orderMapSchema = z
   .refine((map) => Object.keys(map).length <= MAX_ORDER_SCOPES, {
     message: "Too many order scopes.",
   });
+/**
+ * What every order write answers with.
+ *
+ * `revision` is on every answer, refusals included, so a caller that was refused
+ * always knows what to reload at. `stale` is its own flag rather than a third
+ * reason: it is the one refusal the user can act on — reload and try again — and
+ * a client that cannot tell it from a malformed id would have nothing to say.
+ */
+const orderWriteSchema = z.object({
+  ok: z.boolean(),
+  stale: z.boolean(),
+  revision: z.number().int().nonnegative(),
+});
 const projectSortSchema = z.enum(PROJECT_SORT_MODES);
 const threadSortSchema = z.enum(THREAD_SORT_MODES);
 const worktreeSortSchema = z.enum(WORKTREE_SORT_MODES);
+const organizationModeSchema = z.enum(ORGANIZATION_MODES);
 
 /**
  * What bb can say about one workspace before anything is touched. The counts are
@@ -296,6 +410,61 @@ function worktreePlanWire(plan: WorktreeRemovalPlan) {
     directory: { ...plan.directory, warnings: [...plan.directory.warnings] },
   };
 }
+
+/**
+ * How many archived rows a project's shelf may ask for.
+ *
+ * A shelf is for recovering a thread you remember, not for browsing the archive
+ * — bb has its own archived view for the second thing — so the contract refuses
+ * more than a shelf would ever draw rather than letting a request page the whole
+ * archive.
+ */
+const MAX_ARCHIVED_SHELF_ROWS = 50;
+
+/**
+ * One live thread as bb's SDK reports it, for the recovery read.
+ *
+ * Every open field is loose on purpose — `status`, `originKind`, and
+ * `workspaceDisplayKind` arrive as plain strings — so a value a newer bb
+ * invents degrades in `lib/recovery-threads.ts` instead of failing this output
+ * validation and leaving the retry with nothing to show. `listSettledThreads`
+ * makes the same trade for the same reason.
+ */
+const recoveryThreadRowSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  title: z.string().nullable(),
+  titleFallback: z.string().nullable(),
+  parentThreadId: z.string().nullable(),
+  sectionId: z.string().nullable(),
+  originKind: z.string().nullable(),
+  originPluginId: z.string().nullable(),
+  providerId: z.string(),
+  status: z.string(),
+  hasPendingInteraction: z.boolean(),
+  isPinned: z.boolean(),
+  activity: z.object({
+    workflows: z.number(),
+    backgroundAgents: z.number(),
+    backgroundCommands: z.number(),
+    planMode: z.number(),
+    goals: z.number(),
+  }),
+  environment: z
+    .object({
+      id: z.string().nullable(),
+      name: z.string().nullable(),
+      branchName: z.string().nullable(),
+      providerId: z.string().nullable(),
+      workspaceDisplayKind: z.string().nullable(),
+    })
+    .nullable(),
+  host: z.object({ id: z.string(), name: z.string() }).nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  lastReadAt: z.number().nullable(),
+  latestAttentionAt: z.number(),
+});
 
 export const nestRpcContract = defineRpcContract({
   listProjectColors: {
@@ -475,21 +644,25 @@ export const nestRpcContract = defineRpcContract({
       projects: orderMapSchema,
       families: orderMapSchema,
       workspaces: orderMapSchema,
+      /** The revision this arrangement was read at; a write sends it back. */
+      revision: z.number().int().nonnegative(),
     }),
   },
   reorderProjects: {
     input: z.object({
       groupId: orderScopeIdSchema,
       projectIds: orderItemsSchema,
+      baseRevision: z.number().int().nonnegative(),
     }),
-    output: z.object({ ok: z.boolean() }),
+    output: orderWriteSchema,
   },
   reorderFamilies: {
     input: z.object({
       projectId: orderScopeIdSchema,
       rootIds: orderItemsSchema,
+      baseRevision: z.number().int().nonnegative(),
     }),
-    output: z.object({ ok: z.boolean() }),
+    output: orderWriteSchema,
   },
   /**
    * The worktrees of one project. The checkout is deliberately not in the list:
@@ -500,8 +673,9 @@ export const nestRpcContract = defineRpcContract({
     input: z.object({
       projectId: orderScopeIdSchema,
       workspaceKeys: orderItemsSchema,
+      baseRevision: z.number().int().nonnegative(),
     }),
-    output: z.object({ ok: z.boolean() }),
+    output: orderWriteSchema,
   },
   /**
    * One-time migration from the browser-local order. The project ids arrive as
@@ -525,6 +699,7 @@ export const nestRpcContract = defineRpcContract({
       projectSort: projectSortSchema,
       threadSort: threadSortSchema,
       worktreeSort: worktreeSortSchema,
+      organizationMode: organizationModeSchema,
     }),
   },
   setViewPreferences: {
@@ -532,11 +707,13 @@ export const nestRpcContract = defineRpcContract({
       projectSort: projectSortSchema.optional(),
       threadSort: threadSortSchema.optional(),
       worktreeSort: worktreeSortSchema.optional(),
+      organizationMode: organizationModeSchema.optional(),
     }),
     output: z.object({
       projectSort: projectSortSchema,
       threadSort: threadSortSchema,
       worktreeSort: worktreeSortSchema,
+      organizationMode: organizationModeSchema,
     }),
   },
   /**
@@ -659,6 +836,56 @@ export const nestRpcContract = defineRpcContract({
         }),
       ),
     }),
+  },
+  // The live view's own rows, read from bb's SDK rather than from the host's
+  // sidebar cache.
+  //
+  // `experimental_useSidebarThreads` has no refetch, so when the host reports
+  // `error` a plugin has no way back and the user has no retry. This is that
+  // way. It is a fallback, not a second source of truth: the frontend consults
+  // it only while the host view is failing, and the host's answer wins the
+  // moment it returns.
+  listThreadsForRecovery: {
+    input: z.object({}),
+    output: z.object({
+      threads: z.array(recoveryThreadRowSchema),
+      projects: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          isPersonal: z.boolean(),
+        }),
+      ),
+    }),
+  },
+  // A project's newest archived threads, for the shelf under its list.
+  listProjectArchivedThreads: {
+    input: z.object({
+      projectId: z.string().trim().min(1),
+      limit: z.number().int().positive().max(MAX_ARCHIVED_SHELF_ROWS),
+    }),
+    output: z.object({ threads: z.array(recoveryThreadRowSchema) }),
+  },
+  // bb's own pin order, as a list of root ids.
+  //
+  // The frontend cannot derive this. `PluginSidebarThread` carries `isPinned` and
+  // nothing else about the pin, so a section ordered from the host view would be
+  // ordered by whatever the array happened to be in. Reading the key from bb's
+  // own table is what makes a pin moved in the built-in sidebar land in the same
+  // place here.
+  listPinnedOrder: {
+    input: z.object({}),
+    output: z.object({ threadIds: z.array(z.string()) }),
+  },
+  // The write side of the same order, routed to bb's own mutation so every
+  // surface that draws pinned threads agrees afterwards.
+  reorderPinned: {
+    input: z.object({
+      threadId: z.string().trim().min(1),
+      previousThreadId: z.string().trim().min(1).nullable(),
+      nextThreadId: z.string().trim().min(1).nullable(),
+    }),
+    output: z.object({ ok: z.boolean() }),
   },
   previewBulkDelete: {
     input: z.object({
@@ -899,6 +1126,9 @@ export default function plugin(bb: BbPluginApi) {
 
   const db = bb.storage.database();
   bb.storage.migrate(db, nestMigrations(db, migrations));
+  // The counter's single row. `INSERT OR IGNORE` so a database that already has
+  // it — every one after the first boot on this build — is left alone.
+  db.prepare(ORDER_REVISION_SEED).run();
   const projectColors = createProjectColorStore(db);
   const projectIcons = createProjectIconStore(db);
   const groups = createGroupStore(db);
@@ -1001,7 +1231,10 @@ export default function plugin(bb: BbPluginApi) {
   };
 
   /** The mirror: every id the settle took, given back one by one. */
-  const unarchiveThreads = async (threadIds: readonly string[]) => {
+  const unarchiveThreads = async (
+    threadIds: readonly string[],
+  ): Promise<string | null> => {
+    let failure: string | null = null;
     for (const threadId of threadIds) {
       try {
         await bb.sdk.threads.unarchive({ threadId });
@@ -1012,8 +1245,48 @@ export default function plugin(bb: BbPluginApi) {
         // callers clear or rewrite the row whatever happens here, so a parent
         // that stays archived is a thread nothing here still calls settled,
         // and it leaves the sidebar until bb unarchives it.
+        //
+        // The failure is returned rather than only logged, because a log line
+        // is not a user-facing answer to "where did my thread go".
         bb.log.warn(`unarchive failed for thread ${threadId}: ${String(error)}`);
+        failure ??=
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : String(error);
       }
+    }
+    return failure;
+  };
+
+  /**
+   * Ask the user whether to try the unarchive again.
+   *
+   * The question is the whole point of this path. Without it the failure is
+   * invisible: the row is cleared, the thread is still archived, and the only
+   * clue is a row that is not there. `bb.ui.requestInput` blocks until the app
+   * answers, and the plugin's own `pendingInteraction` slot renders it.
+   */
+  const askToRetryUnarchive = async (
+    threadId: string,
+    message: string,
+  ): Promise<boolean> => {
+    try {
+      const payload = unarchiveRetryPayload({ threadId, message });
+      const result = await bb.ui.requestInput({
+        threadId,
+        rendererId: UNARCHIVE_RETRY_RENDERER_ID,
+        title: "Could not bring this thread back",
+        // A fresh literal rather than the interface: `JsonValue` wants an index
+        // signature and an interface does not carry one.
+        payload: { threadId: payload.threadId, message: payload.message },
+        timeoutMs: UNARCHIVE_RETRY_TIMEOUT_MS,
+      });
+      return unarchiveRetryApproved(result);
+    } catch (error) {
+      // A prompt that could not be raised is not a reason to fail the RPC: the
+      // thread is where it was, and bb's archived view still holds it.
+      bb.log.warn(`could not ask about the unarchive: ${String(error)}`);
+      return false;
     }
   };
 
@@ -1051,8 +1324,8 @@ export default function plugin(bb: BbPluginApi) {
     archived: boolean;
     projectId?: string;
     parentThreadId?: string;
-  }): Promise<AuthoritativeThreadRow[]> => {
-    const collected: AuthoritativeThreadRow[] = [];
+  }): Promise<RecoverySdkThreadRow[]> => {
+    const collected: RecoverySdkThreadRow[] = [];
     for (let page = 0; page < BULK_PAGE_LIMIT; page++) {
       const rows = await bb.sdk.threads.list({
         ...filters,
@@ -1069,14 +1342,40 @@ export default function plugin(bb: BbPluginApi) {
   const listBothArchiveStates = async (filters: {
     projectId?: string;
     parentThreadId?: string;
-  }): Promise<AuthoritativeThreadRow[]> => {
+  }): Promise<RecoverySdkThreadRow[]> => {
     const [active, archived] = await Promise.all([
       listThreadRows({ ...filters, archived: false }),
       listThreadRows({ ...filters, archived: true }),
     ]);
-    const byId = new Map<string, AuthoritativeThreadRow>();
+    const byId = new Map<string, RecoverySdkThreadRow>();
     for (const thread of [...active, ...archived]) byId.set(thread.id, thread);
     return [...byId.values()];
+  };
+
+  /**
+   * Every live, visible thread, paged.
+   *
+   * `includeHidden` is deliberately not passed, and the result is filtered on
+   * `visibility` anyway: the host's sidebar view draws visible threads, so a
+   * recovery that resurrected hidden ones would show the user rows bb is
+   * keeping out of the sidebar on purpose.
+   *
+   * The page-full test reads the *unfiltered* page, which is what makes the
+   * loop terminate on the source's page size rather than on how many of those
+   * rows happened to be visible.
+   */
+  const listVisibleThreadRows = async (): Promise<RecoverySdkThreadRow[]> => {
+    const collected: RecoverySdkThreadRow[] = [];
+    for (let page = 0; page < BULK_PAGE_LIMIT; page++) {
+      const rows: RecoverySdkThreadRow[] = await bb.sdk.threads.list({
+        archived: false,
+        limit: BULK_PAGE_SIZE,
+        offset: page * BULK_PAGE_SIZE,
+      });
+      collected.push(...rows.filter((row) => row.visibility === "visible"));
+      if (rows.length < BULK_PAGE_SIZE) return collected;
+    }
+    throw new RangeError("Thread list is too large to read safely.");
   };
 
   const toBulkSnapshot = (
@@ -1317,6 +1616,91 @@ export default function plugin(bb: BbPluginApi) {
     const hostId = source?.hostId ?? null;
     if (path === null || hostId === null) return null;
     return { path, hostId };
+  };
+
+/**
+ * One SDK thread row as the wire carries it.
+ *
+ * Shared by the recovery read and the project-archive read: both hand the
+ * frontend the same fields, and the difference between them — whether the row is
+ * live — is the frontend's to state, not the wire's. A second mapper would be a
+ * second place for a field to be forgotten.
+ */
+const toThreadWireRow = (
+  thread: RecoverySdkThreadRow,
+  hostNameById: ReadonlyMap<string, string>,
+) => {
+  const hostId = thread.environmentHostId;
+  const hostName = hostId === null ? undefined : hostNameById.get(hostId);
+  return {
+    id: thread.id,
+    projectId: thread.projectId,
+    title: thread.title,
+    titleFallback: thread.titleFallback,
+    parentThreadId: thread.parentThreadId,
+    sectionId: thread.sectionId,
+    originKind: thread.originKind,
+    originPluginId: thread.originPluginId,
+    providerId: thread.providerId,
+    status: thread.status,
+    hasPendingInteraction: thread.hasPendingInteraction,
+    isPinned: thread.pinnedAt !== null,
+    activity: {
+      workflows: thread.activity.activeWorkflowCount,
+      backgroundAgents: thread.activity.activeBackgroundAgentCount,
+      backgroundCommands: thread.activity.activeBackgroundCommandCount,
+      planMode: thread.activity.activePlanModeCount,
+      goals: thread.activity.activeGoalCount,
+    },
+    environment:
+      thread.environmentId === null
+        ? null
+        : {
+            id: thread.environmentId,
+            name: thread.environmentName,
+            branchName: thread.environmentBranchName,
+            providerId: thread.environmentProviderId,
+            workspaceDisplayKind: thread.environmentWorkspaceDisplayKind,
+          },
+    // A row with no worktree still runs on a machine and names it in the
+    // branch's place. A host bb no longer knows resolves to null: the row keeps
+    // its branch and drops the machine rather than naming one it cannot look up.
+    host:
+      hostId === null || hostName === undefined
+        ? null
+        : { id: hostId, name: hostName },
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    lastReadAt: thread.lastReadAt,
+    latestAttentionAt: thread.latestAttentionAt,
+  };
+};
+
+/**
+ * The machine names a plugin can see, keyed by host id.
+ *
+ * `PluginSidebarThread.host.name` is the only place a host name is resolved for
+ * a plugin, and it only arrives on the frontend — so the backend asks bb's host
+ * list instead, which is the same directory the frontend's names came from.
+ */
+const hostNamesById = async (): Promise<Map<string, string>> => {
+  const hosts = await bb.sdk.hosts.list();
+  return new Map(hosts.map((host) => [host.id, host.name]));
+};
+
+/**
+ * Shape an order write for the wire, and publish when it landed.
+   *
+   * A stale refusal does not publish: nothing changed, so telling every client to
+   * re-read would be a round trip per refused drag.
+   */
+  const orderOutcome = (result: OrderWrite) => {
+    if (result.ok) bb.realtime.publish(ORDER_CHANNEL, {});
+    return {
+      ok: result.ok,
+      stale: !result.ok && result.reason === "stale",
+      revision: result.revision,
+    };
   };
 
   bb.rpc.register(nestRpcContract, {
@@ -1608,29 +1992,31 @@ export default function plugin(bb: BbPluginApi) {
       return { ok };
     },
     async listManualOrder() {
-      return orders.list();
+      return { ...orders.list(), revision: orders.revision() };
     },
-    async reorderProjects({ groupId, projectIds }) {
+    async reorderProjects({ groupId, projectIds, baseRevision }) {
       // A project order is scoped to a group; the ungrouped bucket is a real
       // scope, but a group id that no longer exists would write a row nothing
       // reads, so it is rejected rather than stored.
       if (groupId !== UNGROUPED_ORDER_SCOPE) {
         const known = new Set(groups.list().map((group) => group.id));
-        if (!known.has(groupId)) return { ok: false };
+        if (!known.has(groupId)) {
+          return { ok: false, stale: false, revision: orders.revision() };
+        }
       }
-      const ok = orders.setProjectOrder(groupId, projectIds);
-      if (ok) bb.realtime.publish(ORDER_CHANNEL, {});
-      return { ok };
+      return orderOutcome(
+        orders.setProjectOrder(groupId, projectIds, baseRevision),
+      );
     },
-    async reorderFamilies({ projectId, rootIds }) {
-      const ok = orders.setFamilyOrder(projectId, rootIds);
-      if (ok) bb.realtime.publish(ORDER_CHANNEL, {});
-      return { ok };
+    async reorderFamilies({ projectId, rootIds, baseRevision }) {
+      return orderOutcome(
+        orders.setFamilyOrder(projectId, rootIds, baseRevision),
+      );
     },
-    async reorderWorkspaces({ projectId, workspaceKeys }) {
-      const ok = orders.setWorkspaceOrder(projectId, workspaceKeys);
-      if (ok) bb.realtime.publish(ORDER_CHANNEL, {});
-      return { ok };
+    async reorderWorkspaces({ projectId, workspaceKeys, baseRevision }) {
+      return orderOutcome(
+        orders.setWorkspaceOrder(projectId, workspaceKeys, baseRevision),
+      );
     },
     async seedManualOrder({ projectIds, families }) {
       const ok = orders.seed({ projectIds, families }, groups.assignments());
@@ -1677,6 +2063,13 @@ export default function plugin(bb: BbPluginApi) {
       if (typeof projectId !== "string" || projectId.trim().length === 0) {
         throw new Error("A project is required to create a thread.");
       }
+      // SAFETY: `request` is the composer's own new-thread request, forwarded
+      // verbatim. The contract declares it as an open record on purpose — the
+      // composer owns that shape and this plugin does not restate it — so the
+      // two types cannot be compared structurally. The host validates every
+      // field it reads (`threads.spawn` drops a `providerId`/`model` it does
+      // not accept), and the one field this handler needs, `projectId`, is
+      // checked immediately above.
       const spawned = await bb.sdk.threads.spawn({
         ...(request as unknown as Parameters<typeof bb.sdk.threads.spawn>[0]),
         origin: "plugin",
@@ -1764,6 +2157,85 @@ export default function plugin(bb: BbPluginApi) {
           })),
       };
     },
+    /**
+     * The live view, read from bb's SDK.
+     *
+     * The rows the host's cache holds, read from the source and mapped into the
+     * shape the list already speaks. The frontend calls this only while the
+     * host view is failing, so it is a way back rather than a second opinion.
+     */
+    async listThreadsForRecovery() {
+      const [rows, projects, hostNameById] = await Promise.all([
+        listVisibleThreadRows(),
+        bb.sdk.projects.list({ includePersonal: true }),
+        hostNamesById(),
+      ]);
+      return {
+        threads: rows.map((thread) => toThreadWireRow(thread, hostNameById)),
+        projects: projects.map((project) => ({
+          id: project.id,
+          name: project.name,
+          isPersonal: project.kind === "personal",
+        })),
+      };
+    },
+    /**
+     * A project's newest archived threads, for the shelf under its list.
+     *
+     * The archive is where finished work goes, and bb's own sidebar view cannot
+     * show it — that view is built from queries pinned to `archived: false`, the
+     * same fact the settled shelf exists for — so recovering one meant a search.
+     * This reads the newest few for one project, newest archive first, which is
+     * the order a person looks for them in.
+     *
+     * Hidden rows are left out for the same reason the recovery read leaves them
+     * out: the host's own sidebar does not draw them.
+     */
+    async listProjectArchivedThreads({ projectId, limit }) {
+      const [rows, hostNameById] = await Promise.all([
+        listThreadRows({ archived: true, projectId }),
+        hostNamesById(),
+      ]);
+      const newest = rows
+        .filter((row) => row.visibility === "visible")
+        .sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0))
+        .slice(0, limit);
+      return {
+        threads: newest.map((thread) => toThreadWireRow(thread, hostNameById)),
+      };
+    },
+    /**
+     * bb's own pin order, newest-pinned last.
+     *
+     * The comparison is bb's: the pin sort key, compared by codepoint. That is
+     * what the key is for — it survives re-pinning without renumbering the rows
+     * around it — and matching it is what keeps this list in the same order as
+     * the built-in sidebar. A row pinned before the key existed falls back to
+     * the pin time, newest first, so it is ordered rather than dropped.
+     */
+    async listPinnedOrder() {
+      const rows = await listVisibleThreadRows();
+      const pinned = rows.filter((row) => row.pinnedAt !== null);
+      pinned.sort((left, right) => {
+        const leftKey = left.pinSortKey;
+        const rightKey = right.pinSortKey;
+        if (leftKey !== null && rightKey !== null) {
+          return compareCodepoints(leftKey, rightKey);
+        }
+        if (leftKey !== null) return -1;
+        if (rightKey !== null) return 1;
+        return (right.pinnedAt ?? 0) - (left.pinnedAt ?? 0);
+      });
+      return { threadIds: pinned.map((row) => row.id) };
+    },
+    async reorderPinned({ threadId, previousThreadId, nextThreadId }) {
+      await bb.sdk.threads.reorderPinned({
+        threadId,
+        previousThreadId,
+        nextThreadId,
+      });
+      return { ok: true };
+    },
     async previewBulkDelete({ threadIds, protectedThreadId }) {
       return bulkDelete.preview(threadIds, protectedThreadId);
     },
@@ -1802,7 +2274,14 @@ export default function plugin(bb: BbPluginApi) {
       // The archive first, then the row — the mirror of settle, for the same
       // reason: clearing the row while the thread is still archived would
       // drop it out of the sidebar entirely.
-      await unarchiveThreads(archivedIdsFor(threadId));
+      const ids = archivedIdsFor(threadId);
+      const failure = await unarchiveThreads(ids);
+      if (failure !== null && (await askToRetryUnarchive(threadId, failure))) {
+        // One retry, on the user's word. A second failure is logged like the
+        // first and the row is cleared as before — the thread is still in bb's
+        // archived view, which is where the README has always pointed.
+        await unarchiveThreads(ids);
+      }
       clear(threadId);
       return { ok: true };
     },

@@ -20,6 +20,7 @@ describe("view preference store", () => {
         projectSort: "manual",
         threadSort: "manual",
         worktreeSort: "manual",
+        organizationMode: "project",
       });
     } finally {
       db.close();
@@ -33,21 +34,33 @@ describe("view preference store", () => {
         projectSort: "status",
         threadSort: "manual",
         worktreeSort: "manual",
+        organizationMode: "project",
       });
       assert.deepEqual(store.set({ threadSort: "updated-desc" }), {
         projectSort: "status",
         threadSort: "updated-desc",
         worktreeSort: "manual",
+        organizationMode: "project",
       });
       assert.deepEqual(store.set({ worktreeSort: "threads-desc" }), {
         projectSort: "status",
         threadSort: "updated-desc",
         worktreeSort: "threads-desc",
+        organizationMode: "project",
+      });
+      // The one key that changes what the tree *is* rather than how it reads,
+      // and it writes like every other: independently, and returned whole.
+      assert.deepEqual(store.set({ organizationMode: "machine" }), {
+        projectSort: "status",
+        threadSort: "updated-desc",
+        worktreeSort: "threads-desc",
+        organizationMode: "machine",
       });
       assert.deepEqual(store.get(), {
         projectSort: "status",
         threadSort: "updated-desc",
         worktreeSort: "threads-desc",
+        organizationMode: "machine",
       });
     } finally {
       db.close();
@@ -57,10 +70,13 @@ describe("view preference store", () => {
   it("ignores a value this build does not know", () => {
     const { db, store } = createStore();
     try {
-      db.prepare(
+      const insert = db.prepare(
         `INSERT INTO view_preferences (key, value, updated_at) VALUES (?, ?, ?)`,
-      ).run("projectSort", "nonsense", 0);
+      );
+      insert.run("projectSort", "nonsense", 0);
       assert.equal(store.get().projectSort, "manual");
+      insert.run("organizationMode", "by-vibes", 0);
+      assert.equal(store.get().organizationMode, "project");
     } finally {
       db.close();
     }

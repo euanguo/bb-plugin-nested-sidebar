@@ -119,7 +119,7 @@ describe("Nest settings contract", () => {
     assert.match(projectGroup, /data-nest-project-badge/);
     assert.match(projectGroup, /backgroundColor: badge\.backgroundColor/);
     assert.match(projectGroup, /color: badge\.foregroundColor/);
-    assert.match(projectColorsHook, /useRealtime\("project-colors"/);
+    assert.match(projectColorsHook, /useCoalescedRealtime\("project-colors"/);
     assert.match(projectColorsHook, /previous === "reconnecting"/);
   });
 
@@ -198,7 +198,7 @@ describe("Nest project icon contract", () => {
 
   it("asks once per project and draws the answer over the letter", async () => {
     const hook = await readSource("hooks/use-project-icons.ts");
-    assert.match(hook, /useRealtime\("project-icons"/);
+    assert.match(hook, /useCoalescedRealtime\("project-icons"/);
     assert.match(hook, /rpc\.call\("detectProjectIcon", \{ projectId \}\)/);
     assert.match(hook, /asked\.current\.has\(id\)/);
     assert.match(hook, /defineStoreSnapshot<ProjectIconsSnapshot>/);

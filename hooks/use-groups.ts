@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useRpc, useRealtime } from "@get-bb/plugin-sdk/app";
+import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { GROUP_CHANNEL } from "@/server";
 import type { GroupAssignment, ProjectGroup } from "@/lib/groups";
@@ -8,6 +8,7 @@ import {
   type ScopeIcons,
 } from "@/lib/group-scope-icons";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
+import { useCoalescedRealtime } from "@/hooks/use-coalesced-realtime";
 import {
   GROUPS_SNAPSHOT_CODEC,
   type GroupsSnapshot,
@@ -80,7 +81,7 @@ export function useGroups(): GroupsApi {
     };
   }, [nonce, rpc]);
 
-  useRealtime(GROUP_CHANNEL, refresh);
+  useCoalescedRealtime(GROUP_CHANNEL, refresh);
 
   return { groups, assignment, icons, ready, refresh };
 }

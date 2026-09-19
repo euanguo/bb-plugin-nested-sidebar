@@ -6,11 +6,11 @@ import {
   isWithinSettledWindow,
   mergeSettledThreads,
   pendingSettledCount,
-  settledIndicator,
   toSidebarThread,
   SETTLED_WINDOW_MS,
   type SettledThreadRow,
 } from "../lib/settled-threads.ts";
+import { deriveIndicator } from "../lib/sidebar-thread-row.ts";
 import {
   parseArchivedThreadIds,
   type ThreadLifecycleRow,
@@ -99,18 +99,20 @@ describe("isWithinSettledWindow", () => {
   });
 });
 
-describe("settledIndicator", () => {
+describe("deriveIndicator", () => {
   // A settled thread is a quiet one — anything else un-settles it — so this is
-  // the answer for nearly every row on the shelf.
+  // the answer for nearly every row on the shelf. The recovery read, which
+  // derives the same thing for live rows the host view cannot report, is the
+  // other caller; that is why the derivation is not named for either of them.
   it("draws nothing for a quiet thread", () => {
-    assert.deepEqual(settledIndicator(row()), {
+    assert.deepEqual(deriveIndicator(row()), {
       indicator: "none",
       indicatorLabel: null,
     });
   });
 
   it("puts a raised hand above everything else", () => {
-    const result = settledIndicator(
+    const result = deriveIndicator(
       row({ hasPendingInteraction: true, status: "active" }),
     );
     assert.equal(result.indicator, "waiting-for-input");
@@ -120,7 +122,7 @@ describe("settledIndicator", () => {
   // decide the thread has come back, and a row that reported itself quiet
   // while it worked would stay parked forever.
   it("reports live work from the status", () => {
-    assert.equal(settledIndicator(row({ status: "active" })).indicator, "runtime");
+    assert.equal(deriveIndicator(row({ status: "active" })).indicator, "runtime");
   });
 
   it("reports live work from an activity count alone", () => {
@@ -133,17 +135,17 @@ describe("settledIndicator", () => {
         goals: 0,
       },
     });
-    assert.equal(settledIndicator(working).indicator, "runtime");
+    assert.equal(deriveIndicator(working).indicator, "runtime");
   });
 
   it("separates an unread failure from an unread success", () => {
     const unread = { lastReadAt: 100, latestAttentionAt: 200 };
     assert.equal(
-      settledIndicator(row({ ...unread, status: "error" })).indicator,
+      deriveIndicator(row({ ...unread, status: "error" })).indicator,
       "unread-error",
     );
     assert.equal(
-      settledIndicator(row({ ...unread, status: "idle" })).indicator,
+      deriveIndicator(row({ ...unread, status: "idle" })).indicator,
       "unread-success",
     );
   });

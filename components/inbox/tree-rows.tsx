@@ -1,4 +1,10 @@
-import { useId, useRef, useState, type DragEvent, type RefObject } from "react";
+import {
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   type PluginSidebarThread,
@@ -6,6 +12,8 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { ThreadCard } from "@/components/inbox/thread-card";
+import { RenameField } from "@/components/inbox/rename-field";
+import { WindowedRows } from "@/components/inbox/windowed-rows";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import { useNestViewState } from "@/components/inbox/view-state-context";
@@ -20,7 +28,6 @@ import {
 import {
   Menu,
   MenuItem,
-  MenuLabel,
   MenuSeparator,
 } from "@/components/ui/menu";
 import type { LifecycleApi } from "@/hooks/use-lifecycle";
@@ -32,6 +39,7 @@ import { BULK_PROTECTION_LABELS, bulkEligibility } from "@/lib/thread-management
 import type { NestPreferences } from "@/lib/preferences";
 import type { WorkspacePaths } from "@/hooks/use-workspace-paths";
 import { renameIntent } from "@/lib/groups";
+import { PINNED_DRAG_TYPE, encodeDraggedPinned } from "@/lib/pinned";
 
 /** The body of an expanded workspace that has nothing in it yet. */
 const EMPTY_WORKSPACE_CLASS = "ml-4 py-1 pl-3 text-2xs text-muted-foreground";
@@ -95,6 +103,31 @@ export interface TreeRowHandlers {
     rootId: string,
     direction: -1 | 1,
   ) => void;
+  /**
+   * A project's archived shelf, keyed by project id.
+   *
+   * Read once for every project whose shelf is on, in the inbox, rather than by
+   * the row that draws it: one read for the list instead of one subscription per
+   * project, which is the same read amplification the realtime coalescing exists
+   * to avoid.
+   */
+  readonly archivedByProject: ReadonlyMap<
+    string,
+    readonly PluginSidebarThread[]
+  >;
+  /** Take bb's archive off a thread the shelf is showing. */
+  readonly onUnarchiveArchived: (threadId: string) => void;
+  /**
+   * The pinned section's own reorder, which lands in bb's pin order rather than
+   * in a project's family order.
+   *
+   * Separate from `onReorder` rather than folded into it: the two write to
+   * different stores, and a drop that reached the wrong one would move a row in
+   * a list the user was not looking at.
+   */
+  readonly pinnedReorderEnabled: boolean;
+  readonly pinnedReorderDisabledReason: string | null;
+  readonly onPinnedKeyboardMove: (rootId: string, direction: -1 | 1) => void;
   readonly projectReorderEnabled: boolean;
   readonly projectReorderDisabledReason: string | null;
   readonly onProjectReorder: (input: ProjectReorderInput) => void;
@@ -258,10 +291,12 @@ export function WorkspaceGroup({
         }}
       >
         {renaming && node.ref.environmentId !== null ? (
-          <WorkspaceNameField
+          <RenameField
             inputRef={renameInput}
             initial={alias ?? branch ?? ""}
-            fallback={label}
+            placeholder={label}
+            maxLength={120}
+            icon="Edit"
             ariaLabel={`Rename worktree ${label}`}
             onCommit={(draft) => {
               const next = renameIntent(draft, alias ?? "");
@@ -508,16 +543,27 @@ export function WorkspaceGroup({
             No threads yet
           </p>
         ) : (
-          <ul id={listId} className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3">
-            {node.families.map((family) => (
-              <FamilyRow
-                key={family.root.id}
-                family={family}
-                projectId={projectId}
-                handlers={handlers}
-              />
-            ))}
-          </ul>
+          <WindowedRows
+            id={listId}
+            className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3"
+            keys={node.families.map((family) => family.root.id)}
+            windowable={mayWindow(handlers)}
+            shortcutIdFor={(key) => key}
+            onOpenShortcut={(threadId) => actions.open(threadId)}
+            renderRow={(key) => {
+              const family = node.families.find(
+                (candidate) => candidate.root.id === key,
+              );
+              return family === undefined ? null : (
+                <FamilyRow
+                  key={key}
+                  family={family}
+                  projectId={projectId}
+                  handlers={handlers}
+                />
+              );
+            }}
+          />
         )
       ) : null}
     </section>
@@ -528,12 +574,25 @@ export function FamilyRow({
   family,
   projectId,
   handlers,
+  pinned = false,
 }: {
   family: ThreadFamily;
   projectId: string;
   handlers: TreeRowHandlers;
+  /**
+   * Draw this row in the pinned section.
+   *
+   * The row is otherwise identical — same status, children, menu, split gesture,
+   * rename — and only the reorder differs: a pinned row's drag carries the pinned
+   * payload and its drops are the section's, because they land in bb's pin order
+   * rather than in a project's family order.
+   */
+  pinned?: boolean;
 }) {
   const eligibility = bulkEligibility(family, handlers.activeThreadId);
+  const reorderEnabled = pinned
+    ? handlers.pinnedReorderEnabled
+    : handlers.reorderEnabled;
   return (
     <ThreadCard
       thread={family.root}
@@ -555,39 +614,64 @@ export function FamilyRow({
           : BULK_PROTECTION_LABELS[eligibility.reason]
       }
       onToggleSelected={(intent) => handlers.onToggleRoot(family.root.id, intent)}
-      reorderEnabled={handlers.reorderEnabled}
-      reorderDisabledReason={handlers.reorderDisabledReason}
+      reorderEnabled={reorderEnabled}
+      reorderDisabledReason={
+        pinned
+          ? handlers.pinnedReorderDisabledReason
+          : handlers.reorderDisabledReason
+      }
       onMoveByKeyboard={(direction) =>
-        handlers.onKeyboardMove(projectId, family.root.id, direction)
+        pinned
+          ? handlers.onPinnedKeyboardMove(family.root.id, direction)
+          : handlers.onKeyboardMove(projectId, family.root.id, direction)
       }
       onReorderDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
+        if (pinned) {
+          event.dataTransfer.setData(
+            PINNED_DRAG_TYPE,
+            encodeDraggedPinned(family.root.id),
+          );
+          return;
+        }
         event.dataTransfer.setData(
           "application/x-nest-family",
           JSON.stringify({ projectId, rootId: family.root.id }),
         );
       }}
-      onReorderDragOver={(event) => {
-        if (!handlers.reorderEnabled) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-      }}
-      onReorderDrop={(event) => {
-        event.preventDefault();
-        const dragged = parseDraggedFamily(
-          event.dataTransfer.getData("application/x-nest-family"),
-        );
-        if (dragged === null) return;
-        const bounds = event.currentTarget.getBoundingClientRect();
-        handlers.onReorder({
-          sourceProjectId: dragged.projectId,
-          sourceRootId: dragged.rootId,
-          targetProjectId: projectId,
-          targetRootId: family.root.id,
-          position:
-            event.clientY < bounds.top + bounds.height / 2 ? "before" : "after",
-        });
-      }}
+      // The pinned section owns its own drops, on the list rather than the row:
+      // a drop lands between two rows, and only the list knows which two.
+      onReorderDragOver={
+        pinned
+          ? () => undefined
+          : (event) => {
+              if (!handlers.reorderEnabled) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+            }
+      }
+      onReorderDrop={
+        pinned
+          ? () => undefined
+          : (event) => {
+              event.preventDefault();
+              const dragged = parseDraggedFamily(
+                event.dataTransfer.getData("application/x-nest-family"),
+              );
+              if (dragged === null) return;
+              const bounds = event.currentTarget.getBoundingClientRect();
+              handlers.onReorder({
+                sourceProjectId: dragged.projectId,
+                sourceRootId: dragged.rootId,
+                targetProjectId: projectId,
+                targetRootId: family.root.id,
+                position:
+                  event.clientY < bounds.top + bounds.height / 2
+                    ? "before"
+                    : "after",
+              });
+            }
+      }
       preferences={handlers.preferences}
     />
   );
@@ -603,83 +687,42 @@ export function FlatFamilies({
   projectId: string;
   handlers: TreeRowHandlers;
 }) {
+  const actions = useSidebarThreadActions();
+  const byId = useMemo(
+    () => new Map(families.map((family) => [family.root.id, family])),
+    [families],
+  );
   return (
-    <ul className="flex flex-col gap-0.5">
-      {families.map((family) => (
-        <FamilyRow
-          key={family.root.id}
-          family={family}
-          projectId={projectId}
-          handlers={handlers}
-        />
-      ))}
-    </ul>
+    <WindowedRows
+      className="flex flex-col gap-0.5"
+      keys={families.map((family) => family.root.id)}
+      windowable={mayWindow(handlers)}
+      shortcutIdFor={(key) => key}
+      onOpenShortcut={(threadId) => actions.open(threadId)}
+      renderRow={(key) => {
+        const family = byId.get(key);
+        return family === undefined ? null : (
+          <FamilyRow
+            key={key}
+            family={family}
+            projectId={projectId}
+            handlers={handlers}
+          />
+        );
+      }}
+    />
   );
 }
 
 /**
- * The worktree alias editor.
+ * Whether a family list may window right now.
  *
- * Commits on a mounted-field basis only: a plain function component whose
- * input is autofocused and whose Enter/blur/Escape rules mirror the group
- * name field, so the two levels rename the same way.
+ * A spacer is neither a drop target nor a checkbox, so windowing stands down
+ * while either is in play. The list then renders in full, which is exactly what
+ * it did before windowing existed — the guard is a condition, not a hope.
  */
-function WorkspaceNameField({
-  inputRef,
-  initial,
-  fallback,
-  ariaLabel,
-  onCommit,
-  onCancel,
-}: {
-  inputRef?: RefObject<HTMLInputElement | null>;
-  initial: string;
-  /** Shown as help text; the alias the user types replaces what is shown. */
-  fallback: string;
-  ariaLabel: string;
-  onCommit: (draft: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initial);
-  const [done, setDone] = useState(false);
-  const finish = (commit: boolean) => {
-    if (done) return;
-    setDone(true);
-    if (commit) onCommit(value);
-    else onCancel();
-  };
-  return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5">
-      <Icon
-        name="Edit"
-        className="size-3 shrink-0 text-muted-foreground/60"
-        aria-hidden
-      />
-      <input
-        ref={inputRef}
-        autoFocus
-        value={value}
-        maxLength={120}
-        aria-label={ariaLabel}
-        placeholder={fallback}
-        onChange={(event) => setValue(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            finish(true);
-          } else if (event.key === "Escape") {
-            event.preventDefault();
-            finish(false);
-          }
-        }}
-        onBlur={() => finish(true)}
-        className={cn(
-          "h-6 min-w-0 flex-1 rounded border border-border bg-background px-1.5 text-xs",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        )}
-      />
-    </span>
-  );
+function mayWindow(handlers: TreeRowHandlers): boolean {
+  return !handlers.selectionMode && !handlers.reorderEnabled;
 }
 
 /** Parses the drag payload a family row puts on the data transfer. */

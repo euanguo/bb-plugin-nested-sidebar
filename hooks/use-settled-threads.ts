@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  useRealtime,
   useRealtimeConnectionState,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
@@ -12,6 +11,7 @@ import {
   type SettledThreadRow,
 } from "@/lib/settled-threads";
 import { useRetryingRead } from "@/hooks/use-retrying-read";
+import { useCoalescedRealtime } from "@/hooks/use-coalesced-realtime";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
 
 const EMPTY: readonly SettledThreadRow[] = [];
@@ -117,10 +117,9 @@ export function useSettledThreads(now: number): SettledThreadsApi {
   }, [refresh]);
 
   // Every settle, un-settle, snooze, and — through the backend's thread-event
-  // bridge — every turn a settled thread takes publishes here.
-  useRealtime("lifecycle", () => {
-    refresh();
-  });
+  // bridge — every turn a settled thread takes publishes here, so this is the
+  // busiest channel the sidebar reads.
+  useCoalescedRealtime("lifecycle", refresh);
 
   // A publish that lands while the socket is down is gone for good, and this
   // list has no other clock. Only a RE-connection re-reads; the first connect

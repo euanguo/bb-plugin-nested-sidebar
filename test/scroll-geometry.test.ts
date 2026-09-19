@@ -10,23 +10,25 @@ const threadCard = await read("components/inbox/thread-card.tsx");
 const familyStatus = await read("components/inbox/family-status.tsx");
 const rowMetadata = await read("components/inbox/row-metadata.tsx");
 const providerGlyph = await read("components/inbox/provider-glyph.tsx");
-const subagentsChip = await read("components/inbox/subagents-chip.tsx");
 
 /**
  * The scroll area's geometry, pinned.
  *
- * A scrollbar is laid out between the padding box and the border, so it is
- * taken out of the content box rather than out of the padding. Every row is
- * full width, so one appearing used to narrow each row by the bar's width and
- * push everything pinned to a row's right edge sideways. The lane is reserved
- * instead, and the area clips horizontally so that a decoration poking past a
- * row cannot grow a horizontal bar either.
+ * A scrollbar is laid out between the padding box and the border, so it is taken
+ * out of the content box rather than out of the padding. Every row is full width,
+ * so one appearing used to narrow each row by the bar's width and push everything
+ * pinned to a row's right edge sideways. The lane is reserved instead, and the
+ * area clips horizontally so that a decoration poking past a row cannot grow a
+ * horizontal bar either.
+ *
+ * Read from the constant both occupants use — the tree, and bb's own list when
+ * the user asks for it — because the contract is about the box, not about which
+ * list happens to be in it. Verified in the running app: giving the fallback its
+ * own literal is how it lost the gutter in the first place.
  */
 const scrollLine = () => {
-  const match = inbox.match(
-    /className="(min-h-0 flex-1 overflow-y-auto[^"]*)"/,
-  );
-  assert.ok(match, "the tree's scroll area is still identifiable");
+  const match = inbox.match(/const TREE_SCROLL_CLASS =\s*\n?\s*"([^"]*)"/);
+  assert.ok(match, "the scroll area's class is still one constant");
   return match[1];
 };
 
@@ -64,9 +66,6 @@ describe("sidebar scroll geometry", () => {
       assert.ok(tooltips > 0, `${name} still has tooltips`);
       assert.equal(bounded, tooltips, `${name} bounds each of its tooltips`);
     }
-    // The children popover is a menu rather than a tooltip, but it is the same
-    // kind of sideways decoration and follows the same rule.
-    assert.match(subagentsChip, /w-\[min\(20rem,calc\(100cqw-3rem\)\)\]/);
   });
 
   it("makes the rows that host them query containers", () => {
@@ -74,5 +73,13 @@ describe("sidebar scroll geometry", () => {
     // back to the viewport, which is why the rows carry the container.
     assert.match(threadCard, /group\/root @container relative flex/);
     assert.match(threadCard, /group\/child @container relative flex/);
+  });
+
+  // Both occupants of the box, so bb's own list cannot arrive without the lane
+  // and the clip the tree is documented to have.
+  it("gives bb's own list the same box as the tree", () => {
+    const uses = inbox.match(/className=\{TREE_SCROLL_CLASS\}/g) ?? [];
+    assert.equal(uses.length, 2);
+    assert.match(inbox, /<Original \/>/);
   });
 });

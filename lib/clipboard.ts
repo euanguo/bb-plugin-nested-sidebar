@@ -8,7 +8,7 @@
  * written.
  */
 
-export const COPY_ANNOUNCEMENT_EVENT = "nest:copy-announcement";
+export const SIDEBAR_ANNOUNCEMENT_EVENT = "nest:announcement";
 
 export async function copyTextToClipboard(text: string): Promise<boolean> {
   if (text.length === 0) return false;
@@ -53,17 +53,21 @@ function copyViaSelection(text: string): boolean {
 }
 
 /**
- * Tell the sidebar what was copied.
+ * Announce a message to the sidebar's live region.
  *
- * The menus live several levels below the surface that owns the live region,
- * and threading a callback through every level would make the tree's props
- * about copy feedback rather than about the tree. One window event keeps the
- * announcement where the region is and the copy where the menu is.
+ * The rows live several levels below the surface that owns the region, and
+ * threading a callback through every level would make the tree's props about
+ * feedback rather than about the tree. One window event keeps the announcement
+ * where the region is and the work where the row is.
+ *
+ * Named for the sidebar rather than for copying, because copying is not the only
+ * row action with an outcome to report: a rename that the host refuses has the
+ * same problem and the same answer.
  */
-export function announceCopy(message: string): void {
+export function announceToSidebar(message: string): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
-    new CustomEvent(COPY_ANNOUNCEMENT_EVENT, { detail: message }),
+    new CustomEvent(SIDEBAR_ANNOUNCEMENT_EVENT, { detail: message }),
   );
 }
 
@@ -76,6 +80,6 @@ export async function copyWithAnnouncement(
   label: string,
 ): Promise<boolean> {
   const copied = await copyTextToClipboard(text);
-  announceCopy(copied ? `${label} copied` : `${label} could not be copied`);
+  announceToSidebar(copied ? `${label} copied` : `${label} could not be copied`);
   return copied;
 }

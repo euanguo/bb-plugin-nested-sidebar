@@ -41,6 +41,15 @@ export interface NestViewState {
   /** Thread families the user expanded or collapsed against the default. */
   readonly expandedFamilies: readonly string[];
   readonly collapsedFamilies: readonly string[];
+  /**
+   * Projects whose archived shelf the user turned on.
+   *
+   * Per project rather than global, and per browser rather than on the server,
+   * because it is a view choice about one project's list — the same kind of thing
+   * as which of its worktrees are folded. The archive itself is bb's, and this
+   * does not touch it.
+   */
+  readonly archivedProjects: readonly string[];
   readonly snoozedOpen: boolean;
   readonly settledOpen: boolean;
 }
@@ -59,6 +68,7 @@ export function defaultViewState(): NestViewState {
     expandedWorkspaces: [],
     expandedFamilies: [],
     collapsedFamilies: [],
+    archivedProjects: [],
     snoozedOpen: false,
     settledOpen: false,
   };
@@ -125,6 +135,10 @@ export function decodeViewState(raw: string | null): NestViewState {
     // showing something the user put away is the worse surprise.
     expandedFamilies,
     collapsedFamilies,
+    // A project whose shelf the user turned on, and which this build no longer
+    // knows, simply stops being drawn: the read is per field, like every other
+    // list here.
+    archivedProjects: readIds(parsed.archivedProjects),
     snoozedOpen: parsed.snoozedOpen === true,
     settledOpen: parsed.settledOpen === true,
   };
@@ -158,6 +172,7 @@ export function writeViewState(
         expandedWorkspaces: [...state.expandedWorkspaces],
         expandedFamilies: [...state.expandedFamilies],
         collapsedFamilies: [...state.collapsedFamilies],
+        archivedProjects: [...state.archivedProjects],
         snoozedOpen: state.snoozedOpen,
         settledOpen: state.settledOpen,
       }),

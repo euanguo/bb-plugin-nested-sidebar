@@ -9,6 +9,7 @@ const groupRow = await read("group-section.tsx");
 const projectRow = await read("project-node.tsx");
 const treeRows = await read("tree-rows.tsx");
 const card = await read("thread-card.tsx");
+const slimRow = await read("slim-row.tsx");
 const threadMenu = await read("thread-menu-items.tsx");
 const contextMenu = await read("row-context-menu.tsx");
 const tabs = await read("group-tabs.tsx");
@@ -76,6 +77,12 @@ describe("row affordances across the four levels", () => {
     assert.match(groupRow, /label="Rename…"/);
     assert.match(groupRow, /label="Remove group"/);
     assert.match(card, /useThreadMenuActions/);
+    // The thread renames in place, so its menu asks the row rather than owning a
+    // dialog: the field has to replace the title it is renaming, and a menu
+    // cannot draw inside the row it was opened from.
+    assert.match(threadMenu, /onSelect: onRename/);
+    assert.match(card, /<RenameField/);
+    assert.match(slimRow, /<RenameField/);
   });
 
   it("keeps group editing available from the row and the manager", () => {
@@ -90,7 +97,9 @@ describe("row affordances across the four levels", () => {
       "Open in split",
       "Copy thread link",
       "Copy thread ID",
-      "Rename…",
+      // No ellipsis on this one: it edits the row in place rather than opening a
+      // dialog, and the ellipsis is exactly what promises a dialog.
+      "Rename",
       "Archive",
       "Delete…",
     ]) {

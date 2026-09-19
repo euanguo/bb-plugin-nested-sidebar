@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  useRealtime,
   useRealtimeConnectionState,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { useRetryingRead } from "@/hooks/use-retrying-read";
+import { useCoalescedRealtime } from "@/hooks/use-coalesced-realtime";
 import { defineStoreSnapshot } from "@/lib/store-snapshot";
 
 // A color an override is not there yet reads as "none", so an empty seed drops
@@ -50,7 +50,7 @@ export function useProjectColors(): ProjectColorsApi {
   const refresh = useRetryingRead(read);
 
   useEffect(() => refresh(), [refresh]);
-  useRealtime("project-colors", () => refresh());
+  useCoalescedRealtime("project-colors", refresh);
 
   const connectionState = useRealtimeConnectionState();
   const previousConnectionState = useRef(connectionState);
