@@ -22,10 +22,10 @@ Scope: render every project bb reports as a sidebar node, with its workspaces un
 - [x] G4: the complete test suite passes
   CHECK: npm test
   EXPECT: project-first test suite passed
-  EVIDENCE: 420 tests, 103 suites, 0 failures on 2026-09-19.
+  EVIDENCE: 467 tests, 113 suites, 0 failures on 2026-09-19, re-run after rebasing onto the four commits that landed in the meantime (the worktree sort lens, project icon detection, a composer fix, and the 0.2.0 release).
 
 - [x] G5: in the running app the zero-thread project bb-plugins appears in the sidebar with a placeholder body, and a zero-thread project draws its workspace level
-  EVIDENCE: on 2026-09-19 the plugin was reloaded and the running UI was driven at http://127.0.0.1:38886. The tree reads All | My | Work | Ungrouped; Ungrouped contains bb-plugins with the 'No threads yet' placeholder, and pi-maestro-flow (0 threads) draws its 'master' workspace row. 日常聊天 still draws Project checkout and bb under it.
+  EVIDENCE: on 2026-09-19 the plugin was reloaded and the running UI was driven at http://127.0.0.1:38886. The tree reads All | My | Work | Ungrouped; Ungrouped contains bb-plugins with the 'No threads yet' placeholder, and pi-maestro-flow (0 threads) draws its 'master' workspace row. 日常聊天 still draws Project checkout and bb under it, and chaoshangtong's thread-less checkout says 'No threads yet' when expanded rather than drawing the disclosure's border around nothing.
   NOTE: the same rule was exercised against the live payload outside the browser (lib/inbox.ts -> lib/ordering.ts -> lib/tree.ts over /api/v1/sidebar-bootstrap plus the plugin's own listWorkspacePaths), which is what a freshly created worktree in an empty project would go through.
 
 - [x] G6: a worktree that has never held a thread still draws, and can still be arranged
