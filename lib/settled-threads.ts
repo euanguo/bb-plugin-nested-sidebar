@@ -211,8 +211,9 @@ export function mergeSettledThreads(
  * host cannot report, which is the set whose absence empties the shelf.
  *
  * It errs high and never low, which is the direction that matters: the caller
- * adds this to the total that decides whether to draw "No threads yet", and a
- * user whose threads are all settled must never be told they have none. Erring
+ * adds this to the total that decides whether the sidebar has anything to draw
+ * at all, and a user whose threads are all settled must never be told they have
+ * none. Erring
  * high is not free, so the caller asks for this only while `listSettledThreads`
  * still owes it an answer, and two kinds of row are over-counted inside that
  * window.

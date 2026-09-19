@@ -166,42 +166,29 @@ function buildProjectNode(
 
   // Group families by the workspace of their ROOT: a child agent runs where
   // its parent does, and splitting a family across nodes would break it apart.
-  const workspacesById = new Map<string, { ref: WorkspaceRef; families: ThreadFamily[] }>();
+  const familiesByKey = new Map<string, ThreadFamily[]>();
   for (const family of families) {
-    const ref = workspaceRefOf(family.root, environments, projects);
-    const existing = workspacesById.get(ref.key);
-    const bucket = existing ?? { ref, families: [] };
-    if (existing !== undefined) bucket.ref = mergeWorkspaceRefs(existing.ref, ref);
-    bucket.families.push(family);
-    workspacesById.set(ref.key, bucket);
+    const key = workspaceRefOf(family.root, environments, projects).key;
+    const bucket = familiesByKey.get(key) ?? [];
+    bucket.push(family);
+    familiesByKey.set(key, bucket);
   }
 
-  // Every workspace this project has on disk, not only the ones its threads
-  // happen to occupy. An environment outlives the conversations in it: once the
-  // last thread in a worktree is settled its family leaves the tree, and
-  // without this the worktree would leave with it — taking the row, and with it
-  // the `+` that is the only way back into that worktree, off the sidebar for
-  // good. Merging here keeps such a row identical to the one its threads built.
-  for (const descriptor of environments.values()) {
-    if (descriptor.projectId !== project.id) continue;
-    const ref = workspaceRefOfEnvironment(descriptor, projects);
-    if (ref === null) continue;
-    const existing = workspacesById.get(ref.key);
-    if (existing === undefined) workspacesById.set(ref.key, { ref, families: [] });
-    else existing.ref = mergeWorkspaceRefs(existing.ref, ref);
-  }
-
-  const refs = disambiguateWorkspaceLabels([...workspacesById.values()].map(({ ref }) => ref));
-  const familiesByKey = new Map([...workspacesById.values()].map((entry) => [entry.ref.key, entry.families]));
+  const refs = disambiguateWorkspaceLabels([
+    ...projectWorkspaceRefs(project.id, families, environments, projects).values(),
+  ]);
   const workspaces: WorkspaceNode[] = orderWorkspaces(
-    refs.map((ref) => ({
-      ref,
-      families: familiesByKey.get(ref.key) ?? [],
-      rollup: rollupThreads(
-        (familiesByKey.get(ref.key) ?? []).flatMap((family) => [family.root, ...family.children]),
-        now,
-      ),
-    })),
+    refs.map((ref) => {
+      const inWorkspace = familiesByKey.get(ref.key) ?? [];
+      return {
+        ref,
+        families: inWorkspace,
+        rollup: rollupThreads(
+          inWorkspace.flatMap((family) => [family.root, ...family.children]),
+          now,
+        ),
+      };
+    }),
     storedWorkspaceKeys,
     // The lens is the whole of "not manual": `manual` reads the arrangement,
     // and every other mode needs the numbers the rows were just rolled up with.
@@ -214,9 +201,50 @@ function buildProjectNode(
     project,
     families: [...families],
     workspaces,
-    showWorkspaces: shouldShowWorkspaces(workspaces.map((node) => node.ref)),
+    showWorkspaces: shouldShowWorkspaces(
+      workspaces.map((node) => node.ref),
+      allThreads.length,
+    ),
     rollup: rollupThreads(allThreads, now),
   };
+}
+
+/**
+ * Every workspace a project has, keyed the way the tree groups them.
+ *
+ * Not only the ones its threads happen to occupy. An environment outlives the
+ * conversations in it: once the last thread in a worktree is settled its family
+ * leaves the tree, and a worktree that never held a thread never had one to
+ * leave — yet both are still places to start work, and dropping either would
+ * take the row, and with it the `+` that is the only way back in, off the
+ * sidebar. Merging here keeps such a row identical to the one its threads built,
+ * which matters because the key is what the tree groups by.
+ *
+ * Exported because the worktree arrangement has to name the same rows: an order
+ * written from the occupied workspaces alone would omit the rest and then
+ * refuse to move them.
+ */
+export function projectWorkspaceRefs(
+  projectId: string,
+  families: readonly ThreadFamily[],
+  environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>,
+  projects: ReadonlyMap<string, WorkspaceProjectDescriptor>,
+): Map<string, WorkspaceRef> {
+  const refs = new Map<string, WorkspaceRef>();
+  const remember = (ref: WorkspaceRef) => {
+    const existing = refs.get(ref.key);
+    refs.set(ref.key, existing === undefined ? ref : mergeWorkspaceRefs(existing, ref));
+  };
+
+  for (const family of families) {
+    remember(workspaceRefOf(family.root, environments, projects));
+  }
+  for (const descriptor of environments.values()) {
+    if (descriptor.projectId !== projectId) continue;
+    const ref = workspaceRefOfEnvironment(descriptor, projects);
+    if (ref !== null) remember(ref);
+  }
+  return refs;
 }
 
 /**

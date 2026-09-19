@@ -4,7 +4,7 @@ import type {
   PluginSidebarProject,
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk";
-import { groupThreadsByProject } from "../lib/inbox.ts";
+import { buildProjectGroups } from "../lib/inbox.ts";
 import {
   applyRootSelection,
   bulkEligibility,
@@ -61,7 +61,7 @@ const projects: PluginSidebarProject[] = [
 
 describe("family status", () => {
   it("uses the newest member update and requires every member to be quiet", () => {
-    const groups = groupThreadsByProject(
+    const groups = buildProjectGroups(
       [
         thread({ id: "root", updatedAt: 10 }),
         thread({
@@ -82,7 +82,7 @@ describe("family status", () => {
 
 describe("filterProjectThreadGroups", () => {
   const now = 10 * DAY_MS;
-  const groups = groupThreadsByProject(
+  const groups = buildProjectGroups(
     [
       thread({ id: "working", indicator: "runtime", updatedAt: now }),
       thread({
@@ -143,7 +143,7 @@ describe("bulkEligibility", () => {
   ) {
     const rows = [thread({ id: "root", ...root })];
     if (child) rows.push(thread({ id: "child", parentThreadId: "root", ...child }));
-    const family = groupThreadsByProject(rows, projects)[0]?.families[0];
+    const family = buildProjectGroups(rows, projects)[0]?.families[0];
     assert.ok(family);
     return bulkEligibility(family, activeThreadId);
   }
@@ -178,7 +178,7 @@ describe("bulkEligibility", () => {
 
 describe("selection helpers", () => {
   it("selects eligible visible roots and prunes roots that disappeared", () => {
-    const groups = groupThreadsByProject(
+    const groups = buildProjectGroups(
       [thread({ id: "a" }), thread({ id: "b", isUnread: true })],
       projects,
     );
@@ -190,7 +190,7 @@ describe("selection helpers", () => {
   });
 
   it("keeps a selected family visible after it stops matching the filter", () => {
-    const allGroups = groupThreadsByProject(
+    const allGroups = buildProjectGroups(
       [
         thread({ id: "selected", isUnread: true }),
         thread({ id: "quiet" }),
@@ -208,6 +208,31 @@ describe("selection helpers", () => {
     assert.deepEqual(
       visible[0]?.families.map((family) => family.root.id),
       ["quiet", "selected"],
+    );
+  });
+
+  // A project with no threads has nothing to check, but it is still a project.
+  // Dropping it here would make the tree shift the moment the first box is
+  // checked; dropping it when the filter removed it is the filter's own doing.
+  it("keeps a project that has no threads, and only while the filter keeps it", () => {
+    const allGroups = buildProjectGroups(
+      [thread({ id: "selected", isUnread: true })],
+      projects,
+    );
+    const selected = new Set(["selected"]);
+
+    const kept = includeSelectedFamilies(allGroups, allGroups, selected);
+    assert.deepEqual(
+      kept.map((group) => group.project.id),
+      ["proj_1", "proj_2"],
+    );
+
+    const filtered = filterProjectThreadGroups(allGroups, "working", 1_000);
+    assert.deepEqual(
+      includeSelectedFamilies(filtered, allGroups, selected).map(
+        (group) => group.project.id,
+      ),
+      ["proj_1"],
     );
   });
 });

@@ -259,7 +259,13 @@ export function includeSelectedFamilies(
         filteredIds?.has(family.root.id) === true ||
         selectedRootIds.has(family.root.id),
     );
-    return families.length === 0 ? [] : [{ ...group, families }];
+    // A project with no threads has nothing to select, but it is still a
+    // project. It stays exactly while the filter kept it, so entering selection
+    // and checking the first box does not make the tree shift under the user.
+    const keptWhileEmpty = group.families.length === 0 && filteredIds !== undefined;
+    return families.length === 0 && !keptWhileEmpty
+      ? []
+      : [{ ...group, families }];
   });
 }
 

@@ -42,9 +42,16 @@ import {
 } from "@/lib/project-colors";
 import type { ProjectIcon } from "@/lib/project-icons";
 
+/** The body of an expanded project that has nothing under it. */
+const EMPTY_PROJECT_CLASS = "py-1 pl-4 text-2xs text-muted-foreground";
+
 /**
- * One project. The workspace level appears only when the project's threads
- * actually occupy more than one, so a single-checkout project stays flat.
+ * One project, whether or not it has anything in it yet.
+ *
+ * The workspace level appears only when the project occupies more than one, so
+ * a single-checkout project stays flat. A project with nothing at all draws one
+ * muted line instead of an empty list: it is a real project, and the row above
+ * it is where the first thread or worktree gets started.
  */
 export function ProjectNode({
   node,
@@ -227,7 +234,13 @@ export function ProjectNode({
         const familyDrag = types.includes("application/x-nest-family");
         if (!projectDrag && !familyDrag) return;
         if (projectDrag && !projectReorder.enabled) return;
-        if (familyDrag && !handlers.reorderEnabled) return;
+        // A family only reorders inside its own project, and a project with no
+        // threads has none to reorder against — so this is not a drop target
+        // for one, and the browser says so instead of accepting a drop that
+        // would quietly do nothing.
+        if (familyDrag && (!handlers.reorderEnabled || node.families.length === 0)) {
+          return;
+        }
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
       }}
@@ -284,6 +297,10 @@ export function ProjectNode({
               />
             ))}
           </div>
+        ) : node.families.length === 0 ? (
+          <p id={listId} className={EMPTY_PROJECT_CLASS}>
+            No threads yet
+          </p>
         ) : (
           <div id={listId} className="mt-0.5">
             <FlatFamilies

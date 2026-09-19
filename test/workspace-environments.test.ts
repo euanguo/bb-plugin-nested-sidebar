@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
-import { buildTree } from "../lib/tree.ts";
+import { buildTree, projectWorkspaceRefs } from "../lib/tree.ts";
 import type { ProjectThreadGroup, ThreadFamily } from "../lib/inbox.ts";
 import type { WorktreeSortMode } from "../lib/sort-modes.ts";
 import {
@@ -270,6 +270,44 @@ describe("a workspace outlives the conversations in it", () => {
     );
     assert.equal(
       workspaces.filter((workspace) => workspace.ref.kind !== "personal").length,
+      0,
+    );
+  });
+});
+
+describe("projectWorkspaceRefs", () => {
+  /**
+   * The arrangement of a project's worktrees is written from this set, so a
+   * workspace missing here is one the user can see but not move. A worktree
+   * that has never held a thread is the case that exposed it.
+   */
+  it("names every workspace the project owns, threads or not", () => {
+    const busy = descriptor("env_busy", "p1", "/work/trees/busy", {
+      branchName: "feat/busy",
+    });
+    const neverUsed = descriptor("env_never", "p1", "/work/trees/never", {
+      branchName: "feat/never",
+    });
+    const other = descriptor("env_other", "p2", "/work/trees/elsewhere", {
+      branchName: "feat/elsewhere",
+    });
+
+    const refs = projectWorkspaceRefs(
+      "p1",
+      [family("t1", "p1", environmentRef("env_busy", null, "feat/busy"))],
+      descriptorMap(busy, neverUsed, other),
+      projectMap(),
+    );
+
+    assert.deepEqual(
+      [...refs.values()].map((ref) => ref.branch).sort(),
+      ["feat/busy", "feat/never"],
+    );
+  });
+
+  it("is empty for a project with nothing on disk and no threads", () => {
+    assert.equal(
+      projectWorkspaceRefs("p1", [], new Map(), projectMap()).size,
       0,
     );
   });
