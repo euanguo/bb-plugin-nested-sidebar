@@ -32,6 +32,9 @@ import { BULK_PROTECTION_LABELS, bulkEligibility } from "@/lib/thread-management
 import type { NestPreferences } from "@/lib/preferences";
 import type { WorkspacePaths } from "@/hooks/use-workspace-paths";
 import { renameIntent } from "@/lib/groups";
+
+/** The body of an expanded workspace that has nothing in it yet. */
+const EMPTY_WORKSPACE_CLASS = "ml-4 py-1 pl-3 text-2xs text-muted-foreground";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import { Modal } from "@/components/ui/modal";
 import { RemoveWorktreeDialog } from "@/components/inbox/remove-worktree-dialog";
@@ -497,16 +500,25 @@ export function WorkspaceGroup({
         />
       ) : null}
       {expanded ? (
-        <ul id={listId} className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3">
-          {node.families.map((family) => (
-            <FamilyRow
-              key={family.root.id}
-              family={family}
-              projectId={projectId}
-              handlers={handlers}
-            />
-          ))}
-        </ul>
+        node.families.length === 0 ? (
+          // A workspace outlives the conversations in it, so an empty one is a
+          // real row — and an empty list under it would draw the disclosure's
+          // own border around nothing.
+          <p id={listId} className={EMPTY_WORKSPACE_CLASS}>
+            No threads yet
+          </p>
+        ) : (
+          <ul id={listId} className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3">
+            {node.families.map((family) => (
+              <FamilyRow
+                key={family.root.id}
+                family={family}
+                projectId={projectId}
+                handlers={handlers}
+              />
+            ))}
+          </ul>
+        )
       ) : null}
     </section>
   );

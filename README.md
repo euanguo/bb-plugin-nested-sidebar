@@ -18,6 +18,16 @@
 Nest replaces the scrolling thread list in bb's left sidebar with a
 compact project-first inbox designed for parallel agent work.
 
+The project list is bb's project list. Every project gets a row whether or not it
+has a thread yet, so a project you just created is on the sidebar the moment it
+exists rather than the moment you start something in it; a project with nothing in
+it yet shows a placeholder where its threads will go. Under a project, its
+workspaces — the checkout and each worktree — become rows of their own once there
+is more than one to tell apart, and while the project has no threads yet, so a
+worktree you just created is on screen before anything runs in it. A workspace
+outlives the conversations in it: settle the last thread in a worktree and its row
+stays, because the worktree is still there to start the next one in.
+
 Projects and complete root/child families stay where you put them. Drag the
 existing project header or a family's semantic status icon to sort, or use
 Alt+Up/Alt+Down from the same focus targets. The order is kept on the server, so

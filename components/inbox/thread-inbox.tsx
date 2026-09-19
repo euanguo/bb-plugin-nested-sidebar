@@ -36,7 +36,7 @@ import {
 } from "@/lib/settled-threads";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import {
-  groupThreadsByProject,
+  buildProjectGroups,
   searchProjectThreadGroups,
   searchThreadsByTitle,
   sortByCreatedAtDescending,
@@ -109,8 +109,12 @@ import {
   type GroupAssignment,
   type GroupScope,
 } from "@/lib/groups";
-import { buildTree, searchTree, threadAncestors } from "@/lib/tree";
-import { workspaceRefOf, type WorkspaceRef } from "@/lib/workspace";
+import {
+  buildTree,
+  projectWorkspaceRefs,
+  searchTree,
+  threadAncestors,
+} from "@/lib/tree";
 import {
   keyboardWorkspaceMove,
   moveProjectWorkspace,
@@ -397,7 +401,7 @@ export function ThreadInbox({
     // thread lens. Both run before filtering and search, so a hidden row never
     // moves and the visible order is always a slice of the complete one.
     const unfilteredProjectGroups = orderProjectGroups(
-      groupThreadsByProject(active, projects),
+      buildProjectGroups(active, projects),
       {
         assignment: groupsApi.assignment,
         groupOrder: groupsApi.groups.map((group) => group.id),
@@ -691,20 +695,18 @@ export function ThreadInbox({
     threads,
   ]);
 
-  const activeVisibleCount = projectGroups.reduce(
-    (total, group) =>
-      total +
-      group.families.reduce(
-        (groupTotal, family) => groupTotal + 1 + family.children.length,
-        0,
-      ),
-    0,
-  );
   const showParkedShelves = filterPreset === "all" && !selectionMode;
-  const visibleTotal = showParkedShelves
-    ? activeVisibleCount + snoozed.length + settled.length + pendingSettled
-    : activeVisibleCount;
+  const parkedTotal = showParkedShelves
+    ? snoozed.length + settled.length + pendingSettled
+    : 0;
   const searching = searchQuery.trim().length > 0;
+  /**
+   * Nothing to draw: no project survived the scope, the filter, and the search,
+   * and nothing is parked under the tree either. This counts rows rather than
+   * threads on purpose — a sidebar whose projects have no threads yet still has
+   * something to show.
+   */
+  const nothingToShow = treeNodes.length === 0 && parkedTotal === 0;
   /**
    * Reordering needs the complete, unfiltered, unsearched list — otherwise a
    * hidden row would move implicitly — and it needs the mode that reads the
@@ -839,25 +841,23 @@ export function ThreadInbox({
   /**
    * The project's worktrees as rows, in the order they are drawn.
    *
-   * Taken from every thread the project has rather than from what is on screen:
-   * a reorder has to write the complete arrangement, or a row hidden by search
-   * would drop out of it. The checkout is not in the list, because it leads
-   * under every arrangement and there is nothing to move.
+   * Taken from the project's complete workspace set rather than from what is on
+   * screen, and from the same function the tree uses: a reorder has to write the
+   * complete arrangement, or a row hidden by search — or one no thread has
+   * reached yet — would drop out of it. The checkout is not in the list, because
+   * it leads under every arrangement and there is nothing to move.
    */
   const workspaceOrderInputs = (projectId: string) => {
     const group = unfilteredProjectGroups.find(
       (candidate) => candidate.project.id === projectId,
     );
     if (group === undefined) return null;
-    const refs = new Map<string, WorkspaceRef>();
-    for (const family of group.families) {
-      const ref = workspaceRefOf(
-        family.root,
-        new Map(Object.entries(paths.environments)),
-        new Map(Object.entries(paths.projects)),
-      );
-      if (!refs.has(ref.key)) refs.set(ref.key, ref);
-    }
+    const refs = projectWorkspaceRefs(
+      projectId,
+      group.families,
+      new Map(Object.entries(paths.environments)),
+      new Map(Object.entries(paths.projects)),
+    );
     return {
       keys: orderWorkspaces(
         [...refs.values()].map((ref) => ({ ref })),
@@ -1642,10 +1642,14 @@ export function ThreadInbox({
           <p role="status" className={EMPTY_STATE_CLASS}>
             Could not load threads.
           </p>
-        ) : !lifecycle.shelvesReady ? null : visibleTotal === 0 ? (
+        ) : !lifecycle.shelvesReady ? null : nothingToShow ? (
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
           <p role="status" className={EMPTY_STATE_CLASS}>
-            {searching ? "No threads found" : "No threads yet"}
+            {searching
+              ? "No threads found"
+              : filterPreset === "all"
+                ? "No projects yet"
+                : "No threads match this filter"}
           </p>
         ) : (
           <>

@@ -94,7 +94,18 @@ describe("workspace identity", () => {
     const first = resolve(environment("env_one", "/repo/one", { isGitRepo: true, branchName: "main", providerId: null }));
     const second = resolve(environment("env_two", "/repo/two", { isGitRepo: true, branchName: "main", providerId: null }));
     assert.notEqual(first.key, second.key);
-    assert.equal(shouldShowWorkspaces([first, second]), true);
+    assert.equal(shouldShowWorkspaces([first, second], 0), true);
+  });
+
+  // One workspace under a project with threads is the project's own checkout
+  // being named twice, so it stays flat. With no threads the row is the only
+  // thing under the project — and a worktree that was just created is exactly
+  // what the user came to look at.
+  it("draws one workspace only while the project has no threads", () => {
+    const checkout = resolve(environment("env_checkout", "/repo/chat_history", { branchName: "main" }));
+    assert.equal(shouldShowWorkspaces([checkout], 3), false);
+    assert.equal(shouldShowWorkspaces([checkout], 0), true);
+    assert.equal(shouldShowWorkspaces([], 0), false);
   });
 
   it("merges duplicate environment records for one physical path", () => {

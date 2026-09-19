@@ -64,103 +64,95 @@ export function searchThreadsByTitle(
   );
 }
 
-export interface ProjectScope {
-  /** Project id, or null for "all projects". */
-  id: string | null;
-  name: string;
-}
-
-/** Threads in the chosen scope; every thread when the scope is null. */
-export function filterByProject(
-  threads: readonly PluginSidebarThread[],
-  projectId: string | null,
-): PluginSidebarThread[] {
-  if (projectId === null) return [...threads];
-  return threads.filter((thread) => thread.projectId === projectId);
-}
-
 /**
- * Turn a flat sidebar result into the two stable levels people navigate by:
- * project, then root thread. Descendants stay attached to their oldest visible
- * ancestor and are flattened into one compact agent list.
+ * The sidebar's project list: every project bb reports, in bb's order, with the
+ * visible root threads filed under each one.
  *
- * A parent that is not in `threads` (parked, archived, filtered, or deleted)
- * cannot own a visible row, so its child becomes a root instead of vanishing.
- * Project order comes from bb; roots keep the inbox's static creation order,
- * with the user's pinned roots first.
+ * Projects come first and threads fill them in, not the other way round. A
+ * project with no visible thread — brand new, or with everything parked — is
+ * still a project, and leaving it off the sidebar would make it unreachable
+ * rather than quiet. Descendants stay attached to their oldest visible ancestor
+ * and are flattened into one compact agent list; a parent that is not in
+ * `threads` (parked, archived, filtered, or deleted) cannot own a visible row,
+ * so its child becomes a root instead of vanishing. Roots keep the inbox's
+ * static creation order, with the user's pinned roots first.
+ *
+ * A thread bb files under a project it does not list still gets a group, after
+ * the known ones, so a stale row is never silently lost.
  */
-export function groupThreadsByProject(
+export function buildProjectGroups(
   threads: readonly PluginSidebarThread[],
   projects: readonly PluginSidebarProject[],
 ): ProjectThreadGroup[] {
-  const projectById = new Map(projects.map((project) => [project.id, project]));
-  const projectOrder = new Map(
-    projects.map((project, index) => [project.id, index]),
-  );
   const threadsByProject = new Map<string, PluginSidebarThread[]>();
-
   for (const thread of threads) {
     const bucket = threadsByProject.get(thread.projectId) ?? [];
     bucket.push(thread);
     threadsByProject.set(thread.projectId, bucket);
   }
 
-  const groups: ProjectThreadGroup[] = [];
-  for (const [projectId, projectThreads] of threadsByProject) {
-    const threadById = new Map(
-      projectThreads.map((thread) => [thread.id, thread]),
-    );
-    const familyByRootId = new Map<string, ThreadFamily>();
+  const groups: ProjectThreadGroup[] = projects.map((project) => ({
+    project,
+    families: threadFamilies(threadsByProject.get(project.id) ?? []),
+  }));
 
-    for (const thread of projectThreads) {
-      const root = visibleRootOf(thread, threadById);
-      let family = familyByRootId.get(root.id);
-      if (family === undefined) {
-        family = { root, children: [] };
-        familyByRootId.set(root.id, family);
-      }
-      if (thread.id !== root.id) family.children.push(thread);
-    }
-
-    const families = [...familyByRootId.values()];
-    for (const family of families) {
-      family.children.sort(
-        (left, right) =>
-          left.createdAt - right.createdAt || left.id.localeCompare(right.id),
-      );
-    }
-    families.sort((left, right) => {
-      const pinOrder = Number(right.root.isPinned) - Number(left.root.isPinned);
-      if (pinOrder !== 0) return pinOrder;
-      return (
-        right.root.createdAt - left.root.createdAt ||
-        left.root.id.localeCompare(right.root.id)
-      );
-    });
-
+  const known = new Set(projects.map((project) => project.id));
+  const strays = [...threadsByProject.keys()]
+    .filter((projectId) => !known.has(projectId))
+    .sort((left, right) => left.localeCompare(right));
+  for (const projectId of strays) {
     groups.push({
-      project:
-        projectById.get(projectId) ??
-        ({
-          id: projectId,
-          name: "Other project",
-          isPersonal: false,
-        } satisfies PluginSidebarProject),
-      families,
+      project: {
+        id: projectId,
+        name: "Other project",
+        isPersonal: false,
+      } satisfies PluginSidebarProject,
+      families: threadFamilies(threadsByProject.get(projectId) ?? []),
     });
   }
 
-  return groups.sort((left, right) => {
-    const leftOrder = projectOrder.get(left.project.id);
-    const rightOrder = projectOrder.get(right.project.id);
-    if (leftOrder !== undefined || rightOrder !== undefined) {
-      return (
-        (leftOrder ?? Number.MAX_SAFE_INTEGER) -
-        (rightOrder ?? Number.MAX_SAFE_INTEGER)
-      );
+  return groups;
+}
+
+/**
+ * One project's root threads, pinned first, each carrying its flattened
+ * descendants oldest-first. Empty when the project has no visible thread, which
+ * is a real state and not a reason to drop the project.
+ */
+function threadFamilies(
+  projectThreads: readonly PluginSidebarThread[],
+): ThreadFamily[] {
+  const threadById = new Map(
+    projectThreads.map((thread) => [thread.id, thread]),
+  );
+  const familyByRootId = new Map<string, ThreadFamily>();
+
+  for (const thread of projectThreads) {
+    const root = visibleRootOf(thread, threadById);
+    let family = familyByRootId.get(root.id);
+    if (family === undefined) {
+      family = { root, children: [] };
+      familyByRootId.set(root.id, family);
     }
-    return left.project.name.localeCompare(right.project.name);
+    if (thread.id !== root.id) family.children.push(thread);
+  }
+
+  const families = [...familyByRootId.values()];
+  for (const family of families) {
+    family.children.sort(
+      (left, right) =>
+        left.createdAt - right.createdAt || left.id.localeCompare(right.id),
+    );
+  }
+  families.sort((left, right) => {
+    const pinOrder = Number(right.root.isPinned) - Number(left.root.isPinned);
+    if (pinOrder !== 0) return pinOrder;
+    return (
+      right.root.createdAt - left.root.createdAt ||
+      left.root.id.localeCompare(right.root.id)
+    );
   });
+  return families;
 }
 
 /**
@@ -226,37 +218,6 @@ export function visibleInboxThreads(
 ): PluginSidebarThread[] {
   return threads.filter(
     (thread) => !thread.isArchived || parkedThreadIds.has(thread.id),
-  );
-}
-
-/** Pinned first (they are the user's own ordering), then the static sort. */
-export function partitionPinned(threads: readonly PluginSidebarThread[]): {
-  pinned: PluginSidebarThread[];
-  inbox: PluginSidebarThread[];
-} {
-  const pinned: PluginSidebarThread[] = [];
-  const inbox: PluginSidebarThread[] = [];
-  for (const thread of threads) {
-    (thread.isPinned ? pinned : inbox).push(thread);
-  }
-  return { pinned, inbox };
-}
-
-/**
- * Child threads leave the flat list and live in their parent's header chip
- * instead — a flat inbox has nowhere to nest them.
- *
- * A child is only hidden when its parent is actually on screen. An orphan
- * (parent archived, deleted, or filtered out by the project scope) stays in
- * the list, because hiding it would make it unreachable everywhere.
- */
-export function hideChildrenOfVisibleParents(
-  threads: readonly PluginSidebarThread[],
-): PluginSidebarThread[] {
-  const visibleIds = new Set(threads.map((thread) => thread.id));
-  return threads.filter(
-    (thread) =>
-      thread.parentThreadId === null || !visibleIds.has(thread.parentThreadId),
   );
 }
 

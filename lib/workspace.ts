@@ -258,8 +258,22 @@ export function disambiguateWorkspaceLabels(refs: readonly WorkspaceRef[]): Work
   });
 }
 
-export function shouldShowWorkspaces(refs: readonly WorkspaceRef[]): boolean {
-  return new Set(refs.map((ref) => ref.key)).size >= 2;
+/**
+ * Whether a project draws its workspaces as rows of their own.
+ *
+ * Two workspaces are always worth telling apart. One is normally the project's
+ * own checkout, and naming it under the project already named after it is
+ * noise, so a single-workspace project stays flat. A project with no threads is
+ * the exception: the workspace row is then the only thing under the project,
+ * and a worktree that was just created is exactly what the user came to look
+ * at, so it is drawn rather than hidden until a second one appears.
+ */
+export function shouldShowWorkspaces(
+  refs: readonly WorkspaceRef[],
+  threadCount: number,
+): boolean {
+  const distinct = new Set(refs.map((ref) => ref.key)).size;
+  return distinct >= 2 || (distinct === 1 && threadCount === 0);
 }
 
 export function workspaceSortOrder(kind: WorkspaceKind): number {

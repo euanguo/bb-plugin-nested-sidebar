@@ -5,12 +5,9 @@ import type {
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk";
 import {
+  buildProjectGroups,
   childrenOf,
-  filterByProject,
-  groupThreadsByProject,
-  hideChildrenOfVisibleParents,
   parentOf,
-  partitionPinned,
   searchProjectThreadGroups,
   searchThreadsByTitle,
   sortByCreatedAtDescending,
@@ -154,18 +151,6 @@ describe("searchThreadsByTitle", () => {
 });
 
 describe("filtering", () => {
-  it("scopes to one project, or to all", () => {
-    const threads = [
-      thread({ id: "a", projectId: "p1" }),
-      thread({ id: "b", projectId: "p2" }),
-    ];
-    assert.deepEqual(
-      filterByProject(threads, "p1").map((t) => t.id),
-      ["a"],
-    );
-    assert.equal(filterByProject(threads, null).length, 2);
-  });
-
   it("drops archived threads", () => {
     const threads = [
       thread({ id: "a" }),
@@ -190,26 +175,47 @@ describe("filtering", () => {
     );
   });
 
-  it("splits pinned from the rest, keeping order", () => {
-    const { pinned, inbox } = partitionPinned([
-      thread({ id: "a" }),
-      thread({ id: "b", isPinned: true }),
-      thread({ id: "c" }),
-    ]);
-    assert.deepEqual(
-      pinned.map((t) => t.id),
-      ["b"],
-    );
-    assert.deepEqual(
-      inbox.map((t) => t.id),
-      ["a", "c"],
-    );
-  });
 });
 
 describe("project thread groups", () => {
+  it("lists every project bb reports, with an empty body when it has no threads", () => {
+    const groups = buildProjectGroups(
+      [thread({ id: "only", projectId: "p2" })],
+      [project("p1", "Empty"), project("p2", "Populated")],
+    );
+    assert.deepEqual(
+      groups.map((group) => group.project.id),
+      ["p1", "p2"],
+    );
+    assert.deepEqual(groups[0]?.families, []);
+    assert.deepEqual(
+      groups[1]?.families.map((family) => family.root.id),
+      ["only"],
+    );
+  });
+
+  // A thread bb files under a project it does not list still needs a row.
+  it("files a thread whose project is not listed after the known ones", () => {
+    const groups = buildProjectGroups(
+      [
+        thread({ id: "known", projectId: "p1" }),
+        thread({ id: "stray_b", projectId: "p9" }),
+        thread({ id: "stray_a", projectId: "p8" }),
+      ],
+      [project("p1", "Known")],
+    );
+    assert.deepEqual(
+      groups.map((group) => group.project.id),
+      ["p1", "p8", "p9"],
+    );
+    assert.deepEqual(
+      groups.slice(1).map((group) => group.project.name),
+      ["Other project", "Other project"],
+    );
+  });
+
   it("keeps bb's project order, pins roots within a project, and flattens descendants", () => {
-    const groups = groupThreadsByProject(
+    const groups = buildProjectGroups(
       [
         thread({ id: "root", projectId: "p1", createdAt: 10 }),
         thread({
@@ -250,7 +256,7 @@ describe("project thread groups", () => {
   });
 
   it("promotes a child when its parent is not visible", () => {
-    const groups = groupThreadsByProject(
+    const groups = buildProjectGroups(
       [thread({ id: "child", parentThreadId: "parked" })],
       [project("proj_1", "Project")],
     );
@@ -258,7 +264,7 @@ describe("project thread groups", () => {
   });
 
   it("keeps a parent as context when only its child matches search", () => {
-    const groups = groupThreadsByProject(
+    const groups = buildProjectGroups(
       [
         thread({ id: "root", title: "Parent" }),
         thread({
@@ -283,7 +289,7 @@ describe("project thread groups", () => {
   });
 
   it("matches a project name and keeps the whole project", () => {
-    const groups = groupThreadsByProject(
+    const groups = buildProjectGroups(
       [thread({ id: "root" })],
       [project("proj_1", "Storefront")],
     );
@@ -305,29 +311,6 @@ describe("threadIsWorking", () => {
 });
 
 describe("child threads", () => {
-  it("hides a child whose parent is on screen", () => {
-    const visible = hideChildrenOfVisibleParents([
-      thread({ id: "parent" }),
-      thread({ id: "child", parentThreadId: "parent" }),
-    ]);
-    assert.deepEqual(
-      visible.map((t) => t.id),
-      ["parent"],
-    );
-  });
-
-  // An orphan must stay visible: hidden here AND absent from any header chip
-  // would make it unreachable everywhere.
-  it("keeps a child whose parent is not on screen", () => {
-    const visible = hideChildrenOfVisibleParents([
-      thread({ id: "child", parentThreadId: "archived-parent" }),
-    ]);
-    assert.deepEqual(
-      visible.map((t) => t.id),
-      ["child"],
-    );
-  });
-
   it("lists a thread's children oldest first", () => {
     const children = childrenOf(
       [
