@@ -395,12 +395,28 @@ there is no branch line and the same cluster ends the title line instead.
 **A thread's pin is a control, not a mark.** A pinned row wears a **solid pin at
 rest** — which threads are pinned is worth reading without pointing at a row — and a
 row that is not pinned draws the outlined one under the pointer, so pinning is one
-press on the row it is about rather than two through the context menu. The glyph
-carries the state and the press carries the toggle, with `aria-pressed` and the
+press on the row it is about rather than two through the context menu. **The colour
+never carries the state**: the pin wears exactly what the park buttons beside it
+wear, so the three read as one row of controls, and the fill is what says which
+state this one is in. The press carries the toggle, with `aria-pressed` and the
 label ("Pin thread" / "Unpin thread") saying both to a screen reader. The solid is
 **made from the outlined artwork** rather than drawn a second time — every closed
 outline in the glyph takes the fill, the open one stays a stroke — so the two states
-are one silhouette, and the pin does not change shape when it is pinned.
+are one silhouette, and the pin does not change shape when it is pinned. Its target
+is the cluster's own 20px around a 14px glyph, and the padding on the side facing the
+next control is handed back, so the glyph sits in the same rhythm as its neighbours
+rather than a few pixels out of it.
+
+Under the pointer it behaves like the two park buttons, in its own vocabulary: it
+**turns in** — arrives a little off square, is driven in, and *stays* turned, the way
+a pin sits once it has been turned into something — while **three `P`s fall into
+it**: in over the head's right shoulder on the pin's own line, each starting a little
+further back, each smaller than the one before, gone by the time they land. They are
+the `z`s the snooze drifts, mirrored — those travel *away* from the clock, because
+sleeping is a departure; these come *to* the pin, because pinning is a thread being
+caught and kept — and the letter is the same idea either way: `z` says sleep, `P`
+says pinned, with no legend needed. A pinned pin does none of this: it is a state the
+row reports, and it answers the pointer with colour alone.
 
 **Failed**, **Needs you**, **Working**, **Unread**, **Inactive**, and seven-day
 **Stale** states have separate shapes, labels, tooltips, and customizable colors.
@@ -488,6 +504,24 @@ repeating it on each thread spends the width the title wants. A child row follow
 the same rule, since a child runs where its parent does; the `Show thread branch or
 host` switch is still there for anyone who wants the location off in the other two
 modes as well.
+
+### Folded rows
+
+A group, a project and a worktree each carry the **same chip a thread with
+children wears** — the threads worth looking at named by colour, and how many of
+them, on a ground tinted by the state the branch is in. One shape for one
+question, at every level that has threads beneath it.
+
+The number is **the size of the reason to open the row, not the size of the
+branch**: a project with twenty-eight threads of which one is unread and one is
+working says **2**, and the discs name those two. Counting all twenty-eight would
+be a count of the things that are *not* happening. A branch with nothing running,
+nothing waiting, nothing unread and nothing failed draws **no chip at all**.
+
+Clicking it is a shortcut, not a disclosure: it jumps to the thread the state came
+from. The arrow beside it, and the row's own name, do the opening — so the chip is
+free to be triage, which is the one thing a summary of a hundred folded threads
+can do that the list cannot.
 
 ### The worktree row
 

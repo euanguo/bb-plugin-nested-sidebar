@@ -306,7 +306,62 @@ Two smaller mismatches shaped the rest:
    than by a second `rounded-xl` panel of its own, and with its waiting state in
    the palette's needs-you colour instead of plain text.
 
-15. **A row auto-animate abandons is swept away.** Its `remove` pulls a leaving row
+15. **One chip shape for "threads under here", folded or open.** A project, a
+   worktree and a group now wear the chip a thread with children wears: the
+   threads under them named by colour, how many of them, on a ground tinted by the
+   state the branch is in. The shapes are one constant (`STATE_CHIP_CLASS`) rather
+   than two class strings that happen to agree, because the point of the shape is
+   that a folded branch and an opened family are the same kind of thing; they
+   differ in what they carry and in what clicking them does, never in what they
+   look like. Two decisions came with it:
+   - **The rollup gave up `●2 ●1`.** Its own doc argued for one dot and one count
+     per signal, and the argument was right — a folded row is skimmed for "how
+     much, and of what" — but the shape was wrong, because it made the sidebar
+     answer one question two ways. The breakdown moved to the title and the
+     accessible label, where `rollupSummary` already said it ("2 working · 1 needs
+     you"); what a glance loses is a *mixed* branch, since a tint names one state
+     and `●2 ●1` named two.
+   - **The folded chip keeps its jump.** A thread's chip is the only route to its
+     children, so clicking opens them. A folded branch is opened by the arrow
+     beside it and by its own name, which leaves the chip free to be the shortcut
+     to the thread that needs you — the one thing a summary of a hundred folded
+     threads can do that the list cannot. Same shape, different verb, because the
+     rows are asked different questions.
+   `StatusRollup` carries `discIds` (capped at `MAX_DISC_IDS` where the counting
+   happens, so a summary's width cannot grow with the branch), and `Disc` takes any
+   `{id}` rather than a whole thread DTO, so a folded row can draw the cluster
+   without holding the threads. The jump title was fixed on the way past: it read
+   "Jump to the thread that 1 needs you · 2 working", which is a summary spliced
+   into a sentence.
+   **Then the user read the number, and it was answering the wrong question.** The
+   first version of the chip showed `28` on a group and `9` on a project — the
+   count of every thread under the row, most of them idle. So `rollupSignalCount`
+   counts only the states that can put a chip there at all (failed, needs-you,
+   working, unread), and `discIds` names *those* threads rather than the first
+   three in the list: a project's first three are usually the quiet ones, and a
+   colour that points at nothing is decoration. `2` is the size of the reason to
+   open the row; `28` was a count of what is not happening. Zero signals and no
+   chip are now the same case by construction, since the chip's guard tests the
+   kind and the kind is inactive exactly when nothing is counted.
+   The two levels count different things **on purpose**: a *folded* row's number is
+   triage (how much is worth opening it for), while a *thread's* chip shows its
+   children — "3 child threads" is the disclosure itself, and there is no arrow
+   beside it to say so. Same shape, and the number means what that row's question
+   is.
+
+16. **A dot's box is a flex box.** The user said the dot in a chip looked off
+   centre, and it did: `DiscCluster` wrapped each disc in a bare `<span>`, and a
+   block box around an `inline-block` is a *line box* — the disc sits on the text
+   baseline with the font's descent (4px, at `text-2xs`/`14px`) hanging below it,
+   so a 10px disc measured inside a 14px holder and read **1.5px above** the
+   middle of the chip. One class on the holder fixes it, and the measurement is
+   the evidence: the running app reported `holder 14px / discOffBy -1.5` before and
+   `holder 10px / discOffBy 0` after, read out of the live DOM rather than reasoned
+   about. It came over with the port — upstream's `ChildThreadDots` writes the same
+   bare span — so a faithful port of a shared component still needs its own
+   measurement: this quirk is invisible in a screenshot of the plugin next door.
+
+17. **A row auto-animate abandons is swept away.** Its `remove` pulls a leaving row
    out of flow and waits for the animation's `finish` to run `cleanUp`, which is
    what finally takes the element out of the document. When that event never
    arrives the row stays for good, floating over the list it left — the overlap a
@@ -337,6 +392,60 @@ Two smaller mismatches shaped the rest:
    about. It **leads the trailing cluster** and holds that place in both states,
    which is what keeps pressing it from moving it: everything hover changes is at
    the head, and the title absorbs the width (item 8).
+   **The glyph was out of line with its neighbours, and the user saw it.** A 20px
+   target around a 14px glyph is 3px of padding a side, and the padding on the side
+   facing the next control reads as space rather than as target: the glyph sat 9px
+   from the age — and 12px from the snooze button that takes the age's place under
+   the pointer — where the controls around it sit 6px and 8px apart. The button now
+   hands that one inset back, so the resting gaps are 6/6 and the hovered ones
+   9/8/9. It is `-mr-[3px]`, and it is asserted as the arithmetic it is
+   (`(size-5 − size-3.5) / 2`) so changing either size fails a test rather than
+   quietly pushing the pin out of line again; the test also refuses a *leading*
+   trim, which moves nothing at all in a right-aligned cluster.
+   **Its effect was wrong three times, and the failures are worth keeping.** What
+   makes the park pair's effects good is not the motion but two things the pin
+   does not get for free: each of them **ends on a state it keeps** (the clock
+   stays nodded, the archive stays turned, both for as long as the pointer is
+   there), and each marks the moment with **a shape that means something** — a
+   star celebrates, a `z` sleeps. The pin's first effect was three hairline
+   strokes at the needle tip, and it looked like dirt, because the tip's own
+   surroundings are the gap between the title and the button: the pin is the
+   **first** control in the cluster, so its left side belongs to the title. The
+   second moved them inside the button, where three strokes at one origin became
+   a smudge and three round pips became a blob. The third gave up on the tip and
+   trailed three fading pips off the head — clean, and *meaningless*: a puff of
+   dust says nothing about pinning, and fading to nothing left no state behind.
+   What shipped turns the pin in and **holds** it turned, and leaves three short
+   marks around the head that **stay** at three quarters strength while the
+   pointer stays. **The user then asked for those marks to be the letter `P`**,
+   which is the pair's own vocabulary completed rather than borrowed: the snooze
+   drifts a `z` and says *sleep*, and the pin leaves a `P` and says *pinned* —
+   one letter each, read without a legend, where a dot said only that something
+   had happened. **Then the user said the letter version was not as elegant as
+   the `z`, and asked for the same quality without copying it** — so the two were
+   read side by side, and what makes the `z`s good is not the letter, it is the
+   line: all three are emitted from one point, travel one way, are scaled along
+   the way, and are timed a beat apart, so the eye reads a *direction* rather
+   than three marks. The pin's are that line run backwards. The `z`s leave the
+   clock — up, outward, growing, fading out in the empty row above it, because
+   sleeping is something the thread does by *leaving*. The `P`s come **to** the
+   pin: emitted up and to the right on the needle's own axis, each starting back
+   down that line, shrinking as they fall, and gone by the time they reach the
+   head, because pinning is a thread being *caught*. Nothing is left standing in
+   the row afterwards, and the stagger is the tighter one (0/90/180 against the
+   snooze's 0/120/240) because pinning is the act of the three that happens now.
+   They are upright: a letter carried round on a bar's angle is a letter nobody
+   can read. The held frame is the pin's own — it stays turned in — which is what
+   the clock's nod and the archive's turn do for their buttons.
+   **The colour was wrong too, and the user saw it before the effect:** the
+   unpinned pin was a shade lighter than the clock and the archive beside it
+   (`text-muted-foreground/70`), which reads as a *disabled* control rather than
+   as the same control in another state. It now names no colour at all and wears
+   exactly what its neighbours wear; the fill is the whole difference.
+   The ground the pin lifts on had to leave the utility system as well: Tailwind
+   compiles `bg-current/10` in a variant to a **solid** `background-color:
+   currentColor` — a grey disc where the park pair's grounds are a 15% wash — so
+   the tint and its halo are declared in `pin-button.css` against `currentColor`.
    It replaces a decorative marker that could not be pressed (`title="Pinned
    thread"` inside the metadata group), and the reversal is recorded rather than
    deleted: `test/pinned.test.ts` asserts the old marker is gone, and
