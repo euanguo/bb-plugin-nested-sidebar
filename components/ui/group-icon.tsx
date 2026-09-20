@@ -1,7 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import { loadIcon } from "@hugeicons/core-free-icons/loader";
+import { useRpc } from "@get-bb/plugin-sdk/app";
+import type { nestRpcContract } from "@/server";
 import { cn } from "@/lib/utils";
+import {
+  loadGroupIcon,
+  type GroupIconTransport,
+} from "@/lib/group-icon-loader";
 import {
   canonicalGroupIcon,
   normalizeGroupIconName,
@@ -9,10 +14,19 @@ import {
 } from "@/lib/group-icons";
 
 /**
- * Renders any free Hugeicons export without putting the complete icon set in
- * the main bundle. The loader creates one small chunk per icon; group rows
- * therefore keep the normal sidebar bundle small while the picker can expose
- * the entire library.
+ * Renders any free Hugeicons export the picker offers.
+ *
+ * The artwork is not in this bundle, and must not be. It is 6 MB of path data
+ * for six thousand icons, and a plugin frontend is a single bundle that bb
+ * loads on every window's deferred plugin boot — so inlining it charged the
+ * sidebar 6.1 MB for a picker most sessions never open. `@hugeicons`' own
+ * loader cannot help: it resolves through a static import map, and with code
+ * splitting off every entry of that map is inlined too.
+ *
+ * So the artwork lives in the plugin's files and is fetched on demand, batched
+ * and cached by `lib/group-icon-loader`. What is left in the bundle is the name
+ * list, which is what the picker searches and what stored rows are validated
+ * against.
  */
 export function GroupIcon({
   name,
@@ -28,8 +42,17 @@ export function GroupIcon({
   defer?: boolean;
 }) {
   const canonical = canonicalGroupIcon(name);
+  const rpc = useRpc<typeof nestRpcContract>();
+  const transport = useCallback<GroupIconTransport>(
+    (names) =>
+      rpc
+        .call("getGroupIcons", { names: [...names] })
+        .then((result) => result.icons),
+    [rpc],
+  );
   return defer ? (
     <DeferredGroupIcon
+      transport={transport}
       name={canonical}
       className={className}
       ariaHidden={ariaHidden}
@@ -37,6 +60,7 @@ export function GroupIcon({
     />
   ) : (
     <ResolvedGroupIcon
+      transport={transport}
       name={canonical}
       className={className}
       ariaHidden={ariaHidden}
@@ -46,6 +70,7 @@ export function GroupIcon({
 }
 
 function DeferredGroupIcon(props: {
+  transport: GroupIconTransport;
   name: string;
   className?: string;
   ariaHidden?: boolean | "true" | "false";
@@ -82,39 +107,45 @@ function DeferredGroupIcon(props: {
 }
 
 function ResolvedGroupIcon({
+  transport,
   name,
   className,
   ariaHidden,
   ariaLabel,
 }: {
+  transport: GroupIconTransport;
   name: string;
   className?: string;
   ariaHidden?: boolean | "true" | "false";
   ariaLabel?: string;
 }) {
   const [icon, setIcon] = useState<IconSvgElement | null>(null);
-  const [failed, setFailed] = useState(false);
   const resolvedName = normalizeGroupIconName(name);
+
+  /**
+   * The transport is read through a ref, and the load below does not depend on
+   * it. React is free to hand out a new RPC client object on any render, and an
+   * effect that re-ran whenever it did would clear the icon and ask again on
+   * every one of them.
+   */
+  const transportRef = useRef(transport);
+  useEffect(() => {
+    transportRef.current = transport;
+  }, [transport]);
 
   useEffect(() => {
     let current = true;
     setIcon(null);
-    setFailed(false);
     if (resolvedName === null) return () => undefined;
-    void loadIcon(resolvedName).then(
-      (loaded) => {
-        if (current) setIcon(loaded);
-      },
-      () => {
-        if (current) setFailed(true);
-      },
-    );
+    void loadGroupIcon(transportRef.current, resolvedName).then((loaded) => {
+      if (current) setIcon(loaded);
+    });
     return () => {
       current = false;
     };
   }, [resolvedName]);
 
-  if (icon === null || failed) {
+  if (icon === null) {
     return <span aria-hidden className={cn("inline-block", className)} />;
   }
   return (
