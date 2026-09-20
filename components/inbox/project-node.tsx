@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   useBbNavigate,
@@ -8,26 +8,21 @@ import type { nestRpcContract } from "@/server";
 import { Modal } from "@/components/ui/modal";
 import { PageControls } from "@/components/inbox/page-controls";
 import {
+  RowMenu,
+  type RowMenuItem,
+} from "@/components/inbox/row-context-menu";
+import {
   hasMoreRows,
   nextPageSize,
   visibleRows,
 } from "@/lib/paging";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import {
-  Menu,
-  MenuCheckboxItem,
-  MenuItem,
-  MenuLabel,
-  MenuSeparator,
-  MenuSub,
-} from "@/components/ui/menu";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import {
   RowActionButton,
   RowActions,
-  RowMenuTrigger,
-  useRowReveal,
+  RowDisclosure,
 } from "@/components/inbox/row-actions";
 import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import { RollupJump } from "@/components/inbox/rollup-badge";
@@ -98,7 +93,6 @@ export function ProjectNode({
   const expanded = !viewState.isProjectCollapsed(node.project.id);
   const setExpanded = (open: boolean) =>
     viewState.setProjectCollapsed(node.project.id, !open);
-  const reveal = useRowReveal();
   const listId = useId();
   const attachListAutoAnimateRef = useListAutoAnimate<HTMLDivElement>();
   /**
@@ -160,8 +154,22 @@ export function ProjectNode({
   ];
 
   const projectRow = (
+    <ProjectRowMenu
+      projectId={node.project.id}
+      projectName={node.project.name}
+      projectPath={projectPath}
+      isPersonal={node.project.isPersonal}
+      groups={groups}
+      currentGroupId={currentGroupId}
+      expanded={expanded}
+      onToggleExpanded={() => setExpanded(!expanded)}
+      onNewThread={() =>
+        onNewThreadInProject(node.project.id, node.project.name)
+      }
+      onNewWorktree={() => onNewWorktree(node.project.id, node.project.name)}
+      onAssignGroup={(groupId) => onAssignGroup(node.project.id, groupId)}
+    >
     <div
-      {...reveal.handlers}
       className="group/project relative flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent/60"
     >
         <button
@@ -238,26 +246,17 @@ export function ProjectNode({
               onNewThreadInProject(node.project.id, node.project.name)
             }
           />
-          <ProjectMenu
-            projectId={node.project.id}
-            projectName={node.project.name}
-            projectPath={projectPath}
-            isPersonal={node.project.isPersonal}
-            groups={groups}
-            currentGroupId={currentGroupId}
+          {/* The arrow says the project is open, and is the way to change it
+              without hunting for the name button. */}
+          <RowDisclosure
+            label={`${expanded ? "Collapse" : "Expand"} ${node.project.name}`}
             expanded={expanded}
-            revealed={reveal.revealed}
-            onToggleExpanded={() => setExpanded(!expanded)}
-            onNewThread={() =>
-              onNewThreadInProject(node.project.id, node.project.name)
-            }
-            onNewWorktree={() =>
-              onNewWorktree(node.project.id, node.project.name)
-            }
-            onAssignGroup={(groupId) => onAssignGroup(node.project.id, groupId)}
+            controls={listId}
+            onToggle={() => setExpanded(!expanded)}
           />
         </RowActions>
     </div>
+    </ProjectRowMenu>
   );
 
   return (
@@ -455,7 +454,7 @@ function parseDraggedProject(raw: string): { projectId: string } | null {
   }
 }
 
-function ProjectMenu({
+function ProjectRowMenu({
   projectId,
   projectName,
   projectPath,
@@ -463,11 +462,11 @@ function ProjectMenu({
   groups,
   currentGroupId,
   expanded,
-  revealed,
   onToggleExpanded,
   onNewThread,
   onNewWorktree,
   onAssignGroup,
+  children,
 }: {
   projectId: string;
   projectName: string;
@@ -476,130 +475,133 @@ function ProjectMenu({
   groups: readonly ProjectGroup[];
   currentGroupId: string | null;
   expanded: boolean;
-  revealed: boolean;
   onToggleExpanded: () => void;
   onNewThread: () => void;
   onNewWorktree: () => void;
   onAssignGroup: (groupId: string | null) => void;
+  children: ReactNode;
 }) {
   const navigate = useBbNavigate();
   const [dialog, setDialog] = useState<"rename" | "remove" | null>(null);
+  const currentGroupName =
+    groups.find((group) => group.id === currentGroupId)?.name ?? "Ungrouped";
+
+  const items: RowMenuItem[] = [
+    { key: "new-thread", icon: "Add", label: "New thread", onSelect: onNewThread },
+  ];
+  if (!isPersonal) {
+    // The personal project has no checkout, and the worktree environment
+    // provider requires one (`requires: { gitCheckout: true }`) — so a worktree
+    // here is not a thing that can be created. Offering it would be a menu item
+    // whose only outcome is a composer with no worktree in it.
+    items.push({
+      key: "new-worktree",
+      icon: "GitBranch",
+      label: "New worktree…",
+      onSelect: onNewWorktree,
+    });
+  }
+  items.push(
+    {
+      key: "disclose",
+      icon: "ChevronDown",
+      label: expanded ? "Collapse" : "Expand",
+      separatorBefore: true,
+      onSelect: onToggleExpanded,
+    },
+    {
+      key: "rename",
+      icon: "Edit",
+      label: "Rename…",
+      onSelect: () => setDialog("rename"),
+    },
+    // Membership is a rarer decision than acting on the project itself, so it
+    // lives one level down instead of crowding this list — and it reports where
+    // the project is now, so the menu does not have to be opened to find out.
+    {
+      key: "move-to-group",
+      icon: "FolderTree",
+      label: "Move to group",
+      hint: currentGroupName,
+      choices: [
+        ...groups.map((group) => ({
+          key: group.id,
+          label: group.name,
+          checked: group.id === currentGroupId,
+          onSelect: () => onAssignGroup(group.id),
+        })),
+        {
+          key: "ungrouped",
+          label: "Ungrouped",
+          checked: currentGroupId === null,
+          onSelect: () => onAssignGroup(null),
+        },
+      ],
+    },
+    {
+      key: "settings",
+      icon: "Settings",
+      label: "Project settings",
+      onSelect: () => navigate.toProject(projectId),
+    },
+    {
+      key: "copy-path",
+      icon: "Copy",
+      label: "Copy path",
+      disabled: projectPath === null,
+      onSelect: () => {
+        if (projectPath !== null) {
+          void copyWithAnnouncement(projectPath, "Path");
+        }
+      },
+    },
+    {
+      key: "copy-id",
+      icon: "IdCard",
+      label: "Copy project ID",
+      onSelect: () => {
+        void copyWithAnnouncement(projectId, "Project ID");
+      },
+    },
+    {
+      key: "remove",
+      icon: "Trash",
+      label: "Remove project…",
+      separatorBefore: true,
+      destructive: true,
+      onSelect: () => setDialog("remove"),
+    },
+  );
 
   return (
-    <>
-      <Menu
-        label={`Actions for ${projectName}`}
-        trigger={
-          <RowMenuTrigger
-            label={`Actions for ${projectName}`}
-            chevron
-            expanded={expanded}
-            revealed={revealed}
-          />
-        }
-      >
-        <MenuItem
-          icon="Add"
-          label="New thread"
-          onSelect={onNewThread}
-        />
-        {/* The personal project has no checkout, and the worktree environment
-            provider requires one (`requires: { gitCheckout: true }`) — so a
-            worktree here is not a thing that can be created. Offering it would
-            be a menu item whose only outcome is a composer with no worktree in
-            it. */}
-        {isPersonal ? null : (
-          <MenuItem
-            icon="GitBranch"
-            label="New worktree…"
-            onSelect={onNewWorktree}
-          />
-        )}
-        <MenuSeparator />
-        <MenuItem
-          icon="ChevronDown"
-          label={expanded ? "Collapse" : "Expand"}
-          onSelect={onToggleExpanded}
-        />
-        <MenuItem
-          icon="Edit"
-          label="Rename…"
-          onSelect={() => setDialog("rename")}
-        />
-        {/* Membership is a rarer decision than acting on the project itself,
-            so it lives one level down instead of crowding this list. */}
-        <MenuSub icon="FolderTree" label="Move to group">
-          {groups.map((group) => (
-            <MenuCheckboxItem
-              key={group.id}
-              label={group.name}
-              checked={group.id === currentGroupId}
-              onSelect={() => onAssignGroup(group.id)}
+    <RowMenu
+      label={`Actions for ${projectName}`}
+      items={items}
+      dialog={
+        <>
+          {dialog === "rename" ? (
+            <RenameProjectDialog
+              projectId={projectId}
+              currentName={projectName}
+              onCancel={() => setDialog(null)}
+              onRenamed={() => setDialog(null)}
             />
-          ))}
-          <MenuCheckboxItem
-            label="Ungrouped"
-            checked={currentGroupId === null}
-            onSelect={() => onAssignGroup(null)}
-          />
-        </MenuSub>
-        <MenuItem
-          icon="Settings"
-          label="Project settings"
-          onSelect={() => navigate.toProject(projectId)}
-        />
-        <MenuItem
-          icon="Copy"
-          label="Copy path"
-          disabled={projectPath === null}
-          onSelect={() => {
-            if (projectPath !== null) {
-              void copyWithAnnouncement(projectPath, "Path");
-            }
-          }}
-        />
-        <MenuItem
-          icon="IdCard"
-          label="Copy project ID"
-          onSelect={() => {
-            void copyWithAnnouncement(projectId, "Project ID");
-          }}
-        />
-        <MenuSeparator />
-        <MenuItem
-          icon="Trash"
-          label="Remove project…"
-          destructive
-          onSelect={() => setDialog("remove")}
-        />
-      </Menu>
-
-      {dialog === "rename" ? (
-        <RenameProjectDialog
-          projectId={projectId}
-          currentName={projectName}
-          onCancel={() => setDialog(null)}
-          onRenamed={() => setDialog(null)}
-        />
-      ) : null}
-
-      {dialog === "remove" ? (
-        <RemoveProjectDialog
-          projectId={projectId}
-          projectName={projectName}
-          onCancel={() => setDialog(null)}
-          onRemoved={() => setDialog(null)}
-        />
-      ) : null}
-    </>
+          ) : null}
+          {dialog === "remove" ? (
+            <RemoveProjectDialog
+              projectId={projectId}
+              projectName={projectName}
+              onCancel={() => setDialog(null)}
+              onRemoved={() => setDialog(null)}
+            />
+          ) : null}
+        </>
+      }
+    >
+      {children}
+    </RowMenu>
   );
 }
-
-
-/**
- * Renaming writes bb's own project name, so this is a thin wrapper rather than
- * a second store: whatever bb shows everywhere else is what the row shows.
- */
 function RenameProjectDialog({
   projectId,
   currentName,

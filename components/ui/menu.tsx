@@ -26,11 +26,68 @@ export const Z_MENU = "z-50";
 export const Z_DIALOG = "z-[60]";
 export const Z_DIALOG_SUBMENU = "z-[70]";
 
-export const MENU_CONTENT_CLASS = cn(
-  Z_MENU,
-  "min-w-44 overflow-hidden rounded-md border border-border bg-popover py-1",
-  "text-popover-foreground shadow-lg",
+const MENU_SURFACE_CLASS =
+  "min-w-44 overflow-hidden rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-lg";
+
+export const MENU_CONTENT_CLASS = cn(Z_MENU, MENU_SURFACE_CLASS);
+
+/**
+ * A menu's own submenu. Radix portals it separately, so it needs a rung above
+ * the menu it came from — the menu closes as soon as a submenu item is picked,
+ * which is why sharing the dialog's rung is safe.
+ */
+export const MENU_SUBMENU_CLASS = cn(Z_DIALOG, MENU_SURFACE_CLASS);
+
+/**
+ * One menu row's own styling, shared by every surface that draws menu items.
+ *
+ * The dropdown and the right-click menu are different Radix primitives — an
+ * item cannot be rendered by the other's root — so this is the seam where their
+ * look is kept identical rather than a component they can both host.
+ */
+export const MENU_ITEM_CLASS = cn(
+  "flex cursor-default select-none items-center gap-2 px-2 py-1 text-xs outline-none",
+  "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground",
+  "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
 );
+
+/** The row that opens a submenu, in either menu primitive. */
+export const MENU_SUBTRIGGER_CLASS = cn(
+  MENU_ITEM_CLASS,
+  "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+);
+
+/**
+ * The inside of a menu item: an icon column that keeps labels aligned whether or
+ * not a row has an icon, then the label.
+ */
+export function MenuItemBody({
+  icon,
+  label,
+  destructive = false,
+}: {
+  icon?: Parameters<typeof Icon>[0]["name"];
+  label: string;
+  destructive?: boolean;
+}) {
+  return (
+    <>
+      {icon === undefined ? (
+        <span aria-hidden className="size-3.5 shrink-0" />
+      ) : (
+        <Icon
+          name={icon}
+          className={cn(
+            "size-3.5 shrink-0",
+            destructive ? "text-destructive" : "text-muted-foreground",
+          )}
+          aria-hidden
+        />
+      )}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </>
+  );
+}
 
 /** A menu that opens from a trigger and renders in the root stacking context. */
 export function Menu({
@@ -90,25 +147,11 @@ export function MenuItem({
       disabled={disabled}
       onSelect={onSelect}
       className={cn(
-        "flex cursor-default select-none items-center gap-2 px-2 py-1 text-xs outline-none",
-        "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground",
-        "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
+        MENU_ITEM_CLASS,
         destructive && "text-destructive",
       )}
     >
-      {icon === undefined ? (
-        <span aria-hidden className="size-3.5 shrink-0" />
-      ) : (
-        <Icon
-          name={icon}
-          className={cn(
-            "size-3.5 shrink-0",
-            destructive ? "text-destructive" : "text-muted-foreground",
-          )}
-          aria-hidden
-        />
-      )}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <MenuItemBody icon={icon} label={label} destructive={destructive} />
     </DropdownMenu.Item>
   );
 }
@@ -166,11 +209,7 @@ export function MenuSub({
   return (
     <DropdownMenu.Sub>
       <DropdownMenu.SubTrigger
-        className={cn(
-          "flex cursor-default select-none items-center gap-2 px-2 py-1 text-xs outline-none",
-          "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground",
-          "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
-        )}
+        className={MENU_SUBTRIGGER_CLASS}
       >
         {icon === undefined ? (
           <span aria-hidden className="size-3.5 shrink-0" />
@@ -199,7 +238,7 @@ export function MenuSub({
           aria-label={label}
           sideOffset={2}
           collisionPadding={8}
-          className={MENU_CONTENT_CLASS}
+          className={MENU_SUBMENU_CLASS}
         >
           {children}
         </DropdownMenu.SubContent>

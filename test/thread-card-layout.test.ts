@@ -22,7 +22,7 @@ describe("compact root card contract", () => {
     assert.match(rootSource, /data-nest-root-metadata/);
     assert.match(
       rootSource,
-      /data-nest-root-metadata=""[\s\S]*className="flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap leading-none"/,
+      /data-nest-root-metadata=""[\s\S]*className="flex h-4 min-w-0 items-center gap-1 whitespace-nowrap leading-none"/,
     );
     assert.match(rootSource, /relative flex min-w-0 items-center gap-x-2/);
     // The skeleton is two rows by default and one row under the one-line
@@ -31,8 +31,15 @@ describe("compact root card contract", () => {
     assert.match(rootSource, /min-h-10/);
     assert.match(rootSource, /preferences\.rowLayout === "one-line"/);
     assert.match(rootSource, /preferences\.rowLayout === "two-line"/);
-    assert.match(rootSource, /bg-sidebar-accent\/35 py-1/);
-    assert.doesNotMatch(rootSource, /bg-sidebar-accent\/35 p-1/);
+    // One card, no box around it. The row is a tint that moves with hover and
+    // with being open, the way bb's own list draws it; an outlined family box
+    // on top of a row that also tints read as two nested panels.
+    assert.match(
+      rootSource,
+      /rounded-md px-2\.5 transition-colors duration-150 ease-out motion-reduce:transition-none/,
+    );
+    assert.doesNotMatch(rootSource, /rounded-xl border/);
+    assert.doesNotMatch(rootSource, /bg-sidebar-accent\/35/);
     assert.doesNotMatch(rootSource, /Done/);
   });
 
@@ -65,9 +72,15 @@ describe("compact root card contract", () => {
   it("truncates long title and branch text without reserving hover actions", () => {
     // The title truncates at one size in both layouts, and the branch carries
     // its own size rather than inheriting the row's (which has none).
-    assert.match(rootSource, /"min-w-0 flex-1 truncate text-xs text-foreground"/);
-    assert.match(rootSource, /text-xs/);
-    assert.doesNotMatch(rootSource, /text-sm/);
+    //
+    // `text-sm` is a deliberate reversal: the card used to hold every row at
+    // `text-xs` to stay denser than bb's own list, and that is now the wrong
+    // call — the card is bb's borderless tint, so there is no longer a box
+    // around the title to justify a smaller one.
+    assert.match(rootSource, /"min-w-0 flex-1 truncate text-sm text-foreground"/);
+    // The child row stays a size down, which is what carries the hierarchy
+    // once the family box is gone.
+    assert.match(childSource, /"min-w-0 flex-1 truncate text-xs text-foreground"/);
     assert.match(
       threadCardSource,
       /gap-1 truncate text-2xs text-muted-foreground/,
@@ -75,13 +88,16 @@ describe("compact root card contract", () => {
     assert.match(threadCardSource, /truncate text-2xs text-muted-foreground/);
     assert.match(threadCardSource, /className="truncate font-mono"/);
     assert.match(threadCardSource, /\{branch\}/);
-    assert.match(
-      rootSource,
-      /relative z-10 flex shrink-0 items-center/,
+    // One cluster, right aligned, and only the two places a line can end: the
+    // title line (one-line layout, or details in the hover card) and the branch
+    // line. The second column beside the two lines is gone.
+    assert.match(threadCardSource, /relative z-10 ml-auto flex shrink-0 items-center/);
+    assert.doesNotMatch(threadCardSource, /flex-col gap-0\.5/);
+    assert.equal(
+      threadCardSource.match(/<RootTrailingCluster interactive=\{!selectionMode\}>/g)
+        ?.length,
+      2,
     );
-    assert.doesNotMatch(threadCardSource, /ROW_MENU_OVERLAY_CLASS/);
-    assert.match(rootSource, /flex-col gap-0\.5/);
-    assert.match(rootSource, /flex-row gap-1\.5/);
     assert.match(rootSource, /showRowDetails && reveal\.revealed/);
   });
 

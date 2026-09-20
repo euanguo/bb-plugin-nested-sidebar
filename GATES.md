@@ -1,8 +1,8 @@
 # Gates: BB Sidebar's motion, paging and working duration
 
-OWNS: hooks/use-list-auto-animate.ts, hooks/use-working-since.ts, lib/paging.ts, components/inbox/page-controls.tsx, lib/working-since.ts, lib/preferences.ts, styles.d.ts, server.ts, components/inbox/{thread-inbox,thread-card,slim-row,status-slot,row-actions,row-metadata,family-status,provider-glyph,rollup-badge,status-glyph,group-section,project-node,tree-rows,bulk-delete-dialog,remove-worktree-dialog}.tsx, components/inbox/settle-button.css, package.json, package-lock.json, tsconfig.json, test/**, README.md, THIRD_PARTY_NOTICES.md, PLAN.md, GATES.md
+OWNS: hooks/use-list-auto-animate.ts, hooks/use-working-since.ts, lib/inbox.ts, lib/paging.ts, components/inbox/page-controls.tsx, components/inbox/row-context-menu.tsx, lib/working-since.ts, lib/preferences.ts, styles.d.ts, server.ts, components/inbox/{thread-inbox,thread-card,slim-row,status-slot,row-actions,row-metadata,family-status,provider-glyph,rollup-badge,status-glyph,group-section,project-node,tree-rows,bulk-delete-dialog,remove-worktree-dialog}.tsx, components/inbox/settle-button.css, package.json, package-lock.json, tsconfig.json, test/**, README.md, THIRD_PARTY_NOTICES.md, PLAN.md, GATES.md
 
-Scope: give Nest the motion, the disclosure animation, the paging on every long list, and the working duration that BB Sidebar gets right — the disclosure being one upstream does not have — without changing the tree's structure, any persisted store, or any RPC; the only server change is one declarative page-size setting.
+Scope: give Nest the motion, the disclosure animation, the paging on every long list, the row shape, the one right-click menu and the working duration that BB Sidebar gets right — the disclosure being one upstream does not have — without changing the tree's structure, any persisted store, or any RPC; the only server change is one declarative page-size setting.
 
 - [x] G1: the list-transition hook is upstream's, minus the drag machinery Nest cannot need, and every row container animates
   CHECK: node --test --experimental-strip-types test/list-auto-animate-contract.test.ts
@@ -25,30 +25,65 @@ Scope: give Nest the motion, the disclosure animation, the paging on every long 
   EVIDENCE: 5/5 pass. Pins that every disclosure gates its rows on `{expanded ?` and that **no** file imports a `Collapse` (the height-animated wrapper this replaced); that each watched container carries the auto-animate ref *and* its `aria-controls` id, and is not itself behind an `{expanded ?` — a container inside the conditional would unmount with its own children and leave auto-animate nothing to animate; that the connector line and padding are gated on `expanded` in the worktree list and the child-agent list, since a border on a zero-height list paints a stub; that both placeholders render only when open; and a negative over all five files for `transition-\[height\]`, `scrollHeight` and `requestAnimationFrame`, so the deleted mechanism cannot creep back.
   NOTE: this supersedes a height-animated `Collapse` (with its own pure state machine, `lib/collapse.ts`) that was written, tested and then removed. The two cannot coexist: a smooth box height needs the leaving rows to stay in flow so the box can measure them, while auto-animate's row exit needs them out of it — its `remove` re-inserts the node as `position: absolute`, `z-index: 100`, at its old coordinates. The height version also had a real bug that the source-text suite could not see — deciding to animate an opening *after* reading the body's DOM node, which an opening body does not have yet, so every expansion snapped open while every collapse animated. `PLAN.md` keeps the research behind both, including the Material tokens the first version used.
 
-- [x] G5: Nest honours reduced motion, which it previously did nowhere
+- [x] G5: a child's own children are drawn, at any depth
+  CHECK: node --test --experimental-strip-types test/family-branches.test.ts
+  EXPECT: the flattened family rebuilt as the tree it forms
+  EVIDENCE: 8/8 pass. `familyBranches` hangs each thread off the nearest ancestor that is being drawn, from a family whose `children` is deliberately flat. Covered: a child under its parent, siblings oldest-first, a child whose parent the filter dropped being **promoted** rather than lost, a parent that sorts *after* its child in the flat list (which is what the two-pass create-then-link is for — linking as we walked promoted the child), a thread whose parent is the root sitting at the top level, an empty family, and a thread naming itself as its own parent never being hung off itself. `branchHoldsThread` answers for the thread and for anything under it, which is what keeps a row leading to the open thread drawn whatever the disclosure setting says.
+
+- [x] G6: the row is bb's shape, drawn in Nest's palette
+  CHECK: node --test --experimental-strip-types test/row-shape-contract.test.ts
+  EXPECT: the card is a tint, the children are a chip, the flags are words
+  EVIDENCE: 8/8 pass. Pins the card as one `rounded-md px-2.5 transition-colors` tint with no `rounded-xl` anywhere and the active/hover pair bb uses; the child status flag's `text-2xs font-semibold uppercase tracking-[0.08em]`; and — the deliberate divergence — that every ground is derived from the palette (`bg-current/10` over the flag's own colour, a `color-mix` for the waiting row) with a `doesNotMatch` over `bg-amber-*`/`bg-sky-*`/`text-amber-*`/`text-sky-*`, because bb hard-codes those hues and a custom palette would be ignored. Also the branch line's cluster (`relative z-10 ml-auto`, ending the branch line, present in exactly the two places a line can end, with the added-and-removed menu first so the glyphs never shift), **Thread details' third answer** — `In the row, no branch`, the default — and that the branch line's condition and the cluster's placement are one derived fact (`branchLineRenders`) rather than two expressions that could disagree, the children chip (`rounded-full bg-current/10`, `DiscCluster compact`, the count, the rotating chevron), the recursion (`branches.map`, `branches={branch.children}`, the `ml-3` nested list with its 1.5px connector), that a nested list opens from the same stored override a family uses, and that the header and the row share one `DiscCluster`.
+  NOTE: the shape is ported from BB Sidebar `src/ThreadCard.tsx` and `src/ChildThreadList.tsx` at the installed tag; the palette divergence is Nest's, not a gap in the port. Two of the assertions this replaces were pre-existing decisions now reversed — the card was a `rounded-xl border` box and every root title was `text-xs` — and both are recorded as reversals rather than deleted.
+
+- [x] G7: a row auto-animate abandons is swept away
+  CHECK: node --test --experimental-strip-types test/list-auto-animate-contract.test.ts
+  EXPECT: a stuck exit cannot outlive the animation it belongs to
+  EVIDENCE: 8/8 pass. Pins the sweep (`sweepAbandonedExits`), its narrow test (all three of `remove`'s exit styles **and** auto-animate's own delete marker), that a row still animating is left alone, that it runs off the hook's own `MutationObserver` and is disconnected on cleanup, and that the issue is cited in the source. Two assertions key the sweep to the **installed library** rather than to memory: `const DEL = "__aa_del"` and the three `styleReset` values are read out of `node_modules/@formkit/auto-animate/index.mjs`, so an upgrade that renames the marker fails loudly instead of silently disabling the sweep.
+  NOTE: this exists because a user reported an overlap they could not describe. It is upstream's open bug — formkit/auto-animate#231, "Deleted elements are not removed from the document but instead overlay existing elements" — not a defect in the disclosure itself, and it only became visible because the disclosure now removes up to a family's worth of rows at once.
+
+- [x] G8: every level opens the same menu, and only by right-click
+  CHECK: node --test --experimental-strip-types test/row-affordances.test.ts
+  EXPECT: one menu surface, no per-row trigger
+  EVIDENCE: 12/12 pass. Pins that all four levels — group, project, worktree, thread — render the shared `<RowMenu>` (the thread rows through `ThreadRowMenu`, which is the same surface with the thread items already wired), that **none** of them renders a trigger of its own (`doesNotMatch(/<RowMenuTrigger|<Menu\b/)`), that `row-actions.tsx` no longer exports the trigger at all, and that the parked shelf opens the same menu. Also that the three aggregate levels describe their actions the same way (`const items: RowMenuItem[] = [` with keyed, iconned items), that no level hand-rolls a `<MenuSeparator>`, and that the thread set is `RowMenuItem` itself. The old test this replaces asserted the opposite — "gives every level a revealed menu trigger" — and the reversal is recorded in `PLAN.md` rather than deleted.
+  NOTE: `useRowReveal` is pinned to a **single** call site now. It existed to reveal the trigger, and with the trigger gone the group, project and worktree rows were re-rendering on every pointer enter and leave to feed a value nothing read; the thread card still reads it, because its park buttons replace the age under the pointer.
+
+- [x] G9: every row that opens shows an arrow, and the worktree row has the card's shape
+  CHECK: node --test --experimental-strip-types test/row-affordances.test.ts
+  EXPECT: a visible, never-swapped disclosure; a branch line with the controls on it
+  EVIDENCE: 15/15 pass. Pins `RowDisclosure` (always visible, `rotate-180` with `expanded`, `aria-controls` on its own list) and that the group, project and worktree rows all render it against `listId`. Pins the worktree row's branch line: the branch icon by kind (`FolderGit` for a worktree, `GitBranch` otherwise), the mono branch name next to it, and `{workspaceRowActions}` appearing **exactly twice** — once on the branch line, once on the single line — so the controls cannot end up in neither place. Also that the kind icon is not repeated above a branch line, and that a thread card's branch line picks its icon from the same rule.
+  NOTE: this replaces a trigger that was both the menu and the disclosure. Two follow-ups the user caught and this closes: the arrow disappearing under the pointer, and the worktree row having been left out when the thread card got its branch line. The worktree row needed the card's structure for it — a full-bleed absolute button as the click/drag/keyboard target, with the label beside it rather than inside it.
+
+- [x] G10: a row that hosts a full-bleed target is positioned itself
+  CHECK: node --test --experimental-strip-types test/row-affordances.test.ts
+  EXPECT: five rows, each `relative`, each hosting an `absolute inset-0` target
+  EVIDENCE: 16/16 pass, and the case was checked against the bug rather than only against the fix: removing `relative` from the worktree row makes it fail with "worktree row is positioned", and restoring it makes it pass. It covers the thread card, a child row, a worktree row, a project row and a parked row.
+  NOTE: this is the light that showed the bug — the user reported that hovering one row opened a *different* row's hover card. `position: absolute` resolves against the nearest **positioned** ancestor, so an unpositioned row stretched its own click target across a far-away ancestor's whole box, and took the hover (and the click, and the drag) for rows it does not belong to. The other absolute-positioned children in the tree were checked at the same time: they either have a positioned host or resolve to the row's own card, which is where they were meant to land anyway.
+
+- [x] G11: Nest honours reduced motion, which it previously did nowhere
   CHECK: rg -c 'motion-reduce:' components/inbox/*.tsx
   EXPECT: the discipline is present in the tree
   EVIDENCE: 32 `motion-reduce:` utilities across `components/`, where a grep for the same token returned **zero** before this change; 8 `motion-safe:` in the settle button's transforms. Pinned by `test/settle-button-contract.test.ts`: `animate-spin motion-reduce:animate-none` and `animate-shine-icon motion-reduce:animate-none` on the status glyph, `animate-pulse motion-reduce:animate-none` on the family dot and icon, and the `duration-150 ease-out … motion-reduce:transition-none` strings on the card, the slim row and both row-action controls. Nest's `useRowReveal` stays React state rather than CSS `group-hover` — rows nest, and an ancestor group would light up while the pointer is on a child.
 
-- [x] G6: a working thread reports how long it has been working
+- [x] G12: a working thread reports how long it has been working
   CHECK: node --test --experimental-strip-types test/working-since.test.ts
   EXPECT: the working clock keeps upstream's semantics
   EVIDENCE: 12/12 pass. Upstream's seven cases came over unchanged (`statusWithDuration` after a minute and across buckets, bare under a minute and with no stamp, a stamp ahead of the quantized clock treated as fresh, the first-work stamp, the kept stamp, the same-map identity, the cleared stamp, and background activity counting as work), plus four for the storage round trip under `bb.nest.working-since.v1` through an injected fake — including malformed JSON, non-numeric entries, and a store that throws on write.
 
-- [x] G7: the plugin typechecks and builds
+- [x] G13: the plugin typechecks and builds
   CHECK: npm run typecheck && npm run build
   EXPECT: motion build passed
   EVIDENCE: both passed on 2026-09-20 (`dist/server.js`, `dist/app.js`, `dist/app.css`, `dist/host.js` written). The build reports the pre-existing SDK pin notice (0.4.87 pinned, 0.4.106 running), which is unchanged by this work.
 
-- [x] G8: the complete test suite passes
+- [x] G14: the complete test suite passes
   CHECK: npm test
   EXPECT: motion test suite passed
-  EVIDENCE: 530 tests, 125 suites, 0 failures on 2026-09-20, up from 467/113 — the new cases are the seven new files plus two in `test/preferences.test.ts`, and no existing assertion needed a change except `test/distribution-contract.test.ts`, which gained `@formkit/auto-animate` in `REQUIRED_RUNTIME_DEPENDENCIES` because bb does not shim it.
+  EVIDENCE: 556 tests, 128 suites, 0 failures on 2026-09-20, up from 467/113 — the new cases are the twelve new files plus three in `test/preferences.test.ts`, and no existing assertion needed a change except `test/distribution-contract.test.ts`, which gained `@formkit/auto-animate` in `REQUIRED_RUNTIME_DEPENDENCIES` because bb does not shim it.
 
-- [x] G9: the shipped bundle carries the sparkle stylesheet and the transition engine
+- [x] G15: the shipped bundle carries the sparkle stylesheet and the transition engine
   CHECK: grep -c 'nest-settle-sparkle' dist/app.css; grep -c 'prefers-reduced-motion: reduce' dist/app.js
   EXPECT: all in the artifacts
   EVIDENCE: on 2026-09-20 `dist/app.css` contains the `nest-settle-sparkle` rule (10 occurrences across the base rule, the five `:nth-of-type` overrides and the keyframes) and two `prefers-reduced-motion:no-preference` blocks (the sparkle gate and the `motion-safe:` variants) plus one `reduce` block (the `motion-reduce:` variants) — a source-text test cannot see `dist/`, so this was checked by hand. `dist/app.js` carries auto-animate's engine: its `prefers-reduced-motion: reduce` literal appears exactly once and no other dependency in the tree defines that string, which is what distinguishes a real bundle from a tree-shaken import.
 
-- [x] G10: the plugin reloads clean in the running app
+- [x] G16: the plugin reloads clean in the running app
   EVIDENCE: on 2026-09-20 `bb plugin reload nested-sidebar` reported the plugin running with no errors, `bb plugin logs nested-sidebar` was empty, and its handler count climbed 122 → 141 → 188 → 219 → 249 → 263 across six checks — the sidebar is mounted and calling the plugin, so the new providers, hooks and components render. **Not verified:** the visual result in the sidebar itself (the sparkle on hover, the collapse curves, a Load more button, and `Working · 5m` on a live thread) was not driven in the UI; that check is still owed. Nothing has been settled on this machine, so the settled shelf is not drawn at all yet — which is why the shelf paging has no on-screen evidence here, though the project lists do (Personal holds 17 threads and `tea-app-im` 26).

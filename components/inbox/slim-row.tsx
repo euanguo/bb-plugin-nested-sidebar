@@ -4,7 +4,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { RowContextMenu } from "@/components/inbox/row-context-menu";
+import { ThreadRowMenu } from "@/components/inbox/thread-menu-items";
 import { StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeWakeLabel } from "@/lib/lifecycle";
@@ -37,7 +37,7 @@ export function SlimRow({
   const title = threadDisplayTitle(thread);
 
   return (
-    <RowContextMenu thread={thread} onUnarchive={onRestore}>
+    <ThreadRowMenu thread={thread} onUnarchive={onRestore}>
       <li className="list-none">
         <div
           className={cn(
@@ -104,6 +104,6 @@ export function SlimRow({
           </button>
         </div>
       </li>
-    </RowContextMenu>
+    </ThreadRowMenu>
   );
 }

@@ -24,15 +24,21 @@ describe("copying what a row points at", () => {
 
   it("offers the path, the branch, and the environment id on a workspace row", () => {
     for (const label of ["Copy path", "Copy branch", "Copy environment ID"]) {
-      assert.match(treeRows, new RegExp(`label="${label}"`), label);
+      assert.match(treeRows, new RegExp(`label: "${label}"`), label);
     }
     // Each one is disabled rather than wrong when its value is unknown.
-    assert.match(treeRows, /label="Copy path"\n\s+disabled=\{path === null\}/);
-    assert.match(treeRows, /label="Copy branch"\n\s+disabled=\{branch === null\}/);
+    assert.match(
+      treeRows,
+      /label: "Copy path",\n\s+separatorBefore: true,\n\s+disabled: path === null,/,
+    );
+    assert.match(treeRows, /label: "Copy branch",\n\s+disabled: branch === null,/);
   });
 
   it("offers the project's own path on the project row", () => {
-    assert.match(projectNode, /label="Copy path"\n\s+disabled=\{projectPath === null\}/);
+    assert.match(
+      projectNode,
+      /label: "Copy path",\n\s+disabled: projectPath === null,/,
+    );
     assert.match(projectNode, /const projectPath = handlers\.paths\.projects/);
   });
 

@@ -340,18 +340,30 @@ answers the question you actually have: how long since you last had to look.
 
 ### Cards
 
-Root rows always use exactly two compact lines. The first has a distinct semantic
-icon, truncated title, and elapsed time. The second has a truncated branch and a
-non-wrapping cluster with a readable status badge, parent-only PR metadata, and
-child/provider controls. **Failed**, **Needs you**, **Working**, **Unread**,
-**Inactive**, and seven-day **Stale** states have separate shapes, labels,
-tooltips, and customizable colors. Inactive and stale work recede; Nest never
-calls ordinary idle work Done. A Working family keeps the actual activity type
-visible: runtime, workflow, background agent, command, plan, and goal each use a
-different animated shape and customizable color. PR ticks and other PR icons use
-their semantic color as a tinted background, so a ready tick is visibly green.
-Hovering a quiet root swaps its elapsed time for the two park buttons without
-adding a row.
+Root rows are a **card, not a box**: one rounded tint at `rounded-md px-2.5 py-2`
+that moves with hover and with being open, the way bb's own list draws a row. There
+is no outline around a family and no second panel inside it. The title leads at
+`text-sm` and owns the full width of its line.
+
+Under it, one line carries the branch: the **branch icon and name on the left,
+truncating**, and at its right end everything that is not a word — the age or the
+park buttons, the pin, the PR number, the children chip, the provider mark, and the
+row menu. bb's card ends its branch line the same way; Nest used to keep those in a
+second column beside the two lines, which spent width on a vertical run of glyphs
+and squeezed the title into what was left. The menu is the only one of them that is
+added and removed, so it goes first in the cluster — a right-aligned cluster would
+shift every glyph to its left the moment it appeared. In the **One line** row layout,
+or with details in the hover card, there is no branch line and the same cluster ends
+the title line instead.
+
+**Failed**, **Needs you**, **Working**, **Unread**, **Inactive**, and seven-day
+**Stale** states have separate shapes, labels, tooltips, and customizable colors.
+Inactive and stale work recede; Nest never calls ordinary idle work Done. A Working
+family keeps the actual activity type visible: runtime, workflow, background agent,
+command, plan, and goal each use a different animated shape and customizable color.
+PR ticks and other PR icons use their semantic color as a tinted background, so a
+ready tick is visibly green. Hovering a quiet root swaps its elapsed time for the
+two park buttons without adding a row.
 
 ### A working thread can never be parked
 
@@ -373,10 +385,60 @@ status help. Provider names are announced by the child disclosure without adding
 nested tab stops. A parent chip in the thread header still gives a focused child
 a direct route back up.
 
+**A child can have children, and the tree draws them.** A child row with its own
+child threads carries a `count + chevron` control of its own, opening a list
+indented one more step, and so on to any depth. The nesting is rebuilt from each
+thread's real parent rather than from the flat list the order and the rollup run
+on, and a filter that hides a middle thread promotes its children rather than
+losing them. A row leading to the thread you have open always draws its children,
+whatever the setting says, so the open chat is never the row held back.
+
+A child row says its two verdicts **in words**: an uppercase **Needs you** or
+**Working** flag, and a waiting row gets a ground of its own so it is findable in
+a long tree without reading a label.
+
+### Thread details
+
+**Where a row's non-essential fields live**, and there are three answers:
+
+| | On the row |
+| --- | --- |
+| **In the row, no branch** *(default)* | provider, age, controls, status, PR, child chip — **not** the branch or the machine |
+| **In the row** | the same, plus the branch or machine |
+| **On hover** | only the title and the controls; everything else moves to the hover card |
+
+The default leaves the location out because **a row shares its branch with every
+other row under the same workspace, and the worktree row above already names it** —
+repeating it on each thread spends the width the title wants. A child row follows
+the same rule, since a child runs where its parent does; the `Show thread branch or
+host` switch is still there for anyone who wants the location off in the other two
+modes as well.
+
+### The worktree row
+
+A worktree row is the thread card's shape one level up: **the alias or branch on
+its own line, then a branch line** carrying the branch's icon and name on the left
+and the row's controls at its right end — the status rollup, the `+` that starts a
+thread here, and the arrow. A row with a branch line *is* a worktree, so the
+branch icon says so and the kind icon is not repeated above it. With the
+`Alias + branch` label mode there is no second line and the controls end the only
+one.
+
+The branch icon tells a worktree's branch from a thread on the project's own
+branch: a folder that is a branch (`FolderGit`) versus a plain one
+(`GitBranch`). The same two icons mark a thread card's branch line.
+
 ### The rest
 
 - Collapsible project and agent groups.
-- Right-click for the full thread menu: open in split, copy thread link, copy
+- **The arrow on a group, project or worktree row says whether it is open**, and
+  clicking it toggles the row. It used to live inside the menu trigger, which
+  swapped it for three dots under the pointer — so the one moment you were
+  deciding whether to click it was the one moment it was not there.
+- **Right-click any row for its menu** — a group, a project, a worktree, a thread
+  family, a child thread, or a row on a parked shelf. They are one menu with one
+  vocabulary: same item shape, same dividers, same icons, same `Shift+F10` and
+  context-menu key. A thread's menu is open in split, copy thread link, copy
   thread ID, mark read/unread, pin, rename, archive, delete.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
 - Status-icon reordering is separate from BB's card-to-split drag target and
@@ -389,9 +451,9 @@ The tree's shape is persisted per browser, not just the route bb restores:
 
 - The selected group tab, the thread filter, and whether the Snoozed and
   Settled shelves are open.
-- Which groups, projects, worktrees, and thread families you collapsed or
-  expanded by hand. Anything you have not touched still follows its default,
-  so a preference change reaches it.
+- Which groups, projects, worktrees, thread families, and nested child lists you
+  collapsed or expanded by hand. Anything you have not touched still follows its
+  default, so a preference change reaches it.
 
 Opening a thread also reopens the path back to it. If the restored route points
 at a thread inside a collapsed group, project, worktree, or family — or under a
@@ -437,7 +499,8 @@ and what you collapsed or expanded — stays per browser.
 Nest Settings offers Default, High contrast, Colorblind-friendly, and Custom
 semantic palettes. Every status, live activity type, and PR role is previewed;
 custom values accept only six-digit hex colors and otherwise fall back safely.
-You can also choose row density, the worktree row label, default child
+You can also choose row density, **where a row's details live** (see *Thread
+details* above), the worktree row label, default child
 expansion, provider marks, parent-only PR metadata, relative-time visibility,
 and the **page size for long lists** (five rows by default, 1–100).
 

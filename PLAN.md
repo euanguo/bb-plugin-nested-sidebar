@@ -163,6 +163,114 @@ Two smaller mismatches shaped the rest:
    it stops, carried across a reload, and holding its identity when nothing
    changed so the minute tick does not re-render every row. `StatusOrTime` then
    reads `Working · 5m`, and the root row's text slot uses it.
+8. **The row's shape is bb's; its palette is Nest's.** The card stopped being a box
+   — one `rounded-md px-2.5 py-2` tint that moves with hover and with being open,
+   no outline around the family and no second panel inside it — the title went to
+   `text-sm`, a card's children are folded into a chip (their dots, count,
+   providers, chevron, on a ground tinted by the subtree's state), and a child row
+   says its verdict in words with an uppercase **Needs you** / **Working** flag
+   over a ground of its own. All of that is bb-sidebar's shape
+   (`src/ThreadCard.tsx`, `src/ChildThreadList.tsx`), with one deliberate
+   divergence: **bb hard-codes Tailwind hues and Nest's palette is the user's to
+   choose**, so every ground here is `bg-current/10` over the semantic status
+   colour, or a `color-mix` of it — the way `FamilyStatusBadge` already drew one.
+   Copying bb's literals would have left a user who recoloured "Stalled / waiting"
+   with an amber row under a purple flag.
+   The card's second line is bb's third: **the branch icon and name on the left,
+   truncating, and at the right end everything that is not a word** — the age or
+   the park buttons, the pin, the PR number, the children chip, the provider mark,
+   and the row menu. Nest used to keep those in a column beside the two lines
+   (`flex-col gap-0.5`), which spent width on a vertical run of glyphs and squeezed
+   the title into what was left; the title now owns its line outright.
+   `rowDetails` gained a third answer for this — **"In the row, no branch"**, the
+   new default — which keeps the provider, the age, the controls and the status on
+   the row and leaves out the branch and the machine, because a row shares its
+   branch with every other row under the same workspace and the worktree row above
+   already names it. It applies to child rows too: a child runs where its parent
+   does. The four places that used to spell out "one line or details on hover" now
+   all read one derived fact (`branchLineRenders`), so the cluster can never be
+   left with neither a branch line to end nor a title line to ride — or a branch
+   line with nothing in it. The menu is
+   the only child of that cluster that is added and removed, so it goes **first**:
+   the cluster is right aligned, and a menu appended to the end would shift every
+   glyph to its left the moment it appeared on hover.
+
+9. **A child can have children.** `lib/inbox.ts`'s `familyBranches` rebuilds the
+   tree from each thread's `parentThreadId` for drawing, where ordering, selection
+   and the rollup want the flat `family.children` they already had. Any depth
+   works, a filter that hides a middle thread promotes its children rather than
+   losing them — the rule `visibleRootOf` already applies one level up — and a row
+   leading to the open thread always draws its children, which is the disclosure's
+   version of "never hold back the open thread". bb draws exactly three levels from
+   a flat list; this is Nest's own, at any depth.
+10. **One menu, opened by right-click, at every level.** A group, a project, a
+   worktree, a thread family, a child thread and a parked row all open the *same*
+   surface (`RowMenu`), with the same item shape, the same dividers, the same
+   icons, and the same keyboard route — `Shift+F10` and the context-menu key come
+   from the Radix primitive, so they work wherever a right-click does. The items
+   are described by the caller, so an action is written once: a thread's set lives
+   in `useThreadMenuActions` and is reached through `ThreadRowMenu`, which is why
+   a family, a child row and a shelf row cannot disagree about what a thread can
+   do. Nest used to put a hover-revealed `⋯` on each row instead — one trigger,
+   one hover state and one menu per level. That is a deliberate reversal, and two
+   things fell out of it:
+   - **The dropdown primitive is gone from the tree.** `components/ui/menu.tsx`
+     keeps it for the surfaces that open from a button in a dialog (the view
+     menu), and it now owns the item styling both primitives share
+     (`MENU_ITEM_CLASS`, `MenuItemBody`, `MENU_SUBMENU_CLASS`) so a dropdown item
+     and a context-menu item cannot drift.
+   - **Hover state stopped being computed for three levels.** `useRowReveal`
+     existed to reveal the trigger; with the trigger gone the group, project and
+     worktree rows were running a React re-render on every pointer enter and leave
+     to feed a value nothing read. It survives only on the thread card, where the
+     park buttons still replace the age under the pointer.
+   Nesting is why the primitive matters: a right-click on a thread bubbles to the
+   project it sits in, and Radix's inner trigger calls `preventDefault()`, which
+   is what stops the outer project menu opening underneath it.
+
+11. **The arrow is its own control, and the worktree row got the card's shape.**
+   Two things fell out of the menu unification and the user caught both:
+   - **The disclosure came back.** The `⋯` trigger drew a chevron at rest and
+     swapped it for three dots under the pointer, so it was also the only thing
+     that said a row was open. `RowDisclosure` is that arrow as its own control:
+     always visible, never swapped, rotating with `expanded`, wired to its list
+     with `aria-controls`, and on the group, project and worktree rows.
+   - **The worktree row now has the layout the thread card got.** The alias owns
+     its line and the branch line carries the branch's icon and name on the left
+     with the row's controls (rollup, `+`, arrow) at its right end. A row with a
+     branch line is a worktree, so the branch icon says so — `FolderGit`, added to
+     the icon map — and the kind icon is not repeated above it. A thread card's
+     branch line uses the same two icons, from the same rule, so the mark means
+     one thing at both levels.
+   To put controls on the branch line the row needed the thread card's structure:
+   a full-bleed absolute button as the click, drag and keyboard target, with the
+   label drawn beside it rather than inside it — a control cannot live inside a
+   button. The full-bleed button has no text, so it carries its own `aria-label`.
+
+12. **A full-bleed target needs its own row to be positioned.** Putting the
+   worktree row's controls on its branch line meant giving the row the thread
+   card's structure: an `absolute inset-0` button as its click, drag and keyboard
+   target. Its host was the one row in the tree that had never needed `relative`,
+   and `position: absolute` resolves against the nearest *positioned* ancestor
+   rather than the parent — so the button stretched across whatever was above it
+   and became one giant hit target owned by one row. The light that showed it was
+   the user noticing that hovering one row opened **another row's hover card**;
+   the same button also meant a click toggled that row and a drag grabbed it. The
+   fix is one word, and the affordances test now pins it: every row that hosts a
+   full-bleed target must declare `relative` itself.
+
+13. **A row auto-animate abandons is swept away.** Its `remove` pulls a leaving row
+   out of flow and waits for the animation's `finish` to run `cleanUp`, which is
+   what finally takes the element out of the document. When that event never
+   arrives the row stays for good, floating over the list it left — the overlap a
+   user sees as an expand lands on the heels of a collapse. `useListAutoAnimate`
+   now watches its own container and deletes a direct child that still carries all
+   three exit styles **and** auto-animate's delete marker (`__aa_del`, which only
+   `cleanUp` clears) once nothing is animating on it. Narrow on purpose: a false
+   positive would delete a row React still owns. Upstream, open:
+   [formkit/auto-animate#231](https://github.com/formkit/auto-animate/issues/231)
+   — "Deleted elements are not removed from the document but instead overlay
+   existing elements".
 
 ## Changes
 
@@ -175,15 +283,21 @@ Two smaller mismatches shaped the rest:
 | `lib/working-since.ts` | New. Ported `reconcileWorkingSince` / `statusWithDuration` / read / write, with `threadIsWorking` and Nest's injectable storage. |
 | `hooks/use-working-since.ts` | New. `WorkingSinceContext` and the hook. |
 | `styles.d.ts` | New. `declare module "*.css"`. |
-| `components/inbox/thread-card.tsx` | `ParkButton` gains `sparkle`; the settle call site sets it; the stylesheet is imported; the root text slot uses `StatusOrTime`; `ThreadStatusLabel` is gone; the child list stays mounted with its connector line gated on the disclosure; timing and reduced-motion on six class strings. |
+| `components/inbox/thread-card.tsx` | `ParkButton` gains `sparkle`; the settle call site sets it; the stylesheet is imported; the root text slot uses `StatusOrTime`; `ThreadStatusLabel` is gone; the child list stays mounted with its connector line gated on the disclosure; the card is one borderless tint at `text-sm`; the children chip and the child status flag; the child row recurses. |
+| `components/inbox/disc.tsx` | `Disc` gains `compact`; `DiscCluster` moves here from the header chip so the header and the row share one cluster. |
+| `lib/inbox.ts` | `familyBranches` and `branchHoldsThread`: the family as the tree it forms, for drawing. |
+| `hooks/use-list-auto-animate.ts` | The exit sweep for formkit/auto-animate#231, with the marker it keys off pinned against the installed library. |
 | `components/inbox/thread-inbox.tsx` | Tree wrapper and `ParkedShelf` get the animate ref; the settled shelf is paged; `settledPages` state; `searching` in the tree handlers; the `WorkingSinceContext` provider. |
 | `components/inbox/status-slot.tsx` | `ThreadStatus` gains `showsDuration`; `StatusOrTime` appends the elapsed bucket. |
-| `server.ts`, `lib/preferences.ts` | The **Rows per page** setting (`type: "number"`, default 5, bounded 1–100 on read). |
+| `server.ts`, `lib/preferences.ts`, `components/settings/nest-settings.tsx` | The **Rows per page** setting (`type: "number"`, default 5, bounded 1–100 on read), and **Thread details** gaining its third answer, `In the row, no branch`, as the default. |
+| `components/inbox/row-context-menu.tsx` | Rewritten from the thread-only right-click menu into `RowMenu` + `RowMenuItem`: the one menu every level in the tree opens. |
+| `components/inbox/thread-menu-items.tsx` | `ThreadMenuItem` is now `RowMenuItem`, and `ThreadRowMenu` wires the thread items to the shared surface for the card, a child row and a shelf row. |
+| `components/ui/menu.tsx` | The item styling and the submenu surface are exported, so the dropdown and the context menu draw their rows from one place. |
 | `components/inbox/group-section.tsx`, `project-node.tsx`, `tree-rows.tsx` | An animate ref on each list they own, kept mounted while its rows come and go; paging on the project's and the worktree's thread lists; the connector line and padding only while open. |
 | `components/inbox/slim-row.tsx`, `row-actions.tsx`, `row-metadata.tsx`, `family-status.tsx`, `provider-glyph.tsx`, `rollup-badge.tsx`, `status-glyph.tsx`, `bulk-delete-dialog.tsx`, `remove-worktree-dialog.tsx` | Timing and reduced-motion on transitions, spinners and the shine. |
 | `package.json`, `package-lock.json` | `@formkit/auto-animate@^0.9.0` as a runtime dependency. |
 | `tsconfig.json` | `styles.d.ts` added to `include`. |
-| `test/disclosure-contract.test.ts`, `test/paging.test.ts`, `test/paging-contract.test.ts`, `test/working-since.test.ts`, `test/settle-button-contract.test.ts`, `test/list-auto-animate-contract.test.ts`, `test/collapse-contract.test.ts` | New. |
+| `test/family-branches.test.ts`, `test/row-shape-contract.test.ts`, `test/disclosure-contract.test.ts`, `test/paging.test.ts`, `test/paging-contract.test.ts`, `test/working-since.test.ts`, `test/settle-button-contract.test.ts`, `test/list-auto-animate-contract.test.ts` | New. |
 | `test/distribution-contract.test.ts` | The new dependency joins the unshimmed runtime set. |
 | `THIRD_PARTY_NOTICES.md`, `README.md` | The port and its licence chain. |
 
@@ -265,9 +379,34 @@ Two smaller mismatches shaped the rest:
   approximates one in pure CSS, but the timings here are auto-animate's own
   (225ms easing-in on entry, 150ms easing-out on exit) and adopting a spring
   would mean replacing the library's animation, not retuning a constant.
+- **The exit sweep reads a private field.** `__aa_del` is auto-animate's own
+  marker and could be renamed by an upgrade, which would silently disable the
+  sweep. A test pins the name against the installed library so the failure is
+  loud instead. The three exit styles it also checks are pinned the same way.
+- **The sweep only runs after a mutation.** A row abandoned by a removal that
+  nothing else follows stays until the next change to that list. It cannot be
+  shorter than this without polling, and every abandoned row this was written for
+  is created *by* a mutation, so that is the case it covers.
+- **The menu is the only way in.** Removing the `⋯` triggers means a row's
+  actions are reachable by right-click, `Shift+F10`, or the context-menu key — and
+  by nothing else. A pointer without a right button (a touch device) has the
+  long-press the primitive handles, and there is no visible control that says a
+  row has a menu at all. That is the trade the user asked for; the frequent action
+  on a project or a worktree row keeps its own button, which is also what makes
+  the menu discoverable at those two levels.
+- **Nesting changes what a collapsed family hides.** A child's own list follows
+  the same preference and the same stored override as a family's, so
+  `Default child expansion: Collapsed` now hides a level that used to be drawn
+  flat. A row leading to the open thread draws its children regardless.
+- **The nested override shares the family's stored field.** "Expanded by hand" is
+  one map keyed by thread id, so a nested list persists exactly like a family —
+  and the field is still named for families. Renaming it would drop the stored
+  values of a persisted view state, which is not worth a tidier key.
 - **Cost.** Seven auto-animate observers and one `localStorage` write per new
   stamp. Negligible, but the minute tick's identity guard in
-  `reconcileWorkingSince` is what keeps it from costing a render per row.
+  `reconcileWorkingSince` is what keeps it from costing a render per row. The exit
+  sweep adds one timer per child-list mutation, each doing one pass over that
+  container's direct children.
 
 ## Verification
 

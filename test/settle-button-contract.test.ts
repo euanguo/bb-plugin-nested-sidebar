@@ -87,10 +87,10 @@ describe("the settle button's sparkle", () => {
 
 describe("the sidebar's motion discipline", () => {
   const tier1: Array<[string, string]> = [
-    ["../components/inbox/thread-card.tsx", "rounded-xl border transition-colors duration-150 ease-out motion-reduce:transition-none"],
+    ["../components/inbox/thread-card.tsx", "transition-colors duration-150 ease-out motion-reduce:transition-none"],
     ["../components/inbox/slim-row.tsx", "transition-opacity duration-150 ease-out motion-reduce:transition-none"],
     ["../components/inbox/row-actions.tsx", "transition-colors duration-150 ease-out hover:text-foreground motion-reduce:transition-none"],
-    ["../components/inbox/row-actions.tsx", "size-3 transition-transform duration-150 ease-out motion-reduce:transition-none"],
+    ["../components/inbox/row-actions.tsx", "text-muted-foreground transition-colors duration-150 ease-out hover:text-foreground motion-reduce:transition-none"],
   ];
 
   for (const [relative, expected] of tier1) {
