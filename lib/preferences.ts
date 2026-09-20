@@ -1,4 +1,5 @@
 import type { WorkspaceLabelMode } from "./workspace.ts";
+import { resolvePageSize } from "./paging.ts";
 
 export const PALETTE_PRESET_OPTIONS = [
   "Default",
@@ -90,6 +91,11 @@ export interface NestPreferences {
    * sidebar asks for it and whether the answer is drawn.
    */
   autoProjectIcons: boolean;
+  /**
+   * How many rows one page holds, everywhere the sidebar pages: what a list
+   * draws at first, and what each **Load more** adds.
+   */
+  pageSize: number;
 }
 
 export const CUSTOM_COLOR_DEFAULTS = {
@@ -258,6 +264,7 @@ export function resolveNestPreferences(
     showChildCount: readBoolean(values?.showChildCount, true),
     showThreadLocation: readBoolean(values?.showThreadLocation, true),
     autoProjectIcons: readBoolean(values?.autoProjectIcons, true),
+    pageSize: resolvePageSize(values?.pageSize),
   };
 }
 

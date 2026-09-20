@@ -4,11 +4,18 @@ import {
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
+import { PageControls } from "@/components/inbox/page-controls";
+import {
+  hasMoreRows,
+  nextPageSize,
+  visibleRows,
+} from "@/lib/paging";
 import { cn } from "@/lib/utils";
 import { ThreadCard } from "@/components/inbox/thread-card";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import { useNestViewState } from "@/components/inbox/view-state-context";
+import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
 import { workspaceExpansionKeys } from "@/lib/view-state";
 import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import {
@@ -54,6 +61,12 @@ function workspaceKindLabel(kind: WorkspaceKind): string {
 export interface TreeRowHandlers {
   readonly providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
   readonly activeThreadId: string | null;
+  /**
+   * A search reveals every match rather than a page of them: the results are
+   * what the user asked for, and holding some behind a Load more the search box
+   * cannot explain is the one case where a limit works against the list.
+   */
+  readonly searching: boolean;
   readonly forceExpanded: boolean;
   readonly lifecycle: LifecycleApi;
   readonly onNavigate: () => void;
@@ -184,10 +197,31 @@ export function WorkspaceGroup({
   const canRemove = node.ref.environmentId !== null && node.ref.kind === "git-worktree";
   const reveal = useRowReveal();
   const listId = useId();
+  const attachListAutoAnimateRef = useListAutoAnimate<HTMLUListElement>();
   const renameInput = useRef<HTMLInputElement>(null);
   const threadCount = node.families.reduce(
     (total, family) => total + 1 + family.children.length,
     0,
+  );
+  /**
+   * How many pages of this worktree's threads are drawn. Counted in pages so a
+   * change to the page size re-scales what is already on screen.
+   */
+  const [familyPages, setFamilyPages] = useState(1);
+  const familyLimit =
+    (handlers.searching ? Number.MAX_SAFE_INTEGER : familyPages) *
+    handlers.preferences.pageSize;
+  const visibleFamilies = visibleRows(
+    node.families,
+    familyLimit,
+    handlers.activeThreadId,
+    (family) => family.root.id,
+  );
+  const familyHasMore = hasMoreRows(node.families.length, familyLimit);
+  const familyNextPage = nextPageSize(
+    node.families.length,
+    familyLimit,
+    handlers.preferences.pageSize,
   );
 
   const label = node.ref.label;
@@ -499,27 +533,54 @@ export function WorkspaceGroup({
           onClose={() => setRemoving(false)}
         />
       ) : null}
-      {expanded ? (
-        node.families.length === 0 ? (
-          // A workspace outlives the conversations in it, so an empty one is a
-          // real row — and an empty list under it would draw the disclosure's
-          // own border around nothing.
+      {/*
+        The list stays mounted and its rows come and go inside it, so opening
+        and closing a worktree plays the same per-row entry and exit a loaded
+        page does. Its connector line and padding are dropped while it is
+        closed: an empty list is zero tall, and a border and a padding-bottom
+        on zero height would leave a stub of the border hanging under the row.
+      */}
+      {node.families.length === 0 ? (
+        // A workspace outlives the conversations in it, so an empty one is a
+        // real row. It has no rows to animate, so it is simply here or not.
+        expanded ? (
           <p id={listId} className={EMPTY_WORKSPACE_CLASS}>
             No threads yet
           </p>
-        ) : (
-          <ul id={listId} className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3">
-            {node.families.map((family) => (
-              <FamilyRow
-                key={family.root.id}
-                family={family}
-                projectId={projectId}
-                handlers={handlers}
-              />
-            ))}
+        ) : null
+      ) : (
+        <>
+          <ul
+            id={listId}
+            ref={attachListAutoAnimateRef}
+            className={cn(
+              "ml-4 flex flex-col gap-0.5",
+              expanded && "border-l border-sidebar-border pl-3",
+            )}
+          >
+            {expanded
+              ? visibleFamilies.map((family) => (
+                  <FamilyRow
+                    key={family.root.id}
+                    family={family}
+                    projectId={projectId}
+                    handlers={handlers}
+                  />
+                ))
+              : null}
           </ul>
-        )
-      ) : null}
+          {expanded && !handlers.searching && (familyHasMore || familyPages > 1) ? (
+            <PageControls
+              hasMore={familyHasMore}
+              remaining={familyNextPage}
+              page={familyPages}
+              onLoadMore={() => setFamilyPages((pages) => pages + 1)}
+              onShowLess={() => setFamilyPages(1)}
+              className="ml-4"
+            />
+          ) : null}
+        </>
+      )}
     </section>
   );
 }
@@ -603,8 +664,9 @@ export function FlatFamilies({
   projectId: string;
   handlers: TreeRowHandlers;
 }) {
+  const attachListAutoAnimateRef = useListAutoAnimate<HTMLUListElement>();
   return (
-    <ul className="flex flex-col gap-0.5">
+    <ul ref={attachListAutoAnimateRef} className="flex flex-col gap-0.5">
       {families.map((family) => (
         <FamilyRow
           key={family.root.id}

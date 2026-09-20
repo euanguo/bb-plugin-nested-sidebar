@@ -21,12 +21,18 @@ import { cn } from "@/lib/utils";
 import { GroupSection } from "@/components/inbox/group-section";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { SlimRow } from "@/components/inbox/slim-row";
+import { PageControls } from "@/components/inbox/page-controls";
 import { ViewMenu } from "@/components/inbox/view-menu";
 import {
   BulkDeleteDialog,
   type BulkDeletePreviewView,
 } from "@/components/inbox/bulk-delete-dialog";
 import { useLifecycle } from "@/hooks/use-lifecycle";
+import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
+import {
+  useWorkingSince,
+  WorkingSinceContext,
+} from "@/hooks/use-working-since";
 import { useSettledThreads } from "@/hooks/use-settled-threads";
 import { useProjectColors } from "@/hooks/use-project-colors";
 import { useProjectIcons } from "@/hooks/use-project-icons";
@@ -34,6 +40,11 @@ import {
   mergeSettledThreads,
   pendingSettledCount,
 } from "@/lib/settled-threads";
+import {
+  hasMoreRows,
+  nextPageSize,
+  visibleRows,
+} from "@/lib/paging";
 import { TRAILING_GLYPH_BOX_CLASS } from "@/components/inbox/status-slot";
 import {
   buildProjectGroups,
@@ -200,6 +211,17 @@ export function ThreadInbox({
     return () => clearInterval(timer);
   }, []);
   const now = nowMinute * 60_000;
+  const attachTreeAutoAnimateRef = useListAutoAnimate<HTMLDivElement>();
+  /**
+   * How many pages of settled rows the shelf draws. Counted in pages rather
+   * than rows so changing the page size in Settings re-scales what is already
+   * on screen, instead of leaving a limit that now means something else.
+   *
+   * Only settled pages: the shelf is where a day's settles pile up, while a
+   * snooze is a timer the user set and expects to see the end of.
+   */
+  const [settledPages, setSettledPages] = useState(1);
+  const settledLimit = settledPages * preferences.pageSize;
 
   // Settling archives a thread in bb, so the host list alone cannot draw the
   // settled shelf. Merge the plugin's bounded archived read back in first.
@@ -209,6 +231,11 @@ export function ThreadInbox({
     () => mergeSettledThreads(hostThreads, settledThreads),
     [hostThreads, settledThreads],
   );
+  /**
+   * Fed the merged list rather than the drawn one: a filter or a search must
+   * not be able to clear a stamp, because the thread work continues either way.
+   */
+  const workingSince = useWorkingSince(threads);
   /**
    * A thread this plugin just spawned, waiting to be opened.
    *
@@ -1437,6 +1464,7 @@ export function ThreadInbox({
     paths,
     activeThreadId,
     forceExpanded: searching,
+    searching,
     lifecycle,
     onNavigate,
     now,
@@ -1466,6 +1494,7 @@ export function ThreadInbox({
   };
 
   return (
+    <WorkingSinceContext.Provider value={workingSince}>
     <NestViewStateProvider value={viewStateApi}>
     <div
       ref={inboxRef}
@@ -1568,7 +1597,10 @@ export function ThreadInbox({
             >
               <Icon
                 name={bulkBusy ? "Loading" : "Trash"}
-                className={cn("size-3.5", bulkBusy && "animate-spin")}
+                className={cn(
+                  "size-3.5",
+                  bulkBusy && "animate-spin motion-reduce:animate-none",
+                )}
                 aria-hidden
               />
             </button>
@@ -1652,7 +1684,12 @@ export function ThreadInbox({
                 : "No threads match this filter"}
           </p>
         ) : (
-          <>
+          // A classless block, not `flex flex-col`: the group sections carry
+          // `mb-1` and a shelf header carries `mt-3`, and as block siblings
+          // those margins collapse to the larger of the two. In a flex column
+          // they would add up instead, so the tree would gain a step between
+          // every pair of rows.
+          <div ref={attachTreeAutoAnimateRef}>
             {treeNodes.map((node) => (
               <GroupSection
                 key={node.groupId ?? "__ungrouped__"}
@@ -1700,10 +1737,16 @@ export function ThreadInbox({
                   lifecycle={lifecycle}
                   onNavigate={onNavigate}
                   now={now}
+                  settledLimit={settledLimit}
+                  settledPageSize={preferences.pageSize}
+                  searching={searching}
+                  page={settledPages}
+                  onLoadMore={() => setSettledPages((pages) => pages + 1)}
+                  onShowLess={() => setSettledPages(1)}
                 />
               </>
             ) : null}
-          </>
+          </div>
         )}
       </div>
 
@@ -1733,6 +1776,7 @@ export function ThreadInbox({
 
     </div>
     </NestViewStateProvider>
+    </WorkingSinceContext.Provider>
   );
 }
 
@@ -1747,6 +1791,12 @@ function ParkedShelf({
   lifecycle,
   onNavigate,
   now,
+  settledLimit,
+  settledPageSize,
+  searching,
+  onLoadMore,
+  onShowLess,
+  page,
 }: {
   label: string;
   threads: readonly PluginSidebarThread[];
@@ -1758,8 +1808,44 @@ function ParkedShelf({
   lifecycle: ReturnType<typeof useLifecycle>;
   onNavigate: () => void;
   now: number;
+  /** How many rows this shelf draws. Absent means all of them. */
+  settledLimit?: number;
+  /** How many rows one page holds, for the button's own label. */
+  settledPageSize?: number;
+  /**
+   * A search draws every match. Its results are what the user asked for, and
+   * holding some of them behind a Load more the search box cannot explain is
+   * the one case where the limit works against the shelf.
+   */
+  searching?: boolean;
+  /** How many pages are drawn, so the shelf can offer to put them away. */
+  page?: number;
+  onLoadMore?: () => void;
+  onShowLess?: () => void;
 }) {
+  // Before the early return: a shelf that draws nothing still runs its hooks.
+  const attachListAutoAnimateRef = useListAutoAnimate<HTMLUListElement>();
   const count = threads.length + pendingCount;
+  /**
+   * The limit counts the rows this shelf holds, never `count`: a row still
+   * being read is not one "Load more" could reveal, and the header already
+   * counts it.
+   */
+  const pages = page ?? 1;
+  const paged = shelf === "settled" && !searching;
+  const limit = paged ? (settledLimit ?? threads.length) : threads.length;
+  const visible = visibleRows(
+    threads,
+    limit,
+    activeThreadId,
+    (thread) => thread.id,
+  );
+  const hasMore = hasMoreRows(threads.length, limit);
+  const nextPageCount = nextPageSize(
+    threads.length,
+    limit,
+    settledPageSize ?? limit,
+  );
   if (count === 0) return null;
   return (
     <section aria-label={label}>
@@ -1777,31 +1863,46 @@ function ParkedShelf({
           <Icon
             name="ChevronDown"
             className={cn(
-              "size-3 text-muted-foreground/70 transition-transform",
+              "size-3 text-muted-foreground/70 transition-transform duration-150 ease-out motion-reduce:transition-none",
               expanded && "rotate-180",
             )}
           />
         </span>
       </button>
-      {expanded ? (
-        <ul className="flex flex-col gap-px">
-          {threads.map((thread) => (
-            <SlimRow
-              key={thread.id}
-              thread={thread}
-              isActive={thread.id === activeThreadId}
-              shelf={shelf}
-              wakeAt={lifecycle.wakeAtFor(thread)}
-              now={now}
-              onNavigate={onNavigate}
-              onRestore={() =>
-                shelf === "snoozed"
-                  ? lifecycle.unsnooze(thread.id)
-                  : lifecycle.unsettle(thread.id)
-              }
-            />
-          ))}
-        </ul>
+      {/*
+        The list stays mounted and its rows come and go inside it, so opening
+        and closing the shelf plays the same per-row entry and exit that
+        Load more does — one mechanism, not two.
+      */}
+      <ul ref={attachListAutoAnimateRef} className="flex flex-col gap-px">
+        {expanded
+          ? visible.map((thread) => (
+              <SlimRow
+                key={thread.id}
+                thread={thread}
+                isActive={thread.id === activeThreadId}
+                shelf={shelf}
+                wakeAt={lifecycle.wakeAtFor(thread)}
+                now={now}
+                onNavigate={onNavigate}
+                onRestore={() =>
+                  shelf === "snoozed"
+                    ? lifecycle.unsnooze(thread.id)
+                    : lifecycle.unsettle(thread.id)
+                }
+              />
+            ))
+          : null}
+      </ul>
+      {expanded && paged && onLoadMore && onShowLess && (hasMore || pages > 1) ? (
+        <PageControls
+          hasMore={hasMore}
+          remaining={nextPageCount}
+          page={pages}
+          onLoadMore={onLoadMore}
+          onShowLess={onShowLess}
+          className="ml-2.5"
+        />
       ) : null}
     </section>
   );

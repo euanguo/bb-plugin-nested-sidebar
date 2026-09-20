@@ -29,7 +29,7 @@ export function StatusDot({
       title={help}
       className={cn(
         "inline-block size-1.5 shrink-0 rounded-full",
-        status.animated && "animate-pulse",
+        status.animated && "animate-pulse motion-reduce:animate-none",
         className,
       )}
       style={{
@@ -115,7 +115,7 @@ export function FamilyStatusIcon({
           aria-hidden
           className={cn(
             "size-1.5 rounded-full",
-            status.animated && "animate-pulse",
+            status.animated && "animate-pulse motion-reduce:animate-none",
           )}
           style={{
             backgroundColor: familyStatusColor(status),
@@ -129,13 +129,15 @@ export function FamilyStatusIcon({
           className={cn(
             "size-3.5",
             status.animated &&
-              (status.icon === "Loading" ? "animate-spin" : "animate-pulse"),
+              (status.icon === "Loading"
+                ? "animate-spin motion-reduce:animate-none"
+                : "animate-pulse motion-reduce:animate-none"),
           )}
         />
       )}
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-0 z-40 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/family-status:translate-y-0 group-hover/family-status:opacity-100 group-focus/family-status:translate-y-0 group-focus/family-status:opacity-100"
+        className="pointer-events-none absolute bottom-full left-0 z-40 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-left text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all duration-150 ease-out motion-reduce:transition-none group-hover/family-status:translate-y-0 group-hover/family-status:opacity-100 group-focus/family-status:translate-y-0 group-focus/family-status:opacity-100"
       >
         <span className="block font-semibold">{status.label}</span>
         <span className="mt-0.5 block whitespace-normal text-muted-foreground">

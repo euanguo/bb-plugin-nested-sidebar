@@ -82,7 +82,7 @@ export function RollupJump({
       className={cn(
         "flex shrink-0 items-center gap-1 rounded px-1 py-0.5",
         "text-2xs text-muted-foreground",
-        "transition-[filter] hover:brightness-125",
+        "transition-[filter] duration-150 ease-out hover:brightness-125 motion-reduce:transition-none",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
       )}
     >

@@ -6,6 +6,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
 import { Modal } from "@/components/ui/modal";
+import { PageControls } from "@/components/inbox/page-controls";
+import {
+  hasMoreRows,
+  nextPageSize,
+  visibleRows,
+} from "@/lib/paging";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +32,7 @@ import {
 import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import { useNestViewState } from "@/components/inbox/view-state-context";
+import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
 import {
   FlatFamilies,
   WorkspaceGroup,
@@ -93,6 +100,16 @@ export function ProjectNode({
     viewState.setProjectCollapsed(node.project.id, !open);
   const reveal = useRowReveal();
   const listId = useId();
+  const attachListAutoAnimateRef = useListAutoAnimate<HTMLDivElement>();
+  /**
+   * How many pages of this project's own thread list are drawn.
+   *
+   * Counted in pages rather than rows so a change to the page size re-scales
+   * what is already on screen. It lives here rather than in the tree so that
+   * collapsing and reopening the project keeps the place, and it is unused when
+   * the project draws a workspace level, where each worktree pages its own.
+   */
+  const [flatPages, setFlatPages] = useState(1);
   const dragStarted = useRef(false);
   const badge = projectBadgePresentation(
     node.project.id,
@@ -103,6 +120,28 @@ export function ProjectNode({
     0,
   );
   const projectPath = handlers.paths.projects[node.project.id]?.sourcePath ?? null;
+
+  /**
+   * The project's own thread list, paged. A project that draws a workspace
+   * level pages per worktree instead — each of those is a list of its own, and
+   * a single limit spanning them would have to drop a worktree row or draw it
+   * claiming to be empty.
+   */
+  const flatLimit =
+    (handlers.searching ? Number.MAX_SAFE_INTEGER : flatPages) *
+    handlers.preferences.pageSize;
+  const visibleFamilies = visibleRows(
+    node.families,
+    flatLimit,
+    handlers.activeThreadId,
+    (family) => family.root.id,
+  );
+  const flatHasMore = hasMoreRows(node.families.length, flatLimit);
+  const flatNextPage = nextPageSize(
+    node.families.length,
+    flatLimit,
+    handlers.preferences.pageSize,
+  );
 
   const workspaceHandlers: TreeRowHandlers = {
     ...handlers,
@@ -284,33 +323,60 @@ export function ProjectNode({
       }}
     >
       <InfoCard trigger={projectRow} label={node.project.name} rows={infoRows} />
-      {expanded ? (
-        node.showWorkspaces ? (
-          <div id={listId} className="mt-0.5 flex flex-col gap-0.5">
-            {node.workspaces.map((workspace) => (
-              <WorkspaceGroup
-                key={workspace.ref.key}
-                node={workspace}
-                projectId={node.project.id}
-                projectName={node.project.name}
-                handlers={workspaceHandlers}
-              />
-            ))}
-          </div>
-        ) : node.families.length === 0 ? (
+      {/*
+        Every container here stays mounted and its rows come and go inside it,
+        so that opening and closing the project plays the very same per-row
+        entry and exit a loaded page does. The inset rides on the container
+        rather than on its first child: a child's top margin would collapse
+        through it, and a collapsed project would keep a gap it no longer earns.
+      */}
+      {node.showWorkspaces ? (
+        <div
+          id={listId}
+          ref={attachListAutoAnimateRef}
+          className={cn(
+            "flex flex-col gap-0.5",
+            expanded && "mt-0.5",
+          )}
+        >
+          {expanded
+            ? node.workspaces.map((workspace) => (
+                <WorkspaceGroup
+                  key={workspace.ref.key}
+                  node={workspace}
+                  projectId={node.project.id}
+                  projectName={node.project.name}
+                  handlers={workspaceHandlers}
+                />
+              ))
+            : null}
+        </div>
+      ) : node.families.length === 0 ? (
+        // A placeholder has no rows to animate, so it is simply here or not.
+        expanded ? (
           <p id={listId} className={EMPTY_PROJECT_CLASS}>
             No threads yet
           </p>
-        ) : (
-          <div id={listId} className="mt-0.5">
-            <FlatFamilies
-              families={node.families}
-              projectId={node.project.id}
-              handlers={workspaceHandlers}
+        ) : null
+      ) : (
+        <div id={listId} className={cn(expanded && "mt-0.5")}>
+          <FlatFamilies
+            families={expanded ? visibleFamilies : []}
+            projectId={node.project.id}
+            handlers={workspaceHandlers}
+          />
+          {expanded && !handlers.searching && (flatHasMore || flatPages > 1) ? (
+            <PageControls
+              hasMore={flatHasMore}
+              remaining={flatNextPage}
+              page={flatPages}
+              onLoadMore={() => setFlatPages((pages) => pages + 1)}
+              onShowLess={() => setFlatPages(1)}
+              className="ml-4"
             />
-          </div>
-        )
-      ) : null}
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }
