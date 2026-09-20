@@ -105,6 +105,25 @@ describe("the row shape borrowed from BB Sidebar", () => {
     assert.match(disc, /compact \? "size-2\.5" : "size-3\.5"/);
   });
 
+  /**
+   * The dot's own box has to be a flex box, not a plain span.
+   *
+   * A block box around an `inline-block` is a *line box*: the disc sits on the
+   * text baseline and the font's descent hangs below it, so a 10px disc measures
+   * inside a 14px holder and reads 1.5px above the middle of the chip it is in.
+   * That is what the user's eye caught and what the running app measured —
+   * `discOffBy: -1.5` before, `0` after — and it came over with the port, because
+   * upstream writes the same bare span around its dot.
+   */
+  it("centres the dot in its own box, not on the baseline", () => {
+    assert.equal(
+      disc.match(/className=\{cn\("flex shrink-0 items-center"/g)?.length,
+      2,
+      "both the discs and the 'and more' disc",
+    );
+    assert.doesNotMatch(disc, /className=\{cn\(index > 0 && overlap\)\}/);
+  });
+
   it("draws one chip shape, whether the threads under it are folded or open", () => {
     // A folded project and an opened family are the same kind of thing, so they
     // wear the same ground, carry the same cluster and take the same tint. They

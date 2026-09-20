@@ -64,12 +64,20 @@ export function DiscCluster({
   return (
     <span className="flex shrink-0 items-center" aria-hidden>
       {shown.map((thread, index) => (
-        <span key={thread.id} className={cn(index > 0 && overlap)}>
+        // `flex` on the holder, not a plain span: a block box around an
+        // `inline-block` is a *line box*, so the disc sits on the text baseline
+        // and the font's descent hangs below it — a 10px disc in a 14px holder,
+        // reading 1.5px above the middle of the chip it is in. Measured in the
+        // running app, and inherited from upstream, which writes the same span.
+        <span
+          key={thread.id}
+          className={cn("flex shrink-0 items-center", index > 0 && overlap)}
+        >
           <Disc thread={thread} compact={compact} />
         </span>
       ))}
       {threads.length > max ? (
-        <span className={overlap}>
+        <span className={cn("flex shrink-0 items-center", overlap)}>
           <Disc thread={null} compact={compact} />
         </span>
       ) : null}
