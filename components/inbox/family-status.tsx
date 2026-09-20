@@ -3,6 +3,19 @@ import type { DragEventHandler, KeyboardEventHandler } from "react";
 import type { FamilyStatusPresentation } from "@/lib/family-status";
 import { cn } from "@/lib/utils";
 
+/**
+ * The ground a state chip wears, wherever a row shows "threads under here": the
+ * children chip on a thread, the rollup on a folded project, worktree or group.
+ *
+ * One constant rather than two class strings that happen to agree, because the
+ * whole point of the shape is that a folded branch and an opened one are the
+ * same kind of thing — they differ in what they carry and in what clicking them
+ * does, never in what they look like. The tint comes from `familyStatusColor`
+ * over this ground (`bg-current/10`), so a recoloured palette moves both.
+ */
+export const STATE_CHIP_CLASS =
+  "flex h-5 shrink-0 items-center gap-1 rounded-full bg-current/10 px-1.5 text-2xs font-medium";
+
 export function familyStatusColor(status: FamilyStatusPresentation): string {
   return `var(--nest-status-${status.colorRole})`;
 }

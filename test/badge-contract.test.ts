@@ -28,6 +28,7 @@ function rollup(overrides: Partial<StatusRollup> = {}): StatusRollup {
     working: 1,
     needsYou: 0,
     unread: 0,
+    discIds: [],
     leadThreadId: "thr_1",
     ...overrides,
   };
@@ -90,11 +91,37 @@ describe("rollupCounts", () => {
  * been promising all along.
  */
 describe("RollupBadge", () => {
-  it("draws one dot and one count per signal", () => {
-    assert.match(badge, /rollupCounts\(rollup\)/);
-    assert.match(badge, /counts\.map\(\(entry\) =>/);
-    assert.match(badge, /<StatusDot status=\{familyStatusPresentation\(entry\.kind\)\} \/>/);
-    assert.match(badge, /<span className="tabular-nums">\{entry\.count\}<\/span>/);
+  it("wears the same chip a thread with children wears", () => {
+    // One shape for one question, at every level that has threads under it: the
+    // threads named by colour, how many, on a ground tinted by the state. The
+    // predecessor drew a dot and a count per signal instead, which made a
+    // project's five threads and a thread's three children read as different
+    // kinds of thing.
+    assert.match(badge, /cn\(STATE_CHIP_CLASS, className\)/);
+    assert.match(badge, /style=\{\{ color: familyStatusColor\(presentation\) \}\}/);
+    assert.match(badge, /<DiscCluster/);
+    assert.match(
+      badge,
+      /threads=\{rollup\.discIds\.map\(\(id\) => \(\{ id \}\)\)\}/,
+    );
+    // The number is the size of the reason to open the row, not the size of the
+    // branch: a project with twenty-eight threads of which two are moving says 2.
+    assert.match(badge, /const signals = rollupSignalCount\(rollup\);/);
+    assert.match(badge, /<span className="tabular-nums">\{signals\}<\/span>/);
+    assert.doesNotMatch(badge, /tabular-nums">\{rollup\.total\}/);
+    // And no per-signal dots left over: the breakdown moved to the label.
+    assert.doesNotMatch(badge, /StatusDot|rollupCounts/);
+  });
+
+  it("keeps the breakdown, in the label rather than on the row", () => {
+    // The counts are what `●2 ●1` said at a glance; the chip's ground says the
+    // dominant state and the title says the rest.
+    assert.match(badge, /rollupSummary\(rollup\)/);
+    assert.equal(
+      badge.match(/title=\{label\}/g)?.length,
+      1,
+      "the summary is the title",
+    );
   });
 
   it("still draws nothing for a quiet subtree", () => {
@@ -118,9 +145,13 @@ describe("RollupBadge", () => {
    * survives only as the fallback for a rollup with no counts to name.
    */
   it("does not say the dominant state twice", () => {
+    // Both numbers and the breakdown, in one string: "2 of 9 threads: 1 working
+    // · 1 unread". The summary's first entry *is* the dominant state, so the
+    // label is never prefixed to it — that is what made a folded row read out as
+    // "Working · 1 working" in the running app.
     assert.match(
       badge,
-      /const label = summary === "" \? presentation\.label : summary;/,
+      /const label =\n\s+summary === ""\n\s+\? presentation\.label\n\s+: `\$\{signals\} of \$\{rollup\.total\} threads: \$\{summary\}`;/,
     );
     assert.doesNotMatch(badge, /title=\{`\$\{presentation\.label\}/);
   });
