@@ -9,36 +9,147 @@ const groupRow = await read("group-section.tsx");
 const projectRow = await read("project-node.tsx");
 const treeRows = await read("tree-rows.tsx");
 const card = await read("thread-card.tsx");
+const slimRow = await read("slim-row.tsx");
 const threadMenu = await read("thread-menu-items.tsx");
-const contextMenu = await read("row-context-menu.tsx");
+const rowMenu = await read("row-context-menu.tsx");
+const rowActions = await read("row-actions.tsx");
 const tabs = await read("group-tabs.tsx");
 const groupManager = await read("group-manager-dialog.tsx");
 
 /**
  * The four levels have to behave the same way, because they are one tree. These
- * pin the shared shape — hover reveals the menu, one frequent action keeps its
- * own button, everything else is inside the menu — rather than any single
- * level's wording.
+ * pin the shared shape — one menu, opened by right-clicking the row, with one
+ * frequent action keeping its own button outside it.
+ *
+ * This replaces a hover-revealed `⋯` trigger per level, which is a deliberate
+ * reversal: four triggers meant four hover states, four places for the menu to
+ * drift, and a row whose width changed as the pointer crossed it.
  */
 describe("row affordances across the four levels", () => {
-  it("gives every level a revealed menu trigger", () => {
+  it("opens the same menu from every level, and only by right-click", () => {
+    // The thread rows go through `ThreadRowMenu`, which is the same surface with
+    // the thread items already wired; the other three build their items inline.
+    for (const [level, source, expected] of [
+      ["group", groupRow, /<RowMenu\b/],
+      ["project", projectRow, /<RowMenu\b/],
+      ["worktree", treeRows, /<RowMenu\b/],
+      ["thread", card, /<ThreadRowMenu\b/],
+    ] as const) {
+      assert.match(source, expected, `${level} opens the shared menu`);
+      assert.doesNotMatch(
+        source,
+        /<RowMenuTrigger|<Menu\b/,
+        `${level} has no trigger button of its own`,
+      );
+    }
+    // The parked shelf is a thread row too, and it opens the same menu.
+    assert.match(slimRow, /<ThreadRowMenu\b/);
+    // One renderer for every item in the sidebar.
+    assert.match(rowMenu, /export function RowMenu\(/);
+    assert.match(rowMenu, /export type RowMenuItem = RowMenuAction \| RowMenuSubmenu;/);
+    assert.doesNotMatch(rowActions, /RowMenuTrigger/);
+  });
+
+  it("keeps an arrow on every row that opens", () => {
+    // The menu trigger used to double as the disclosure — a chevron at rest, the
+    // three dots under the pointer. Removing the trigger removed the only thing
+    // that said a row was open, so the arrow is its own control now, and it is
+    // never swapped for anything.
+    assert.match(rowActions, /export function RowDisclosure\(/);
+    assert.match(rowActions, /name="ChevronDown"/);
+    assert.match(rowActions, /expanded && "rotate-180"/);
     for (const [level, source] of [
       ["group", groupRow],
       ["project", projectRow],
       ["worktree", treeRows],
-      ["thread", card],
     ] as const) {
-      assert.match(source, /<RowMenuTrigger/, `${level} has a menu trigger`);
-      assert.match(
-        source,
-        /revealed=\{reveal\.revealed\}/,
-        `${level} drives the trigger from its own hover state`,
-      );
-      assert.match(
-        source,
-        /useRowReveal\(\)/,
-        `${level} tracks hover in React, not with group-hover`,
-      );
+      assert.match(source, /<RowDisclosure/, `${level} shows its arrow`);
+      assert.match(source, /aria-controls=\{listId\}/, `${level} points at its list`);
+      assert.match(source, /controls=\{listId\}/, `${level} wires the arrow to its list`);
+    }
+  });
+
+  it("positions every row that hosts a full-bleed target", () => {
+    // A row's click target is `absolute inset-0`, and an absolutely positioned
+    // element resolves against the nearest *positioned* ancestor rather than its
+    // parent. A row that is not itself positioned therefore stretches its own
+    // target across whatever ancestor above it happens to be positioned — and
+    // then takes the pointer for rows it does not belong to: a hover anywhere in
+    // that area opened another row's card, and a click toggled that row.
+    const sites: Array<[string, RegExp, string]> = [
+      [card, /"group\/root @container relative flex/, "thread card"],
+      [card, /"group\/child @container relative flex/, "child row"],
+      [treeRows, /"group\/ws relative flex/, "worktree row"],
+      [projectRow, /"group\/project relative flex/, "project row"],
+      [slimRow, /"group\/slim relative flex/, "parked row"],
+    ];
+    for (const [source, pattern, level] of sites) {
+      assert.match(source, /absolute inset-0/, `${level} has a full-bleed target`);
+      assert.match(source, pattern, `${level} is positioned`);
+    }
+  });
+
+  it("draws the worktree row as a title line and a branch line", () => {
+    // The same shape a thread card has, one level up: the alias owns its line,
+    // and the branch line carries the branch's icon and name on the left with
+    // the row's controls at its right end.
+    const stackedBranchLine = treeRows.slice(
+      treeRows.indexOf("The branch line, the shape a thread card's branch line"),
+      treeRows.indexOf("{workspaceRowActions}", treeRows.indexOf("The branch line, the shape a thread card's branch line")),
+    );
+    assert.match(stackedBranchLine, /node\.ref\.kind === "git-worktree" \? "FolderGit" : "GitBranch"/);
+    assert.match(stackedBranchLine, /\{rowLabel\.detail\}/);
+    assert.match(stackedBranchLine, /font-mono text-2xs text-muted-foreground\/80/);
+    // The controls ride the last line, whichever line that is.
+    assert.equal(
+      treeRows.match(/\{workspaceRowActions\}/g)?.length,
+      2,
+      "the cluster rides the branch line and the single line",
+    );
+    assert.match(treeRows, /className="pointer-events-auto"/);
+    // A row with a branch line is a worktree, and the branch icon says so, so the
+    // kind icon is not repeated above it.
+    assert.doesNotMatch(
+      stackedBranchLine,
+      /project-checkout" \? "Folder"/,
+    );
+  });
+
+  it("marks a worktree branch the same way at both levels", () => {
+    // bb-sidebar's rule: a worktree branch is a folder that is a branch, a plain
+    // branch is just a branch.
+    assert.match(card, /name=\{isWorktree \? "FolderGit" : "GitBranch"\}/);
+    assert.match(card, /displayKind === "managed-worktree" \|\| displayKind === "unmanaged-worktree"/);
+    assert.match(treeRows, /"FolderGit" : "GitBranch"/);
+  });
+
+  it("describes every level's actions as the same kind of thing", () => {
+    // A project item and a thread item are both `RowMenuItem`s: same key, same
+    // label, same icon, same divider rule.
+    for (const [level, source] of [
+      ["group", groupRow],
+      ["project", projectRow],
+      ["worktree", treeRows],
+    ] as const) {
+      assert.match(source, /const items: RowMenuItem\[\] = \[/, `${level} builds items`);
+      assert.match(source, /key: "/, `${level} keys its items`);
+      assert.match(source, /icon: "/, `${level} icons its items`);
+    }
+    // The thread items are described once and drawn by the same surface, so a
+    // family, a child row and a parked row cannot disagree.
+    assert.match(threadMenu, /export type ThreadMenuItem = RowMenuItem;/);
+    assert.match(threadMenu, /export function ThreadRowMenu\(/);
+    assert.match(threadMenu, /<RowMenu\b/);
+  });
+
+  it("drops the divider the same way everywhere, without a bare separator", () => {
+    // `separatorBefore` is the whole vocabulary; nobody hand-rolls a separator.
+    for (const [level, source] of [
+      ["group", groupRow],
+      ["project", projectRow],
+      ["worktree", treeRows],
+    ] as const) {
+      assert.doesNotMatch(source, /<MenuSeparator/, `${level} has no bare separator`);
     }
   });
 
@@ -49,8 +160,8 @@ describe("row affordances across the four levels", () => {
       assert.match(source, /<RowActionButton/);
       assert.match(source, /icon="Add"/);
     }
-    assert.match(projectRow, /label="New worktree…"/);
-    assert.match(treeRows, /label="New thread here"/);
+    assert.match(projectRow, /label: "New worktree…"/);
+    assert.match(treeRows, /label: "New thread here"/);
   });
 
   /**
@@ -63,19 +174,19 @@ describe("row affordances across the four levels", () => {
     assert.match(projectRow, /isPersonal=\{node\.project\.isPersonal\}/);
     assert.match(
       projectRow,
-      /isPersonal \? null : \(\s*<MenuItem[\s\S]*?label="New worktree…"/,
+      /isPersonal=\{node\.project\.isPersonal\}[\s\S]*?!isPersonal[\s\S]*?label: "New worktree…"/,
     );
   });
 
   it("keeps rename reachable from every level", () => {
-    assert.match(projectRow, /label="Rename…"/);
+    assert.match(projectRow, /label: "Rename…"/);
     // A worktree renames the environment, which is what its alias is.
-    assert.match(treeRows, /node\.ref\.kind === "git-worktree" \? "Rename worktree…"/);
+    assert.match(treeRows, /"Rename worktree…"/);
     // The group row menu mirrors bb's own section menu, which offers rename
     // and remove next to the disclosure toggle.
-    assert.match(groupRow, /label="Rename…"/);
-    assert.match(groupRow, /label="Remove group"/);
-    assert.match(card, /useThreadMenuActions/);
+    assert.match(groupRow, /label: "Rename…"/);
+    assert.match(groupRow, /label: "Remove group"/);
+    assert.match(card, /useThreadMenuActions|ThreadRowMenu/);
   });
 
   it("keeps group editing available from the row and the manager", () => {
@@ -83,7 +194,7 @@ describe("row affordances across the four levels", () => {
     assert.match(groupManager, /GroupNameEditor/);
   });
 
-  it("gives the thread menu bb's full set on both surfaces", () => {
+  it("gives the thread menu bb's full set, on the one surface", () => {
     // bb's own thread menu offers open-in-split, copy link, read, pin, rename,
     // archive, and delete. The id copy is additive; the rest must be present.
     for (const label of [
@@ -98,9 +209,6 @@ describe("row affordances across the four levels", () => {
     }
     assert.match(threadMenu, /Mark read/);
     assert.match(threadMenu, /Unpin/);
-    // One description, two surfaces: the dropdown and the right-click menu.
-    assert.match(card, /<RowContextMenu/);
-    assert.match(contextMenu, /useThreadMenuActions/);
   });
 
   it("tags each group tab with its own status so the strip can dot it", () => {
@@ -114,14 +222,28 @@ describe("row affordances across the four levels", () => {
       assert.match(source, /<InfoCard/);
     }
     assert.doesNotMatch(card, /<InfoCard/);
-    assert.match(projectRow, /<InfoCard trigger={projectRow}/);
+    assert.match(projectRow, /<InfoCard trigger=\{projectRow\}/);
   });
 
   it("keeps the provider at the trailing edge and inserts actions in flow", () => {
     assert.match(card, /data-nest-root-metadata=""[\s\S]*className="flex h-4/);
     assert.doesNotMatch(card, /ROW_MENU_OVERLAY_CLASS/);
     assert.match(card, /showRootRail \? \(/);
-    assert.match(card, /function ChildThreadRow[\s\S]*useRowReveal()/);
+    // Hover state survives in exactly one place now: the root card, where the
+    // park buttons replace the age while the pointer is on it. The menu trigger
+    // it used to reveal is a right-click now, and nothing else reads hover.
+    assert.match(
+      card,
+      /canPark && !selectionMode && showRowDetails && reveal\.revealed/,
+    );
+    assert.equal(card.match(/useRowReveal\(\)/g)?.length, 1);
+    for (const [level, source] of [
+      ["group", groupRow],
+      ["project", projectRow],
+      ["worktree", treeRows],
+    ] as const) {
+      assert.doesNotMatch(source, /useRowReveal/, `${level} has no hover state`);
+    }
   });
 
   it("renders icon previews directly instead of blank deferred placeholders", () => {

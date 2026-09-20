@@ -59,6 +59,28 @@ describe("resolveNestPreferences", () => {
     );
   });
 
+  it("resolves where a row's details live, defaulting to no branch", () => {
+    assert.equal(resolveNestPreferences(undefined).rowDetails, "row-no-branch");
+    assert.equal(
+      resolveNestPreferences({ rowDetails: "In the row" }).rowDetails,
+      "row",
+    );
+    assert.equal(
+      resolveNestPreferences({ rowDetails: "In the row, no branch" }).rowDetails,
+      "row-no-branch",
+    );
+    assert.equal(
+      resolveNestPreferences({ rowDetails: "On hover" }).rowDetails,
+      "hover",
+    );
+    // A label that is no longer offered lands on the default, not on a mode
+    // with no label of its own.
+    assert.equal(
+      resolveNestPreferences({ rowDetails: "Sideways" }).rowDetails,
+      "row-no-branch",
+    );
+  });
+
   it("reads the compact row options by their declared labels", () => {
     const oneLine = resolveNestPreferences({
       rowLayout: "One line",

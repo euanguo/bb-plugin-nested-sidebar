@@ -144,7 +144,10 @@ describe("Nest settings contract", () => {
     assert.match(card, /shiftKey: event\.shiftKey/);
     assert.match(card, /interactive=\{!selectionMode\}/);
     assert.match(card, /disabled=\{selectionMode\}/);
-    assert.match(card, /selectionMode && "pointer-events-none"/);
+    // The line around the trailing cluster is `pointer-events-none`, so a
+    // control inside it is clickable only if it opts back in. Without this the
+    // children chip and the park buttons were decoration.
+    assert.match(card, /interactive \? "pointer-events-auto" : "pointer-events-none"/);
     assert.match(card, /actions\.open\(thread\.id/);
   });
 });

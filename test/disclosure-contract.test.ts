@@ -81,7 +81,7 @@ describe("the disclosure contract", () => {
     assert.match(rows, /expanded && "border-l border-sidebar-border pl-3",/);
 
     const card = SITES.find(([site]) => site === "thread-card")?.[1] ?? "";
-    assert.match(card, /expanded && "border-l pb-0\.5 pl-3",/);
+    assert.match(card, /expanded && "border-l-\[1\.5px\] pb-0\.5 pl-3",/);
   });
 
   it("draws an empty placeholder only when it is open", () => {

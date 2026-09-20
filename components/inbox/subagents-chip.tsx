@@ -6,7 +6,7 @@ import {
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
-import { Disc } from "@/components/inbox/disc";
+import { Disc, DiscCluster } from "@/components/inbox/disc";
 import { StatusGlyph } from "@/components/inbox/status-glyph";
 import { childrenOf, threadDisplayTitle } from "@/lib/inbox";
 
@@ -47,7 +47,7 @@ export function SubagentsChip({
           open && "bg-accent text-foreground",
         )}
       >
-        <DiscCluster threads={children} />
+        <HeaderDiscCluster threads={children} />
         {isCompactViewport ? null : <span className="truncate">{label}</span>}
       </button>
       {open ? (
@@ -106,20 +106,10 @@ export function SubagentsChip({
   );
 }
 
-function DiscCluster({ threads }: { threads: readonly PluginSidebarThread[] }) {
-  const shown = threads.slice(0, MAX_DISCS);
-  return (
-    <span className="flex shrink-0 items-center" aria-hidden>
-      {shown.map((thread, index) => (
-        <span key={thread.id} className={cn(index > 0 && "-ml-1.5")}>
-          <Disc thread={thread} />
-        </span>
-      ))}
-      {threads.length > MAX_DISCS ? (
-        <span className="-ml-1.5">
-          <Disc thread={null} />
-        </span>
-      ) : null}
-    </span>
-  );
+function HeaderDiscCluster({
+  threads,
+}: {
+  threads: readonly PluginSidebarThread[];
+}) {
+  return <DiscCluster threads={threads} max={MAX_DISCS} />;
 }

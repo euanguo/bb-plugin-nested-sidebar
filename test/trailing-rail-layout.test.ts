@@ -24,20 +24,42 @@ describe("trailing rail layout", () => {
     assert.match(threadCard, /showRootRail \? \(/);
   });
 
-  it("keeps stable trailing glyphs after the hover menu in one flex rail", () => {
-    const metadataStart = threadCard.indexOf('data-nest-root-metadata=""');
-    const rootMenuStart = threadCard.lastIndexOf("<ThreadMenu", metadataStart);
-    assert.ok(metadataStart >= 0);
-    assert.ok(rootMenuStart >= 0);
-    assert.ok(rootMenuStart < metadataStart);
-    assert.ok(
-      threadCard.indexOf('name="Pin"', metadataStart) > metadataStart,
+  it("keeps the trailing cluster free of anything hover changes", () => {
+    // The cluster used to end with the hover menu's trigger, which is why the
+    // menu had to come first: a right-aligned cluster would shift every glyph to
+    // its left the moment it appeared. The menu is a right-click now, so nothing
+    // in the cluster is added or removed on hover and the glyphs cannot move.
+    assert.doesNotMatch(threadCard, /<ThreadMenu|<RowMenuTrigger/);
+    assert.match(
+      threadCard,
+      /data-nest-root-metadata=""[\s\S]*name="Pin"/,
     );
     assert.ok(
       threadCard.includes(
         '"pointer-events-none relative min-w-0 flex-1",',
       ),
     );
-    assert.match(threadCard, /relative z-10 flex shrink-0 items-center/);
+    assert.match(threadCard, /relative z-10 ml-auto flex shrink-0 items-center/);
+  });
+
+  it("ends the branch line with the cluster, so the title owns the width", () => {
+    // bb's card ends its branch line with the status, the PR, the children chip
+    // and the provider mark. Nest used to keep them in a second column beside
+    // the two lines, which spent width on a vertical run of glyphs and squeezed
+    // the title into what was left.
+    const detailRow = threadCard.slice(
+      threadCard.indexOf('data-nest-root-detail-row=""'),
+      threadCard.indexOf("</div>", threadCard.indexOf("<RootTrailingCluster", threadCard.indexOf('data-nest-root-detail-row=""'))),
+    );
+    assert.match(detailRow, /<ThreadLocation thread=\{thread\} \/>/);
+    assert.match(detailRow, /<RootTrailingCluster interactive=\{!selectionMode\}>/);
+    // The title line carries the cluster only when there is no branch line, and
+    // that is one derived fact rather than two expressions that could disagree.
+    assert.match(
+      threadCard,
+      /const branchLineRenders =\n\s+preferences\.rowLayout === "two-line" && showsLocation;/,
+    );
+    assert.match(threadCard, /const clusterRidesTheTitle = !branchLineRenders;/);
+    assert.doesNotMatch(threadCard, /flex-col gap-0\.5/);
   });
 });

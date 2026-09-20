@@ -1,18 +1,20 @@
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Modal } from "@/components/ui/modal";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
 } from "@get-bb/plugin-sdk/app";
 import { GroupIcon } from "@/components/ui/group-icon";
 import { cn } from "@/lib/utils";
-import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import { InfoCard, InfoRow } from "@/components/ui/hover-card";
 import {
-  RowMenuTrigger,
   RowActions,
-  useRowReveal,
+  RowDisclosure,
 } from "@/components/inbox/row-actions";
+import {
+  RowMenu,
+  type RowMenuItem,
+} from "@/components/inbox/row-context-menu";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import { useNestViewState } from "@/components/inbox/view-state-context";
 import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
@@ -85,7 +87,6 @@ export function GroupSection({
   const expanded = !viewState.isGroupCollapsed(groupKey);
   const setExpanded = (open: boolean) =>
     viewState.setGroupCollapsed(groupKey, !open);
-  const reveal = useRowReveal();
   const listId = useId();
   const attachListAutoAnimateRef = useListAutoAnimate<HTMLDivElement>();
   const threadCount = node.projects.reduce(
@@ -101,8 +102,18 @@ export function GroupSection({
   const groupId = node.groupId;
 
   const header = (
+    <GroupRowMenu
+      name={node.name}
+      groupId={groupId}
+      expanded={expanded}
+      canMoveUp={groupId !== null && groups[0]?.id !== groupId}
+      canMoveDown={groupId !== null && groups[groups.length - 1]?.id !== groupId}
+      onToggleExpanded={() => setExpanded(!expanded)}
+      onMove={(delta) => handlers.onGroupMove?.(groupId ?? "", delta)}
+      onRename={(name) => handlers.onRenameGroup(groupId ?? "", name)}
+      onRemove={() => handlers.onRemoveGroup(groupId ?? "")}
+    >
     <div
-      {...reveal.handlers}
       className="group/group flex h-6.5 w-full items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent/50"
     >
       <button
@@ -131,20 +142,15 @@ export function GroupSection({
           }}
             onFallback={() => setExpanded(!expanded)}
         />
-        <GroupMenu
-          name={node.name}
-          groupId={groupId}
+        <RowDisclosure
+          label={`${expanded ? "Collapse" : "Expand"} ${node.name}`}
           expanded={expanded}
-          revealed={reveal.revealed}
-          canMoveUp={groupId !== null && groups[0]?.id !== groupId}
-          canMoveDown={groupId !== null && groups[groups.length - 1]?.id !== groupId}
-          onToggleExpanded={() => setExpanded(!expanded)}
-          onMove={(delta) => handlers.onGroupMove?.(groupId ?? "", delta)}
-          onRename={(name) => handlers.onRenameGroup(groupId ?? "", name)}
-          onRemove={() => handlers.onRemoveGroup(groupId ?? "")}
+          controls={listId}
+          onToggle={() => setExpanded(!expanded)}
         />
       </RowActions>
     </div>
+    </GroupRowMenu>
   );
 
   return (
@@ -200,110 +206,106 @@ export function GroupSection({
  *
  * The inline pencil is the fast path for the common move (rename); this menu
  * holds the rest. Ungrouped is not a stored group, so its menu offers only what
- * applies to a bucket that cannot be renamed, moved, or deleted.
+ * applies to a bucket that cannot be renamed, moved, or deleted — and it opens
+ * from the row itself, like every other menu in the tree.
  */
-function GroupMenu({
+function GroupRowMenu({
   name,
   groupId,
   expanded,
-  revealed,
   canMoveUp,
   canMoveDown,
   onToggleExpanded,
   onMove,
   onRename,
   onRemove,
+  children,
 }: {
   name: string;
   groupId: string | null;
   expanded: boolean;
-  revealed: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onToggleExpanded: () => void;
   onMove: (delta: -1 | 1) => void;
   onRename: (name: string) => void;
   onRemove: () => void;
+  children: ReactNode;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const items: RowMenuItem[] = [
+    {
+      key: "disclose",
+      icon: "ChevronDown",
+      label: expanded ? "Collapse" : "Expand",
+      onSelect: onToggleExpanded,
+    },
+  ];
+  if (groupId !== null) {
+    items.push(
+      {
+        key: "rename",
+        icon: "Edit",
+        label: "Rename…",
+        separatorBefore: true,
+        onSelect: () => setRenaming(true),
+      },
+      {
+        key: "copy-id",
+        icon: "IdCard",
+        label: "Copy group ID",
+        onSelect: () => {
+          void copyWithAnnouncement(groupId, "Group ID");
+        },
+      },
+      {
+        key: "move-up",
+        icon: "ChevronUp",
+        label: "Move up",
+        separatorBefore: true,
+        disabled: !canMoveUp,
+        onSelect: () => onMove(-1),
+      },
+      {
+        key: "move-down",
+        icon: "ChevronDown",
+        label: "Move down",
+        disabled: !canMoveDown,
+        onSelect: () => onMove(1),
+      },
+      {
+        key: "remove",
+        icon: "Trash",
+        label: "Remove group",
+        separatorBefore: true,
+        destructive: true,
+        onSelect: onRemove,
+      },
+    );
+  }
+
   return (
-    <>
-    <Menu
+    <RowMenu
       label={`Actions for ${name}`}
-      trigger={
-        <RowMenuTrigger
-          label={`Actions for ${name}`}
-          chevron
-          expanded={expanded}
-          revealed={revealed}
-        />
-      }
-    >
-      <MenuItem
-        icon="ChevronDown"
-        label={expanded ? "Collapse" : "Expand"}
-        onSelect={onToggleExpanded}
-      />
-      {groupId === null ? null : (
-        <>
-          <MenuSeparator />
-          <MenuItem
-            icon="Edit"
-            label="Rename…"
-            onSelect={() => setRenaming(true)}
-          />
-          <MenuItem
-            icon="IdCard"
-            label="Copy group ID"
-            onSelect={() => {
-              void copyWithAnnouncement(groupId, "Group ID");
+      items={items}
+      dialog={
+        renaming && groupId !== null ? (
+          <RenameGroupDialog
+            groupId={groupId}
+            currentName={name}
+            onCancel={() => setRenaming(false)}
+            onRenamed={(next) => {
+              setRenaming(false);
+              onRename(next);
             }}
           />
-          <MenuSeparator />
-          <MenuItem
-            icon="ChevronUp"
-            label="Move up"
-            disabled={!canMoveUp}
-            onSelect={() => onMove(-1)}
-          />
-          <MenuItem
-            icon="ChevronDown"
-            label="Move down"
-            disabled={!canMoveDown}
-            onSelect={() => onMove(1)}
-          />
-          <MenuSeparator />
-          <MenuItem
-            icon="Trash"
-            label="Remove group"
-            destructive
-            onSelect={onRemove}
-          />
-        </>
-      )}
-    </Menu>
-    {renaming && groupId !== null ? (
-      <RenameGroupDialog
-        groupId={groupId}
-        currentName={name}
-        onCancel={() => setRenaming(false)}
-        onRenamed={(next) => {
-          setRenaming(false);
-          onRename(next);
-        }}
-      />
-    ) : null}
-    </>
+        ) : null
+      }
+    >
+      {children}
+    </RowMenu>
   );
 }
-
-/**
- * Rename a group from its own row menu.
- *
- * The same `renameIntent` rule the inline editor and the manager dialog use, so
- * all three entry points agree on what counts as a rename: an empty or
- * unchanged draft is not one.
- */
 function RenameGroupDialog({
   groupId,
   currentName,

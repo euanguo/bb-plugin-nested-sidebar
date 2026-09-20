@@ -14,16 +14,8 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { RowContextMenu } from "@/components/inbox/row-context-menu";
-import {
-  Menu,
-  MenuItem,
-  MenuSeparator,
-} from "@/components/ui/menu";
-import {
-  RowMenuTrigger,
-  useRowReveal,
-} from "@/components/inbox/row-actions";
+import { ThreadRowMenu } from "@/components/inbox/thread-menu-items";
+import { useRowReveal } from "@/components/inbox/row-actions";
 import {
   ProviderGlyph,
   type ProviderGlyphInfo,
@@ -36,10 +28,19 @@ import {
 import { PullRequestMetadata } from "@/components/inbox/row-metadata";
 import {
   FamilyStatusIcon,
+  familyStatusColor,
 } from "@/components/inbox/family-status";
+import { DiscCluster } from "@/components/inbox/disc";
 import { familyWaitingForAgents } from "@/lib/attention-state";
-import { familyStatus } from "@/lib/family-status";
-import { threadDisplayTitle, threadIsWorking } from "@/lib/inbox";
+import { familyStatus, familyStatusPresentation } from "@/lib/family-status";
+import type { FamilyStatusPresentation } from "@/lib/family-status";
+import {
+  branchHoldsThread,
+  familyBranches,
+  threadDisplayTitle,
+  threadIsWorking,
+  type FamilyBranch,
+} from "@/lib/inbox";
 import { resolveFamilyExpanded } from "@/lib/thread-management";
 import type { RootSelectionIntent } from "@/lib/thread-management";
 import type { NestPreferences } from "@/lib/preferences";
@@ -114,6 +115,12 @@ export function ThreadCard({
    */
   const detailsOnHover = preferences.rowDetails === "hover";
   const showRowDetails = !detailsOnHover;
+  /**
+   * The row shares its branch with every other row under the same workspace, and
+   * the worktree row above already names it — so this mode keeps the row's own
+   * details and leaves the location out.
+   */
+  const omitsLocation = preferences.rowDetails === "row-no-branch";
   const [expandedOverride, setExpandedOverride] = useState<boolean | null>(
     null,
   );
@@ -125,6 +132,16 @@ export function ThreadCard({
    */
   const storedOverride = viewState.familyOverride(thread.id);
   const effectiveOverride = storedOverride ?? expandedOverride;
+  /**
+   * The family as the tree it forms. `childThreads` is flat — every descendant
+   * of this root — because that is the shape ordering and selection want; the
+   * nesting is put back for drawing, so a child of a child is drawn under it
+   * rather than beside it.
+   */
+  const branches = useMemo(
+    () => familyBranches({ root: thread, children: [...childThreads] }),
+    [thread, childThreads],
+  );
 
   const familyIsActive =
     thread.id === activeThreadId ||
@@ -169,12 +186,138 @@ export function ThreadCard({
     canPark && !selectionMode && showRowDetails && reveal.revealed;
   const showRootTime =
     !showRootParkActions && preferences.showRelativeTime && showRowDetails;
-  const showRootMenu = !selectionMode && reveal.revealed;
   const showRootRail =
-    showRootParkActions || showRootTime || showRootMenu || hasRootMetadata;
+    showRootParkActions || showRootTime || hasRootMetadata;
+  /**
+   * Whether the location — the branch, or the machine when there is no branch —
+   * is drawn on the row at all.
+   */
+  const showsLocation =
+    showRowDetails && preferences.showThreadLocation && !omitsLocation;
+  /**
+   * Whether the row's trailing cluster ends the title line, because there is no
+   * branch line for it to end. Derived from the same fact as the branch line's
+   * own condition, so the two cannot disagree and leave the cluster nowhere to
+   * go — or a branch line with nothing in it.
+   */
+  const branchLineRenders =
+    preferences.rowLayout === "two-line" && showsLocation;
+  const clusterRidesTheTitle = !branchLineRenders;
+
+  /**
+   * Everything a card puts at the end of a line: the age or the park buttons,
+   * the pin, the PR, the children chip, the provider mark, and the row menu.
+   *
+   * One cluster, not a rail of its own. bb's card ends its branch line with
+   * exactly these, right aligned on the same line as the branch, which leaves
+   * the title the full width of the card above it. A second column beside the
+   * two lines spent width on a vertical run of glyphs and squeezed the title
+   * into whatever was left.
+   */
+  const rootTrailingCluster = showRootRail ? (
+    <>
+      {showRootParkActions ? (
+        <span data-nest-root-time="" className="flex h-4 items-center gap-0.5">
+          <ParkButton
+            label="Snooze until tomorrow"
+            icon="Clock"
+            onActivate={() => {
+              const tomorrow = resolveSnoozePresets(new Date()).find(
+                (preset) => preset.id === "tomorrow",
+              );
+              if (tomorrow) onSnooze(tomorrow.snoozedUntil);
+            }}
+          />
+          <ParkButton
+            label="Settle thread"
+            icon="Archive"
+            sparkle
+            onActivate={onSettle}
+          />
+        </span>
+      ) : showRootTime ? (
+        <span data-nest-root-time="" className="flex h-4 items-center">
+          <StatusOrTime thread={thread} now={now} />
+        </span>
+      ) : null}
+      {hasRootMetadata ? (
+        <div
+          data-nest-root-metadata=""
+          className="flex h-4 min-w-0 items-center gap-1 whitespace-nowrap leading-none"
+        >
+          {thread.isPinned ? (
+            <span
+              className="flex size-3.5 shrink-0 items-center justify-center"
+              title="Pinned thread"
+            >
+              <Icon
+                name="Pin"
+                aria-label="Pinned thread"
+                className="size-3 text-muted-foreground/70"
+              />
+            </span>
+          ) : null}
+          {showRowDetails &&
+          preferences.showPullRequestMetadata &&
+          pullRequest ? (
+            <PullRequestMetadata
+              pullRequest={pullRequest}
+              interactive={!selectionMode}
+            />
+          ) : null}
+          {showRowDetails &&
+          childThreads.length > 0 &&
+          preferences.showChildCount ? (
+            <span className="group/children relative flex items-center">
+              <ChildThreadChip
+                threads={childThreads}
+                status={familyStatusPresentation(familyState.kind)}
+                expanded={expanded}
+                controls={childListId}
+                label={
+                  selectionMode
+                    ? `${childThreads.length} child threads; exit selection mode to ${expanded ? "hide" : "show"}${childProviderNames ? `; providers: ${childProviderNames}` : ""}`
+                    : childDisclosureLabel
+                }
+                providerGlyphs={
+                  preferences.showProviderIcons ? (
+                    <span className="flex items-center -space-x-0.5">
+                      {childProviderIds.map((providerId) => (
+                        <ProviderGlyph
+                          key={providerId}
+                          providerId={providerId}
+                          provider={providerInfoById.get(providerId)}
+                          className="size-3"
+                          interactive={false}
+                        />
+                      ))}
+                    </span>
+                  ) : null
+                }
+                disabled={selectionMode}
+                onToggle={toggleChildren}
+              />
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute bottom-full right-0 z-30 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all duration-150 ease-out motion-reduce:transition-none group-hover/children:translate-y-0 group-hover/children:opacity-100 group-focus-visible/children:translate-y-0 group-focus-visible/children:opacity-100"
+              >
+                {childDisclosureLabel}
+              </span>
+            </span>
+          ) : showRowDetails && preferences.showProviderIcons ? (
+            <ProviderGlyph
+              providerId={thread.providerId}
+              provider={providerInfoById.get(thread.providerId)}
+              className="size-3 opacity-75"
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  ) : null;
 
   return (
-    <RowContextMenu
+    <ThreadRowMenu
       thread={thread}
       expanded={expanded}
       childCount={childThreads.length}
@@ -191,363 +334,226 @@ export function ThreadCard({
         onDragOver={onReorderDragOver}
         onDrop={onReorderDrop}
       >
+        {/* One card, no box around it: the row is a tint that moves with
+            hover and with being open, the way bb's own list does it. An
+            outlined family box on top of a row that also tints read as two
+            nested panels. */}
         <div
+          data-nest-root-card=""
+        {...reveal.handlers}
           className={cn(
-            "rounded-xl border transition-colors duration-150 ease-out motion-reduce:transition-none",
-            expanded
-              ? "border-sidebar-border bg-sidebar-accent/35 py-1"
-              : "border-transparent",
-            familyIsActive && "bg-sidebar-accent/60",
-            !familyIsActive && layout !== null && "bg-sidebar-accent/25",
+            "group/root @container relative flex min-w-0 items-center gap-x-2 rounded-md px-2.5 transition-colors duration-150 ease-out motion-reduce:transition-none",
+          clusterRidesTheTitle ? "min-h-5" : "min-h-10",
+          preferences.density === "compact"
+            ? "py-1"
+            : "py-2",
+          rootIsActive
+            ? "bg-sidebar-accent"
+            : "hover:bg-sidebar-accent/60",
+          // A thread open in another pane gets a weaker tint than the active
+          // row, so the two states stay distinguishable.
+          !rootIsActive && layout !== null && "bg-sidebar-accent/30",
+        )}
+      >
+          {selectionMode ? (
+            <button
+              type="button"
+              data-nest-selection-target={thread.id}
+              aria-label={
+                selectionDisabledReason === null
+                  ? `${selected ? "Deselect" : "Select"} ${threadDisplayTitle(thread)}`
+                  : `${threadDisplayTitle(thread)} cannot be selected: ${selectionDisabledReason}`
+              }
+              aria-pressed={
+                selectionDisabledReason === null ? selected : undefined
+              }
+              aria-describedby={
+                selectionDisabledReason === null ? selectionHintId : undefined
+              }
+              title={
+                selectionDisabledReason ?? "Shift+click to select a range"
+              }
+              disabled={selectionDisabledReason !== null}
+              onClick={(event) => {
+                onToggleSelected({
+                  selected: !selected,
+                  shiftKey: event.shiftKey,
+                });
+              }}
+              className={cn(
+                "absolute inset-0 rounded-lg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                selectionDisabledReason === null
+                  ? "cursor-pointer"
+                  : "cursor-not-allowed",
+              )}
+            />
+          ) : (
+            <>
+              {/* The shortcut/split contract requires an anchor, while the
+                  controls remain sibling buttons above it. */}
+              {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- bb's
+                  shortcut and split-drag contracts require an anchor. */}
+              <a
+                data-sidebar-thread-shortcut-target=""
+                data-sidebar-thread-id={thread.id}
+                href="#"
+                aria-label={threadDisplayTitle(thread)}
+                aria-current={rootIsActive ? "page" : undefined}
+                {...splitProps}
+                onClick={(event) => {
+                  event.preventDefault();
+                  actions.open(thread.id, {
+                    split: event.metaKey || event.ctrlKey,
+                  });
+                  onNavigate();
+                }}
+                className="absolute inset-0 cursor-pointer rounded-lg"
+              />
+            </>
           )}
-        >
-          {/* The card hangs off the row itself, not the whole family: a card on
-              the outer element would also open while the pointer was on a child
-              thread below it. */}
+
+          {selectionMode ? (
+            <input
+              type="checkbox"
+              checked={selected}
+              data-nest-select-root={thread.id}
+              aria-label={
+                selectionDisabledReason === null
+                  ? `${selected ? "Deselect" : "Select"} ${threadDisplayTitle(thread)}`
+                  : `${threadDisplayTitle(thread)} cannot be selected: ${selectionDisabledReason}`
+              }
+              aria-describedby={
+                selectionDisabledReason === null ? selectionHintId : undefined
+              }
+              title={
+                selectionDisabledReason ?? "Shift+click to select a range"
+              }
+              disabled={selectionDisabledReason !== null}
+              onClick={(event) => {
+                event.stopPropagation();
+              }}
+              onChange={(event) => {
+                onToggleSelected({
+                  selected: event.currentTarget.checked,
+                  shiftKey:
+                    "shiftKey" in event.nativeEvent &&
+                    event.nativeEvent.shiftKey === true,
+                });
+              }}
+              className={cn(
+                "relative z-10 size-4 shrink-0 cursor-pointer rounded border accent-primary transition-colors duration-150 ease-out motion-reduce:transition-none",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                selectionDisabledReason !== null &&
+                  "cursor-not-allowed opacity-35",
+              )}
+            />
+          ) : null}
+
+          {selectionMode ? null : (
+            <FamilyStatusIcon
+              status={familyState}
+              variant={preferences.statusDisplay}
+              draggable={reorderEnabled}
+              reorderHelp={
+                reorderEnabled
+                  ? "Drag this status marker to reorder. Press Alt+Up or Alt+Down to move the family."
+                  : (reorderDisabledReason ?? "Reordering is unavailable.")
+              }
+              onDragStart={(event) => {
+                event.stopPropagation();
+                if (!reorderEnabled) {
+                  event.preventDefault();
+                  return;
+                }
+                onReorderDragStart(event);
+              }}
+              onKeyDown={(event) => {
+                if (!event.altKey) return;
+                if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onMoveByKeyboard(event.key === "ArrowUp" ? -1 : 1);
+                }
+              }}
+            />
+          )}
+
           <div
-            data-nest-root-card=""
-            {...reveal.handlers}
             className={cn(
-              "group/root @container relative flex min-w-0 items-center gap-x-2 rounded-lg px-1.5",
-              preferences.rowLayout === "one-line" || detailsOnHover
-                ? "min-h-5"
-                : "min-h-10",
-              preferences.density === "compact"
-                ? "py-0.5"
-                : "py-1",
-              rootIsActive
-                ? "bg-sidebar-accent"
-                : "hover:bg-sidebar-accent/60",
+              "pointer-events-none relative min-w-0 flex-1",
+              clusterRidesTheTitle
+                ? "flex items-center gap-1.5"
+                : "self-stretch py-0.5",
             )}
           >
-            {selectionMode ? (
-              <button
-                type="button"
-                data-nest-selection-target={thread.id}
-                aria-label={
-                  selectionDisabledReason === null
-                    ? `${selected ? "Deselect" : "Select"} ${threadDisplayTitle(thread)}`
-                    : `${threadDisplayTitle(thread)} cannot be selected: ${selectionDisabledReason}`
-                }
-                aria-pressed={
-                  selectionDisabledReason === null ? selected : undefined
-                }
-                aria-describedby={
-                  selectionDisabledReason === null ? selectionHintId : undefined
-                }
-                title={
-                  selectionDisabledReason ?? "Shift+click to select a range"
-                }
-                disabled={selectionDisabledReason !== null}
-                onClick={(event) => {
-                  onToggleSelected({
-                    selected: !selected,
-                    shiftKey: event.shiftKey,
-                  });
-                }}
-                className={cn(
-                  "absolute inset-0 rounded-lg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                  selectionDisabledReason === null
-                    ? "cursor-pointer"
-                    : "cursor-not-allowed",
-                )}
-              />
-            ) : (
-              <>
-                {/* The shortcut/split contract requires an anchor, while the
-                    controls remain sibling buttons above it. */}
-                {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- bb's
-                    shortcut and split-drag contracts require an anchor. */}
-                <a
-                  data-sidebar-thread-shortcut-target=""
-                  data-sidebar-thread-id={thread.id}
-                  href="#"
-                  aria-label={threadDisplayTitle(thread)}
-                  aria-current={rootIsActive ? "page" : undefined}
-                  {...splitProps}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    actions.open(thread.id, {
-                      split: event.metaKey || event.ctrlKey,
-                    });
-                    onNavigate();
-                  }}
-                  className="absolute inset-0 cursor-pointer rounded-lg"
-                />
-              </>
-            )}
-
-            {selectionMode ? (
-              <input
-                type="checkbox"
-                checked={selected}
-                data-nest-select-root={thread.id}
-                aria-label={
-                  selectionDisabledReason === null
-                    ? `${selected ? "Deselect" : "Select"} ${threadDisplayTitle(thread)}`
-                    : `${threadDisplayTitle(thread)} cannot be selected: ${selectionDisabledReason}`
-                }
-                aria-describedby={
-                  selectionDisabledReason === null ? selectionHintId : undefined
-                }
-                title={
-                  selectionDisabledReason ?? "Shift+click to select a range"
-                }
-                disabled={selectionDisabledReason !== null}
-                onClick={(event) => {
-                  event.stopPropagation();
-                }}
-                onChange={(event) => {
-                  onToggleSelected({
-                    selected: event.currentTarget.checked,
-                    shiftKey:
-                      "shiftKey" in event.nativeEvent &&
-                      event.nativeEvent.shiftKey === true,
-                  });
-                }}
-                className={cn(
-                  "relative z-10 size-4 shrink-0 cursor-pointer rounded border accent-primary transition-colors duration-150 ease-out motion-reduce:transition-none",
-                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                  selectionDisabledReason !== null &&
-                    "cursor-not-allowed opacity-35",
-                )}
-              />
-            ) : null}
-
-            {selectionMode ? null : (
-              <FamilyStatusIcon
-                status={familyState}
-                variant={preferences.statusDisplay}
-                draggable={reorderEnabled}
-                reorderHelp={
-                  reorderEnabled
-                    ? "Drag this status marker to reorder. Press Alt+Up or Alt+Down to move the family."
-                    : (reorderDisabledReason ?? "Reordering is unavailable.")
-                }
-                onDragStart={(event) => {
-                  event.stopPropagation();
-                  if (!reorderEnabled) {
-                    event.preventDefault();
-                    return;
-                  }
-                  onReorderDragStart(event);
-                }}
-                onKeyDown={(event) => {
-                  if (!event.altKey) return;
-                  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onMoveByKeyboard(event.key === "ArrowUp" ? -1 : 1);
-                  }
-                }}
-              />
-            )}
-
             <div
+              data-nest-root-title-row=""
               className={cn(
-                "pointer-events-none relative min-w-0 flex-1",
-                preferences.rowLayout === "one-line" || detailsOnHover
-                  ? "flex items-center gap-1.5"
-                  : "self-stretch py-0.5",
+                "flex h-4 min-w-0 items-center gap-1.5",
+                clusterRidesTheTitle && "flex-1",
               )}
             >
-              <div
-                data-nest-root-title-row=""
+              <span
+                title={threadDisplayTitle(thread)}
                 className={cn(
-                  "flex h-4 min-w-0 items-center gap-1.5",
-                  (preferences.rowLayout === "one-line" || detailsOnHover) &&
-                    "flex-1",
+                  // One type size for a title in both layouts. bb's own card
+                  // sets the title at `text-sm` and lets it lead the card; a
+                  // title that changed size with the layout would read as a
+                  // different list.
+                  "min-w-0 flex-1 truncate text-sm text-foreground",
                 )}
               >
-                <span
-                  title={threadDisplayTitle(thread)}
-                  className={cn(
-                    // One type size for a title in both layouts: the row is
-                    // denser than bb's own list, and a title that changes size
-                    // when the layout changes reads as a different list.
-                    "min-w-0 flex-1 truncate text-xs text-foreground",
-                  )}
-                >
-                  {threadDisplayTitle(thread)}
-                </span>
-                {/* One-line layout: the branch rides beside the title, so the
-                    row costs a single line of height. */}
-                {preferences.rowLayout === "one-line" &&
-                showRowDetails &&
-                preferences.showThreadLocation ? (
-                  <ThreadLocation thread={thread} />
-                ) : null}
-              </div>
-              {preferences.rowLayout === "two-line" && showRowDetails ? (
-                <div
-                  data-nest-root-detail-row=""
-                  className={cn(
-                    "mt-0.5 flex h-4 min-w-0 items-center gap-1.5 text-2xs",
-                    familyState.receded
-                      ? "text-muted-foreground/55"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {preferences.showThreadLocation ? (
-                    <ThreadLocation thread={thread} />
-                  ) : null}
-                </div>
+                {threadDisplayTitle(thread)}
+              </span>
+              {/* One-line layout: the branch rides beside the title, so the
+                  row costs a single line of height. */}
+              {preferences.rowLayout === "one-line" && showsLocation ? (
+                <ThreadLocation thread={thread} />
+              ) : null}
+              {clusterRidesTheTitle ? (
+                <RootTrailingCluster interactive={!selectionMode}>
+                  {rootTrailingCluster}
+                </RootTrailingCluster>
               ) : null}
             </div>
-
-            {showRootRail ? (
+            {branchLineRenders ? (
               <div
+                data-nest-root-detail-row=""
                 className={cn(
-                  "relative z-10 flex shrink-0 items-center",
-                  preferences.rowLayout === "one-line" || detailsOnHover
-                    ? "flex-row gap-1.5"
-                    : "flex-col gap-0.5",
-                  selectionMode && "pointer-events-none",
+                  "mt-0.5 flex h-4 min-w-0 items-center gap-1.5 text-2xs",
+                  familyState.receded
+                    ? "text-muted-foreground/55"
+                    : "text-muted-foreground",
                 )}
               >
-              {showRootParkActions ? (
-                <span data-nest-root-time="" className="flex h-4 items-center gap-0.5">
-                  <ParkButton
-                    label="Snooze until tomorrow"
-                    icon="Clock"
-                    onActivate={() => {
-                      const tomorrow = resolveSnoozePresets(new Date()).find(
-                        (preset) => preset.id === "tomorrow",
-                      );
-                      if (tomorrow) onSnooze(tomorrow.snoozedUntil);
-                    }}
-                  />
-                  <ParkButton
-                    label="Settle thread"
-                    icon="Archive"
-                    sparkle
-                    onActivate={onSettle}
-                  />
-                </span>
-              ) : showRootTime ? (
-                <span data-nest-root-time="" className="flex h-4 items-center justify-end">
-                  <StatusOrTime thread={thread} now={now} />
-                </span>
-              ) : null}
-              {showRootMenu ? (
-                <ThreadMenu
-                  thread={thread}
-                  expanded={expanded}
-                  childCount={childThreads.length}
-                  canToggleChildren={childThreads.length > 0}
-                  splitAvailable={layout !== null}
-                  revealed={reveal.revealed}
-                  onToggleChildren={toggleChildren}
-                  onSettle={onSettle}
-                  onSnooze={onSnooze}
-                  canPark={canPark}
-                />
-              ) : null}
-              {hasRootMetadata ? (
-                <div
-                  data-nest-root-metadata=""
-                  className="flex h-4 max-w-full items-center justify-end gap-1 whitespace-nowrap leading-none"
-                >
-                {thread.isPinned ? (
-                  <span
-                    className="flex size-3.5 shrink-0 items-center justify-center"
-                    title="Pinned thread"
-                  >
-                    <Icon
-                      name="Pin"
-                      aria-label="Pinned thread"
-                      className="size-3 text-muted-foreground/70"
-                    />
-                  </span>
-                ) : null}
-                {showRowDetails &&
-                preferences.showPullRequestMetadata &&
-                pullRequest ? (
-                  <PullRequestMetadata
-                    pullRequest={pullRequest}
-                    interactive={!selectionMode}
-                  />
-                ) : null}
-                {showRowDetails &&
-                childThreads.length > 0 &&
-                preferences.showChildCount ? (
-                  <button
-                    type="button"
-                    aria-label={
-                      selectionMode
-                        ? `${childThreads.length} child threads; exit selection mode to ${expanded ? "hide" : "show"}${childProviderNames ? `; providers: ${childProviderNames}` : ""}`
-                        : childDisclosureLabel
-                    }
-                    aria-expanded={expanded}
-                    aria-controls={childListId}
-                    disabled={selectionMode}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      toggleChildren();
-                    }}
-                    className={cn(
-                      "group/children relative flex h-4 items-center gap-0.5 rounded px-0.5 text-2xs font-medium text-muted-foreground",
-                      "transition-colors duration-150 ease-out hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring motion-reduce:transition-none",
-                      selectionMode && "pointer-events-none",
-                      childNeedsAttention && "text-primary",
-                    )}
-                  >
-                    <Icon
-                      name="ChevronDown"
-                      className={cn(
-                        "size-3 transition-transform duration-150 ease-out motion-reduce:transition-none",
-                        expanded && "rotate-180",
-                      )}
-                      aria-hidden
-                    />
-                    <span className="tabular-nums">{childThreads.length}</span>
-                    {preferences.showProviderIcons ? (
-                      <span className="flex items-center -space-x-0.5">
-                        {childProviderIds.map((providerId) => (
-                          <ProviderGlyph
-                            key={providerId}
-                            providerId={providerId}
-                            provider={providerInfoById.get(providerId)}
-                            className="size-3 opacity-80"
-                            interactive={false}
-                          />
-                        ))}
-                      </span>
-                    ) : null}
-                    <span
-                      role="tooltip"
-                      className="pointer-events-none absolute bottom-full right-0 z-30 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all duration-150 ease-out motion-reduce:transition-none group-hover/children:translate-y-0 group-hover/children:opacity-100 group-focus-visible/children:translate-y-0 group-focus-visible/children:opacity-100"
-                    >
-                      {childDisclosureLabel}
-                    </span>
-                  </button>
-                ) : showRowDetails && preferences.showProviderIcons ? (
-                  <ProviderGlyph
-                    providerId={thread.providerId}
-                    provider={providerInfoById.get(thread.providerId)}
-                    className="size-3 opacity-75"
-                  />
-                ) : null}
-                </div>
-              ) : null}
+                <ThreadLocation thread={thread} />
+                {/* bb's card ends its branch line with everything that is not a
+                    word: the age or the park buttons, the pin, the PR, the
+                    children chip, the provider mark, the row menu. Right
+                    aligned and on one line, so the title owns the full width
+                    above it. */}
+                <RootTrailingCluster interactive={!selectionMode}>
+                  {rootTrailingCluster}
+                </RootTrailingCluster>
               </div>
             ) : null}
           </div>
 
-          {/*
-            The list stays mounted and its rows come and go inside it, so the
-            disclosure plays the same per-row entry and exit a loaded page does.
-            The connector line and its padding belong to the expanded state: on
-            a zero-height list they would paint a stub of border under the row.
-          */}
+        </div>
+
+        {/*
+          The list stays mounted and its rows come and go inside it, so the
+          disclosure plays the same per-row entry and exit a loaded page does.
+          The connector line and its padding belong to the expanded state: on
+          a zero-height list they would paint a stub of border under the row.
+        */}
           <ul
             id={childListId}
             ref={attachChildListAutoAnimateRef}
             aria-label={`Agents for ${threadDisplayTitle(thread)}`}
             className={cn(
               "ml-[14px] transition-colors duration-150 ease-out motion-reduce:transition-none",
-              expanded && "border-l pb-0.5 pl-3",
+              expanded && "border-l-[1.5px] pb-0.5 pl-3",
               expanded &&
                 (waitingForAgents
                   ? "border-current"
@@ -560,12 +566,15 @@ export function ThreadCard({
             }
           >
             {expanded
-              ? childThreads.map((child) => (
+              ? branches.map((branch) => (
                   <ChildThreadRow
-                    key={child.id}
-                    thread={child}
-                    provider={providerInfoById.get(child.providerId)}
-                    isActive={child.id === activeThreadId}
+                    key={branch.thread.id}
+                    thread={branch.thread}
+                    branches={branch.children}
+                    provider={providerInfoById.get(branch.thread.providerId)}
+                    providerInfoById={providerInfoById}
+                    activeThreadId={activeThreadId}
+                    isActive={branch.thread.id === activeThreadId}
                     onNavigate={onNavigate}
                     now={now}
                     preferences={preferences}
@@ -573,92 +582,30 @@ export function ThreadCard({
                 ))
               : null}
           </ul>
-        </div>
       </li>
-    </RowContextMenu>
-  );
-}
-
-/**
- * The thread's own menu.
- *
- * The right-click menu still exists and still holds the full set; this is the
- * discoverable twin of it, because a context menu is not an entrance.
- * Aggregate rows keep their disclosure chevron in normal flow; thread rows
- * have no stable trailing control, so their menu trigger is an overlay.
- */
-function ThreadMenu({
-  thread,
-  expanded,
-  childCount,
-  canToggleChildren,
-  splitAvailable,
-  revealed,
-  onToggleChildren,
-  onSettle,
-  onSnooze,
-  canPark,
-}: {
-  thread: PluginSidebarThread;
-  expanded: boolean;
-  childCount: number;
-  canToggleChildren: boolean;
-  splitAvailable: boolean;
-  revealed: boolean;
-  onToggleChildren: () => void;
-  onSettle: () => void;
-  onSnooze: (snoozedUntil: number) => void;
-  canPark: boolean;
-}) {
-  const { items, dialog } = useThreadMenuActions({
-    thread,
-    expanded,
-    childCount,
-    canToggleChildren,
-    onToggleChildren,
-    onSettle,
-    onSnooze,
-    canPark,
-    splitAvailable,
-  });
-  return (
-    <>
-      <Menu
-        label={`Actions for ${threadDisplayTitle(thread)}`}
-        trigger={
-          <RowMenuTrigger
-            label={`Actions for ${threadDisplayTitle(thread)}`}
-            revealed={revealed}
-          />
-        }
-      >
-        {items.map((item) => (
-          <Fragment key={item.key}>
-            {item.separatorBefore ? <MenuSeparator /> : null}
-            <MenuItem
-              icon={item.icon}
-              label={item.label}
-              destructive={item.destructive ?? false}
-              onSelect={item.onSelect}
-            />
-          </Fragment>
-        ))}
-      </Menu>
-      {dialog}
-    </>
+    </ThreadRowMenu>
   );
 }
 
 function ChildThreadRow({
   thread,
+  branches,
   provider,
+  providerInfoById,
+  activeThreadId,
   isActive,
   onNavigate,
   now,
   preferences,
 }: {
   thread: PluginSidebarThread;
+  /** This thread's own descendants, as the tree they form. */
+  branches: readonly FamilyBranch[];
   provider?: ProviderGlyphInfo;
+  /** Carried down so a grandchild draws the same glyph as its parent. */
+  providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
+  /** The open thread, so a row leading to it is never the one held back. */
+  activeThreadId: string | null;
   isActive: boolean;
   onNavigate: () => void;
   now: number;
@@ -666,17 +613,48 @@ function ChildThreadRow({
 }) {
   const actions = useSidebarThreadActions();
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
-  const reveal = useRowReveal();
+  const viewState = useNestViewState();
+  const attachNestedListAutoAnimateRef =
+    useListAutoAnimate<HTMLUListElement>();
+  const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null);
+  const listId = useId();
   const status = threadStatus(thread);
-  const isWorking = threadIsWorking(thread);
+  const needsYou = thread.hasPendingInteraction;
+  const isWorking = !needsYou && threadIsWorking(thread);
   const showRowDetails = preferences.rowDetails !== "hover";
-  const showChildMenu = reveal.revealed;
+  /**
+   * A child runs where its parent does, so its branch is the family's branch —
+   * the same redundancy the "In the row, no branch" mode removes one level up.
+   */
+  const showChildLocation =
+    showRowDetails &&
+    preferences.showThreadLocation &&
+    preferences.rowDetails !== "row-no-branch";
   const showChildTime = showRowDetails && preferences.showRelativeTime;
   const showChildProvider = showRowDetails && preferences.showProviderIcons;
-  const showChildRail = showChildMenu || showChildTime || showChildProvider;
+  /**
+   * This thread's own list, disclosed on its own terms.
+   *
+   * Same rules as the family's: the stored override wins, the preference is the
+   * fallback. And the open chat is never the row held back — a row leading to
+   * the thread being read draws its children whatever the setting says, which is
+   * this list's version of the rule the paged lists follow.
+   */
+  const nestedExpanded =
+    branches.some((branch) => branchHoldsThread(branch, activeThreadId)) ||
+    resolveFamilyExpanded({
+      childCount: branches.length,
+      forceExpanded: false,
+      override: viewState.familyOverride(thread.id) ?? expandedOverride,
+      defaultExpanded: preferences.defaultChildrenExpanded,
+    });
+  const showChildRail =
+    showChildTime || showChildProvider || branches.length > 0;
+  /** The open row keeps its own tint: the open chat outranks a raised hand. */
+  const needsYouRowTint = needsYou && !isActive && layout === null;
 
   return (
-    <RowContextMenu thread={thread} splitAvailable={layout !== null}>
+    <ThreadRowMenu thread={thread} splitAvailable={layout !== null}>
       <li className="relative list-none py-px">
         <span
           aria-hidden
@@ -691,13 +669,15 @@ function ChildThreadRow({
           }
         />
         <div
-          {...reveal.handlers}
           className={cn(
             "group/child @container relative flex min-w-0 items-center gap-1.5 rounded-md px-1.5",
-            preferences.density === "compact" ? "py-0.5" : "py-1",
+            preferences.density === "compact" ? "h-6" : "h-7",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
             !isActive && layout !== null && "bg-sidebar-accent/25",
           )}
+          style={
+            needsYouRowTint ? { backgroundColor: NEEDS_YOU_ROW_TINT } : undefined
+          }
         >
           {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- bb's
               shortcut and split-drag contracts require an anchor. */}
@@ -729,48 +709,249 @@ function ChildThreadRow({
                 {threadDisplayTitle(thread)}
               </span>
             </div>
-            {showRowDetails &&
-            (preferences.rowLayout === "two-line" ||
-              preferences.showThreadLocation) ? (
+            {showChildLocation ? (
               <div className="mt-0.5 flex h-3.5 min-w-0 items-center gap-1.5 text-2xs">
-                {preferences.showThreadLocation ? (
-                  <ThreadLocation thread={thread} />
-                ) : null}
+                <ThreadLocation thread={thread} />
               </div>
             ) : null}
           </div>
           {showChildRail ? (
             <div className="relative z-10 flex shrink-0 items-center gap-1.5 leading-none">
-            {showChildMenu ? (
-              <ThreadMenu
-                thread={thread}
-                expanded={false}
-                childCount={0}
-                canToggleChildren={false}
-                splitAvailable={layout !== null}
-                revealed={reveal.revealed}
-                onToggleChildren={() => undefined}
-                onSettle={() => undefined}
-                onSnooze={() => undefined}
-                canPark={false}
-              />
-            ) : null}
-            {showChildTime ? (
-              <span className="flex h-4 items-center tabular-nums text-2xs text-muted-foreground/70">
-                {relativeTimeLabel(thread.updatedAt, now)}
-              </span>
-            ) : null}
-            {showChildProvider ? (
-              <ProviderGlyph
-                providerId={thread.providerId}
-                provider={provider}
-              />
-            ) : null}
+              {needsYou ? (
+                <ChildStatusFlag status={familyStatusPresentation("needs-you")} />
+              ) : null}
+              {isWorking ? (
+                <ChildStatusFlag status={familyStatusPresentation("working")} />
+              ) : null}
+              {showChildTime ? (
+                <span className="flex h-4 items-center font-mono tabular-nums text-2xs text-muted-foreground/60">
+                  {relativeTimeLabel(thread.updatedAt, now)}
+                </span>
+              ) : null}
+              {showChildProvider ? (
+                <ProviderGlyph
+                  providerId={thread.providerId}
+                  provider={provider}
+                />
+              ) : null}
             </div>
           ) : null}
+          {branches.length > 0 ? (
+            <NestedDisclosure
+              label={threadDisplayTitle(thread)}
+              count={branches.length}
+              expanded={nestedExpanded}
+              controls={listId}
+              onToggle={() => {
+                const next = !nestedExpanded;
+                setExpandedOverride(next);
+                viewState.setFamilyOverride(thread.id, next);
+              }}
+            />
+          ) : null}
         </div>
+        {branches.length > 0 ? (
+          <ul
+            id={listId}
+            ref={attachNestedListAutoAnimateRef}
+            aria-label={`Agents for ${threadDisplayTitle(thread)}`}
+            className={cn(
+              "ml-3 flex flex-col transition-colors duration-150 ease-out motion-reduce:transition-none",
+              nestedExpanded && "border-l-[1.5px] border-sidebar-border pl-2",
+            )}
+          >
+            {nestedExpanded
+              ? branches.map((branch) => (
+                  <ChildThreadRow
+                    key={branch.thread.id}
+                    thread={branch.thread}
+                    branches={branch.children}
+                    provider={providerInfoById.get(branch.thread.providerId)}
+                    providerInfoById={providerInfoById}
+                    activeThreadId={activeThreadId}
+                    isActive={branch.thread.id === activeThreadId}
+                    onNavigate={onNavigate}
+                    now={now}
+                    preferences={preferences}
+                  />
+                ))
+              : null}
+          </ul>
+        ) : null}
       </li>
-    </RowContextMenu>
+    </ThreadRowMenu>
+  );
+}
+
+/**
+ * The right end of a card's line.
+ *
+ * `ml-auto` is what puts it there: the branch takes the width it needs and
+ * truncates, and this keeps its natural width at the far end of the same line.
+ * `z-10` lifts its controls above the row's full-bleed anchor, which is
+ * otherwise the topmost thing on the row.
+ */
+function RootTrailingCluster({
+  interactive,
+  children,
+}: {
+  interactive: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "relative z-10 ml-auto flex shrink-0 items-center gap-1.5",
+        // The line around this cluster is `pointer-events-none`, so the row's
+        // full-bleed anchor stays the thing a click lands on. A control inside
+        // has to opt back in, or it is decoration.
+        interactive ? "pointer-events-auto" : "pointer-events-none",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * A child row's verdict, in words rather than a glyph.
+ *
+ * The shape is BB Sidebar's (`src/ChildThreadList.tsx`, `ChildStatusFlag`): a
+ * small uppercase flag on a tinted ground. The tint is NOT bb's, though — bb
+ * hard-codes Tailwind hues, and Nest's palette is the user's to choose, so the
+ * ground is `bg-current/10` over the status's own colour, the same way
+ * `FamilyStatusBadge` draws one. A hard-coded sky would ignore a custom palette.
+ */
+function ChildStatusFlag({ status }: { status: FamilyStatusPresentation }) {
+  return (
+    <span
+      data-nest-child-status={status.kind}
+      className="shrink-0 rounded bg-current/10 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-[0.08em]"
+      style={{ color: familyStatusColor(status) }}
+    >
+      {status.label}
+    </span>
+  );
+}
+
+/**
+ * The ground under a child row that is waiting on the user.
+ *
+ * Mixed from the palette for the same reason the flag above is: bb paints this
+ * row amber, and a user who has recoloured "Stalled / waiting" would get an
+ * amber row under a purple flag.
+ */
+const NEEDS_YOU_ROW_TINT = `color-mix(in srgb, ${familyStatusColor(
+  familyStatusPresentation("needs-you"),
+)} 12%, transparent)`;
+
+/**
+ * The card's disclosure: the children it holds, as a chip.
+ *
+ * BB Sidebar's `ChildThreadBadge` (`src/ChildThreadList.tsx`) is the shape — a
+ * rounded chip carrying the children's dots, their count and a chevron, tinted
+ * by the state the subtree is in. Nest keeps its provider glyphs inside it
+ * (bb shows those elsewhere), and tints it from the palette rather than from
+ * Tailwind hues, for the reason `ChildStatusFlag` gives.
+ */
+function ChildThreadChip({
+  threads,
+  status,
+  expanded,
+  controls,
+  label,
+  providerGlyphs,
+  disabled,
+  onToggle,
+}: {
+  threads: readonly PluginSidebarThread[];
+  status: FamilyStatusPresentation;
+  expanded: boolean;
+  controls: string;
+  label: string;
+  providerGlyphs: ReactNode;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-nest-child-status={status.kind}
+      aria-label={label}
+      aria-expanded={expanded}
+      aria-controls={controls}
+      disabled={disabled}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        "group/children relative flex h-5 shrink-0 items-center gap-1 rounded-full bg-current/10 px-1.5 text-2xs font-medium",
+        "outline-none transition-colors duration-150 ease-out hover:bg-current/20 focus-visible:ring-1 focus-visible:ring-ring motion-reduce:transition-none",
+        disabled && "pointer-events-none",
+      )}
+      style={{ color: familyStatusColor(status) }}
+    >
+      <DiscCluster threads={threads} compact />
+      <span className="tabular-nums">{threads.length}</span>
+      {providerGlyphs}
+      <Icon
+        name="ChevronDown"
+        className={cn(
+          "size-3 transition-transform duration-150 ease-out motion-reduce:transition-none",
+          expanded && "rotate-180",
+        )}
+        aria-hidden
+      />
+    </button>
+  );
+}
+
+/**
+ * The control that opens a child's own children.
+ *
+ * Ported from BB Sidebar (`src/ChildThreadList.tsx`,
+ * `GrandchildDisclosureButton`). It sits after the row's click target rather
+ * than inside it, so asking to see one more level never opens the thread by
+ * accident, and it names its count because that is the whole of what it decides.
+ */
+function NestedDisclosure({
+  label,
+  count,
+  expanded,
+  controls,
+  onToggle,
+}: {
+  label: string;
+  count: number;
+  expanded: boolean;
+  controls: string;
+  onToggle: () => void;
+}) {
+  const noun = `child thread${count === 1 ? "" : "s"}`;
+  const label2 = `${expanded ? "Hide" : "Show"} ${count} ${noun}`;
+  return (
+    <button
+      type="button"
+      title={`${label2} for ${label}`}
+      aria-label={`${label2} for ${label}`}
+      aria-expanded={expanded}
+      aria-controls={controls}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }}
+      className="relative z-10 mr-0.5 flex h-5 shrink-0 items-center gap-0.5 rounded px-1 font-mono text-2xs tabular-nums text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+    >
+      <span>{count}</span>
+      <Icon
+        name={expanded ? "ChevronUp" : "ChevronDown"}
+        className="size-3"
+        aria-hidden
+      />
+    </button>
   );
 }
 
@@ -826,6 +1007,13 @@ function ThreadStateGlyph({
 function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
   const branch = thread.environment?.branchName;
   if (branch) {
+    // A worktree's branch is a branch of the project; a thread running in the
+    // project's own checkout is on the project's branch. The worktree row above
+    // draws its branch line with the same two icons, so the mark means the same
+    // thing at both levels.
+    const displayKind = thread.environment?.workspaceDisplayKind;
+    const isWorktree =
+      displayKind === "managed-worktree" || displayKind === "unmanaged-worktree";
     return (
       <span
         title={`Branch: ${branch}`}
@@ -835,8 +1023,8 @@ function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
         className="flex min-w-0 flex-1 items-center gap-1 truncate text-2xs text-muted-foreground"
       >
         <Icon
-          name="GitBranch"
-          aria-label="Branch"
+          name={isWorktree ? "FolderGit" : "GitBranch"}
+          aria-label={isWorktree ? "Worktree branch" : "Branch"}
           className="size-3 shrink-0 text-muted-foreground/60"
         />
         <span className="truncate font-mono">{branch}</span>
