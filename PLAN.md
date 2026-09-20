@@ -259,7 +259,33 @@ Two smaller mismatches shaped the rest:
    fix is one word, and the affordances test now pins it: every row that hosts a
    full-bleed target must declare `relative` itself.
 
-13. **A row auto-animate abandons is swept away.** Its `remove` pulls a leaving row
+13. **The two park buttons are one gesture with two outcomes.** Both lift their
+   artwork and light a tinted ground, because they are a pair — and then they
+   part: settling is *over*, so it celebrates in emerald with five sparkles
+   (ported, see `settle-button.css`); snoozing is *later*, so the clock nods and
+   three marks drift off it, in violet (`snooze-button.css`, Nest's own — BB
+   Sidebar's snooze control is a select, so there was nothing to follow). Their
+   classes live in one `PARK_TONES` table, which is what makes them siblings
+   rather than two buttons that happen to be adjacent.
+   **The snooze effect was written twice, and the first one was wrong.** It began
+   as a single expanding ring, and it read as a control moving rather than as
+   something happening — the user's words were that it was not as fun to look at
+   as the settle. The reason is structural: the sparkle's quality comes from
+   *several* small elements, each with its own delay and its own path, and the
+   ring was one element doing one smooth thing. So the marks use the sparkle's
+   construction, and the pair is deliberately asymmetric — five sparkles against
+   three marks — because settling is the celebration and snoozing is the quiet
+   act. Matching five would have said they are the same thing.
+   The hue is the one place a row writes a colour down instead of reading the
+   user's palette, and the reason is that the palette's roles are *states* — the
+   snooze is the user acting on the row, not the row reporting anything, so there
+   is no role to read. Violet rather than the obvious sky: sky is what a working
+   row says, and amber is the tint a waiting child row already wears, so either
+   would read as a *status* rather than as an action. The row-shape test bans
+   amber and sky on a row for that reason and names the park pair as the one
+   exception, so the rule and the exception are both pinned.
+
+14. **A row auto-animate abandons is swept away.** Its `remove` pulls a leaving row
    out of flow and waits for the animation's `finish` to run `cleanUp`, which is
    what finally takes the element out of the document. When that event never
    arrives the row stays for good, floating over the list it left — the overlap a
@@ -278,6 +304,7 @@ Two smaller mismatches shaped the rest:
 | --- | --- |
 | `hooks/use-list-auto-animate.ts` | New. Upstream's hook minus the drag registry and suspend/resume, with the reason. |
 | `components/inbox/settle-button.css` | New. Upstream's stylesheet, re-prefixed `nest-settle`. |
+| `components/inbox/snooze-button.css` | New. Nest's own: the snooze button's tick and ripple. |
 | `components/inbox/page-controls.tsx` | New. The controls every paged list ends with: Load more, and the Show less that puts the list away. |
 | `lib/paging.ts` | New. The default and bounds, `resolvePageSize`, `visibleRows`, `hasMoreRows`, `nextPageSize`. |
 | `lib/working-since.ts` | New. Ported `reconcileWorkingSince` / `statusWithDuration` / read / write, with `threadIsWorking` and Nest's injectable storage. |

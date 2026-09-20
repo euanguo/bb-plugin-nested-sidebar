@@ -44,7 +44,9 @@ Source: <https://github.com/stablyai/orca>
 MIT License, Copyright (c) 2026 Michael Yong and Copyright (c) 2026 Yusuf Akbulut.
 
 The list transitions (`hooks/use-list-auto-animate.ts`), the settle button's sparkle
-and motion (`components/inbox/settle-button.css`, `components/inbox/thread-card.tsx`),
+and motion (`components/inbox/settle-button.css`, `components/inbox/thread-card.tsx` —
+the *snooze* button's tick and ripple, in `components/inbox/snooze-button.css`, are
+Nest's own, since upstream's snooze control is a select and has no effect to follow),
 the settled shelf's paging rule (`lib/paging.ts`,
 `components/inbox/thread-inbox.tsx`), the live working-duration model
 (`lib/working-since.ts`, `hooks/use-working-since.ts`,

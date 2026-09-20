@@ -32,7 +32,25 @@ describe("the row shape borrowed from BB Sidebar", () => {
     assert.match(card, /className="shrink-0 rounded bg-current\/10 px-1\.5 py-0\.5/);
     assert.match(card, /style=\{\{ color: familyStatusColor\(status\) \}\}/);
     assert.match(card, /color-mix\(in srgb, \$\{familyStatusColor\(/);
-    assert.doesNotMatch(card, /bg-amber-\d|bg-sky-\d|text-amber-\d|text-sky-\d/);
+    assert.doesNotMatch(card, /bg-amber-\d|text-amber-\d|bg-sky-\d|text-sky-\d/);
+  });
+
+  it("writes down a hue only for the two park buttons, and only their own", () => {
+    // The exception to the rule above, and it is narrow: a park button's glow
+    // says what the *user* just did, and the palette's roles are states, so
+    // there is no role to read. Amber and sky are out because a row already
+    // wears them for need-you and working — so each park act gets a hue of its
+    // own that no state claims, and the two are different from each other.
+    const tones = card.slice(
+      card.indexOf("const PARK_TONES = {"),
+      card.indexOf("function ParkButton("),
+    );
+    assert.match(tones, /group-hover\/settle:bg-emerald-500\/15/);
+    assert.match(tones, /group-hover\/snooze:bg-violet-500\/15/);
+    for (const hue of ["amber", "sky"]) {
+      assert.doesNotMatch(tones, new RegExp(`bg-${hue}-`));
+      assert.doesNotMatch(tones, new RegExp(`text-${hue}-`));
+    }
   });
 
   it("gives a waiting child a ground of its own, under the open row's", () => {

@@ -50,6 +50,7 @@ import { useNestViewState } from "@/components/inbox/view-state-context";
 import { useThreadMenuActions } from "@/components/inbox/thread-menu-items";
 import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
 import "./settle-button.css";
+import "./snooze-button.css";
 
 export function ThreadCard({
   thread,
@@ -219,6 +220,7 @@ export function ThreadCard({
       {showRootParkActions ? (
         <span data-nest-root-time="" className="flex h-4 items-center gap-0.5">
           <ParkButton
+            tone="snooze"
             label="Snooze until tomorrow"
             icon="Clock"
             onActivate={() => {
@@ -229,9 +231,9 @@ export function ThreadCard({
             }}
           />
           <ParkButton
+            tone="settle"
             label="Settle thread"
             icon="Archive"
-            sparkle
             onActivate={onSettle}
           />
         </span>
@@ -1044,23 +1046,65 @@ function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
   return <span className="flex-1" />;
 }
 
+/**
+ * The two park controls' own motion, in one place.
+ *
+ * Both lift their artwork and light a tinted ground, because they are a pair;
+ * what happens next is what tells them apart, and it is the whole point of each
+ * control. Settling is over — five sparkles, emerald. Snoozing is later — the
+ * clock nods and three marks drift off it, violet, and deliberately quieter than
+ * the five the settle spends. The colours are written down rather than read from
+ * the palette; `snooze-button.css` says why, and why neither is the sky the
+ * working state already uses.
+ *
+ * Every class here is a literal string so the build can see it.
+ */
+const PARK_TONES = {
+  settle: {
+    button: cn(
+      "nest-settle group/settle relative flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md",
+      "transition-colors duration-200 ease-out hover:text-emerald-700 dark:hover:text-emerald-300",
+      "focus-visible:text-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:focus-visible:text-emerald-300",
+      "motion-reduce:transition-none",
+    ),
+    ground: cn(
+      "group-hover/settle:bg-emerald-500/15 group-hover/settle:shadow-[0_0_0_3px_rgb(16_185_129_/_0.08)] group-focus-visible/settle:bg-emerald-500/15",
+      "motion-safe:group-hover/settle:-translate-y-0.5 motion-safe:group-focus-visible/settle:-translate-y-0.5 motion-safe:group-active/settle:translate-y-0 motion-safe:group-active/settle:scale-90 group-active/settle:bg-emerald-500/25",
+    ),
+    icon:
+      "motion-safe:group-hover/settle:rotate-[-8deg] motion-safe:group-hover/settle:scale-110 motion-safe:group-focus-visible/settle:rotate-[-8deg] motion-safe:group-focus-visible/settle:scale-110",
+  },
+  snooze: {
+    button: cn(
+      "nest-snooze group/snooze relative flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md",
+      "transition-colors duration-200 ease-out hover:text-violet-700 dark:hover:text-violet-300",
+      "focus-visible:text-violet-700 focus-visible:ring-2 focus-visible:ring-violet-500/50 dark:focus-visible:text-violet-300",
+      "motion-reduce:transition-none",
+    ),
+    ground: cn(
+      "group-hover/snooze:bg-violet-500/15 group-hover/snooze:shadow-[0_0_0_3px_rgb(139_92_246_/_0.08)] group-focus-visible/snooze:bg-violet-500/15",
+      "motion-safe:group-hover/snooze:-translate-y-0.5 motion-safe:group-focus-visible/snooze:-translate-y-0.5 motion-safe:group-active/snooze:translate-y-0 motion-safe:group-active/snooze:scale-90 group-active/snooze:bg-violet-500/25",
+    ),
+    // The nod is a keyframe, not a transform: it plays once per hover and holds
+    // its last frame, which a utility class cannot express. So this button's
+    // icon carries no rotate or scale of its own to fight it.
+    icon: "",
+  },
+} as const;
+
 function ParkButton({
+  tone,
   label,
   icon,
-  sparkle = false,
   onActivate,
 }: {
+  /** Which of the two park acts this is, and therefore which effect it plays. */
+  tone: keyof typeof PARK_TONES;
   label: string;
   icon: Extract<IconName, "Archive" | "Clock">;
-  /**
-   * The settle button's sparkle and lift, ported from BB Sidebar (see
-   * THIRD_PARTY_NOTICES.md). Snoozing shares this component but not the
-   * celebration: parking is the act the shelf is about, and a sparkle on the
-   * snooze control would spend the same emphasis on a timer.
-   */
-  sparkle?: boolean;
   onActivate: () => void;
 }) {
+  const { button, ground, icon: iconMotion } = PARK_TONES[tone];
   return (
     <button
       type="button"
@@ -1071,51 +1115,48 @@ function ParkButton({
         event.stopPropagation();
         onActivate();
       }}
-      className={cn(
-        "text-muted-foreground focus-visible:outline-none",
-        // Split rather than reconciled by `tailwind-merge`: the two branches
-        // disagree on padding (`p-0.5` vs `size-5`), ring width and radius, and
-        // merging them would quietly restyle the snooze button.
-        sparkle
-          ? cn(
-              "nest-settle group/settle relative flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md",
-              "transition-colors duration-200 ease-out hover:text-emerald-700 dark:hover:text-emerald-300",
-              "focus-visible:text-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:focus-visible:text-emerald-300",
-              "motion-reduce:transition-none",
-            )
-          : "rounded p-0.5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring",
-      )}
+      className={button}
     >
-      {sparkle ? (
-        /* Move only the artwork so hovering an edge cannot move the hit area. */
-        <span
-          aria-hidden="true"
+      {/* Move only the artwork so hovering an edge cannot move the hit area. */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none relative flex size-full items-center justify-center rounded-[inherit]",
+          "transition-[background-color,box-shadow,transform] duration-200 ease-out motion-reduce:transition-none",
+          ground,
+        )}
+      >
+        <Icon
+          name={icon}
           className={cn(
-            "pointer-events-none relative flex size-full items-center justify-center rounded-[inherit]",
-            "transition-[background-color,box-shadow,transform] duration-200 ease-out motion-reduce:transition-none",
-            "group-hover/settle:bg-emerald-500/15 group-hover/settle:shadow-[0_0_0_3px_rgb(16_185_129_/_0.08)] group-focus-visible/settle:bg-emerald-500/15",
-            "motion-safe:group-hover/settle:-translate-y-0.5 motion-safe:group-focus-visible/settle:-translate-y-0.5 motion-safe:group-active/settle:translate-y-0 motion-safe:group-active/settle:scale-90 group-active/settle:bg-emerald-500/25",
+            "size-3.5 transition-transform duration-200 ease-out motion-reduce:transition-none",
+            tone === "snooze" && "nest-snooze-hand",
+            iconMotion,
           )}
-        >
-          <Icon
-            name={icon}
-            className="size-3.5 transition-transform duration-200 ease-out motion-reduce:transition-none motion-safe:group-hover/settle:rotate-[-8deg] motion-safe:group-hover/settle:scale-110 motion-safe:group-focus-visible/settle:rotate-[-8deg] motion-safe:group-focus-visible/settle:scale-110"
-          />
-          {[0, 1, 2, 3, 4].map((sparkle) => (
-            <span
-              key={sparkle}
-              aria-hidden="true"
-              className="nest-settle-sparkle"
-            />
-          ))}
-        </span>
-      ) : (
-        <Icon name={icon} className="size-3.5" />
-      )}
+        />
+        {tone === "settle"
+          ? [0, 1, 2, 3, 4].map((sparkle) => (
+              <span
+                key={sparkle}
+                aria-hidden="true"
+                className="nest-settle-sparkle"
+              />
+            ))
+          : // The marks that drift off it. They take the button's own hover
+            // tint through `currentColor`, so they cannot drift from the icon.
+            [0, 1, 2].map((mark) => (
+              <span
+                key={mark}
+                aria-hidden="true"
+                className="nest-snooze-z"
+              >
+                z
+              </span>
+            ))}
+      </span>
     </button>
   );
 }
-
 function ActivityCount({ label, count }: { label: string; count: number }) {
   return (
     <span

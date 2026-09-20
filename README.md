@@ -365,6 +365,16 @@ PR ticks and other PR icons use their semantic color as a tinted background, so 
 ready tick is visibly green. Hovering a quiet root swaps its elapsed time for the
 two park buttons without adding a row.
 
+**The two park buttons are one gesture with two outcomes.** Both lift their artwork
+and light a tinted ground; then they part. Settling is *over*, so it celebrates in
+emerald with five sparkles — the effect ported from BB Sidebar. Snoozing is *later*,
+so the clock nods and three marks drift off it, in violet: Nest's own, since
+upstream's snooze control is a select and has nothing to follow. Three marks against
+five sparkles is the point — settling is the celebration, snoozing is the quiet act.
+Those two hues are the only ones on a row that are written down rather than read
+from your palette, because the palette's roles are *states* and postponing is
+something you do to a row rather than something it reports.
+
 ### A working thread can never be parked
 
 Workflows, background agents, background commands, plan mode, and goals all count as

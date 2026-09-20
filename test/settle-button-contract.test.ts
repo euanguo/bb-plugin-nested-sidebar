@@ -10,6 +10,10 @@ const css = await readFile(
   new URL("../components/inbox/settle-button.css", import.meta.url),
   "utf8",
 );
+const snoozeCss = await readFile(
+  new URL("../components/inbox/snooze-button.css", import.meta.url),
+  "utf8",
+);
 
 /** The stylesheet without its header comment, which names the upstream repo. */
 const rules = css.slice(css.indexOf("*/") + 2);
@@ -72,16 +76,83 @@ describe("the settle button's sparkle", () => {
     const [snooze, settle] = parkButtons();
     assert.notEqual(snooze, undefined);
     assert.notEqual(settle, undefined);
-    assert.doesNotMatch(snooze!, /sparkle/);
-    assert.match(settle!, /sparkle/);
+    assert.match(snooze!, /tone="snooze"/);
+    assert.match(settle!, /tone="settle"/);
     assert.match(settle!, /icon="Archive"/);
+    // The celebration is the settle's. Snoozing is a different act with its own
+    // effect, and its own stylesheet, next door.
+    assert.doesNotMatch(snooze!, /nest-settle-sparkle/);
+    assert.match(card, /tone === "settle"\n\s+\? \[0, 1, 2, 3, 4\]\.map/);
   });
 
   it("moves the artwork, not the hit area", () => {
     // The outer button carries no transform; the inner span carries the lift.
-    assert.match(card, /motion-safe:group-hover\/settle:-translate-y-0\.5/);
-    assert.match(card, /motion-safe:group-active\/settle:scale-90/);
+    // Both tones lift the same way — they are a pair — and differ in what
+    // happens after.
+    for (const tone of ["settle", "snooze"]) {
+      assert.match(
+        card,
+        new RegExp(`motion-safe:group-hover/${tone}:-translate-y-0\\.5`),
+      );
+      assert.match(card, new RegExp(`motion-safe:group-active/${tone}:scale-90`));
+    }
     assert.match(card, /motion-safe:group-hover\/settle:rotate-\[-8deg\]/);
+  });
+});
+
+describe("the snooze button's nod", () => {
+  it("ships its own stylesheet with the component that draws it", () => {
+    assert.match(card, /import "\.\/snooze-button\.css";/);
+    assert.match(snoozeCss, /@keyframes nest-snooze-nod/);
+    assert.match(snoozeCss, /@keyframes nest-snooze-drift/);
+    assert.match(snoozeCss, /\.nest-snooze-z \{/);
+    assert.match(card, /className="nest-snooze-z"/);
+    assert.match(card, /tone === "snooze" && "nest-snooze-hand"/);
+  });
+
+  it("sends several marks, each with its own delay and path", () => {
+    // The construction is the sparkle's, and that is the point: one element
+    // doing one smooth thing reads as a control moving; a handful, staggered,
+    // reads as something happening. A ring was written first and replaced for
+    // exactly that reason.
+    assert.match(card, /\[0, 1, 2\]\.map\(\(mark\) => \(/);
+    for (const index of [1, 2, 3]) {
+      assert.match(
+        snoozeCss,
+        new RegExp(`\\.nest-snooze-z:nth-of-type\\(${index}\\) \\{[\\s\\S]*?--z-delay: \\d+ms;`),
+      );
+      assert.match(
+        snoozeCss,
+        new RegExp(`\\.nest-snooze-z:nth-of-type\\(${index}\\) \\{[\\s\\S]*?--z-rise:`),
+      );
+    }
+    assert.match(snoozeCss, /animation: nest-snooze-drift 900ms var\(--z-delay\) ease-out both;/);
+  });
+
+  it("spends fewer marks than the settle spends sparkles", () => {
+    // The asymmetry is the design: settling is the celebration, snoozing is the
+    // quiet one, and matching the settle's five would say they are the same act.
+    const marks = card.slice(card.indexOf('tone === "settle"'), card.length);
+    assert.match(marks, /\[0, 1, 2\]\.map/);
+    const settleSpans = card.match(/nest-settle-sparkle/g)?.length ?? 0;
+    assert.notEqual(settleSpans, 0);
+    assert.doesNotMatch(card, /\[0, 1, 2, 3, 4\]\.map\(\(mark\) => \(/);
+  });
+
+  it("names nothing after the plugin next door", () => {
+    // Both plugins can be installed at once and this stylesheet is global.
+    assert.doesNotMatch(snoozeCss, /bb-sidebar|nest-settle/);
+    assert.doesNotMatch(card, /bb-sidebar-snooze/);
+  });
+
+  it("keeps the motion behind a reduced-motion gate, and the marks visible", () => {
+    assert.match(snoozeCss, /@media \(prefers-reduced-motion: no-preference\) \{/);
+    // Outside the gate, so a reduced-motion user still sees the marks arrive.
+    assert.match(
+      snoozeCss,
+      /\.nest-snooze:is\(:hover, :focus-visible\) \.nest-snooze-z \{\n  opacity: 0\.85;\n\}/,
+    );
+    assert.match(snoozeCss, /animation: nest-snooze-nod 620ms ease-out both;/);
   });
 });
 
