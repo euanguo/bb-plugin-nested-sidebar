@@ -3,6 +3,7 @@
 // place, so activity changes state without moving the user's navigation.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ThreadInbox } from "@/components/inbox/thread-inbox";
+import { ChildrenChip } from "@/components/inbox/children-chip";
 import { ParentChip } from "@/components/inbox/parent-chip";
 import { NestSettingsSection } from "@/components/settings/nest-settings";
 import { nestActions } from "@/lib/palette-bridge";
@@ -47,6 +48,16 @@ export default definePluginApp((app) => {
     id: "parent",
     title: "Parent thread",
     component: ParentChip,
+  });
+
+  // The other direction, and the one the sidebar cannot cover: while the user is
+  // reading a thread, the list may be on another group tab, filtered past this
+  // family, or collapsed. The slot holds a row of actions, so this sits beside
+  // the parent chip rather than replacing it.
+  app.slots.experimental_threadHeaderAction({
+    id: "children",
+    title: "Child threads",
+    component: ChildrenChip,
   });
 
   // The view menu can change filtering and ordering, but the display settings

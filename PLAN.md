@@ -190,10 +190,12 @@ Two smaller mismatches shaped the rest:
    does. The four places that used to spell out "one line or details on hover" now
    all read one derived fact (`branchLineRenders`), so the cluster can never be
    left with neither a branch line to end nor a title line to ride — or a branch
-   line with nothing in it. The menu is
-   the only child of that cluster that is added and removed, so it goes **first**:
-   the cluster is right aligned, and a menu appended to the end would shift every
-   glyph to its left the moment it appeared on hover.
+   line with nothing in it. The cluster's **order** rule came from the same
+   reasoning and outlived the thing that first put it there: the cluster is right
+   aligned, so anything hover adds or removes has to be drawn at its head or every
+   glyph already on screen shifts. That was the hover menu then — item 10 replaced
+   it with a right-click and took the trigger out of the tree entirely — and it is
+   the pin now (item 16).
 
 9. **A child can have children.** `lib/inbox.ts`'s `familyBranches` rebuilds the
    tree from each thread's `parentThreadId` for drawing, where ordering, selection
@@ -285,7 +287,26 @@ Two smaller mismatches shaped the rest:
    amber and sky on a row for that reason and names the park pair as the one
    exception, so the rule and the exception are both pinned.
 
-14. **A row auto-animate abandons is swept away.** Its `remove` pulls a leaving row
+14. **The thread header carries both directions of the tree.** A chip for a
+   thread's *children* joins the parent chip in bb's header action row. The
+   capability had been written once and never registered — the slot was assumed
+   to hold one component, so only the parent's chip was wired and the file lived
+   on as dead weight until the plugin that forked this one deleted it. **The slot
+   is not single-valued**: the collector keeps an array and asks only that each id
+   be unique (`plugin-app-collector.js`, `requireUniqueId(kind, seenIds.threadHeaderAction, id)`),
+   so the two chips sit side by side under `id: "parent"` and `id: "children"`.
+   What the chip is *for* narrowed once the sidebar learned to draw grandchildren:
+   not "the home for child threads the flat list hides" — the list shows them now
+   — but the one surface that still reaches them when the list is elsewhere:
+   another group tab, a filter that excludes the family, a collapsed project, or a
+   sidebar the user is not looking at. It came back under a name that says what it
+   draws (`children-chip.tsx`; bb's *subagents* are activity counters on a thread,
+   which is what the old name confused), with its panel drawn by the sidebar's one
+   menu (`Menu` + a new `MenuRow` for a row richer than icon-and-label) rather
+   than by a second `rounded-xl` panel of its own, and with its waiting state in
+   the palette's needs-you colour instead of plain text.
+
+15. **A row auto-animate abandons is swept away.** Its `remove` pulls a leaving row
    out of flow and waits for the animation's `finish` to run `cleanUp`, which is
    what finally takes the element out of the document. When that event never
    arrives the row stays for good, floating over the list it left — the overlap a
@@ -297,6 +318,31 @@ Two smaller mismatches shaped the rest:
    [formkit/auto-animate#231](https://github.com/formkit/auto-animate/issues/231)
    — "Deleted elements are not removed from the document but instead overlay
    existing elements".
+
+16. **The pin is a control on the row, in both states.** The **Pinned** section
+   answers *which* threads are pinned; the row answers whether *this* one is, and
+   it is the way out that does not depend on remembering the context menu. One
+   control with two states: the fill reports the state, the press carries the
+   toggle, `aria-pressed` carries both, and the glyph is the same silhouette either
+   way — `PinFilled` is **made from `PinIcon`'s own artwork** rather than imported
+   as a second icon, because Hugeicons' free set ships the pin outlined only and a
+   hand-drawn solid would be a second shape that drifts from the first. The rule is
+   drawn on the artwork's own property — every closed outline takes
+   `fill: currentColor`, the one open path stays a stroke — so the two halves of
+   the glyph are filled by what they are, and a redraw that turned the head into
+   lines would fill nothing and fail a test rather than a screenshot.
+   *When* it is drawn follows the park buttons' rule: at rest on a pinned row,
+   because which threads are pinned is worth reading without pointing at a row, and
+   under the pointer on one that is not, so pinning is one press on the row it is
+   about. It **leads the trailing cluster** and holds that place in both states,
+   which is what keeps pressing it from moving it: everything hover changes is at
+   the head, and the title absorbs the width (item 8).
+   It replaces a decorative marker that could not be pressed (`title="Pinned
+   thread"` inside the metadata group), and the reversal is recorded rather than
+   deleted: `test/pinned.test.ts` asserts the old marker is gone, and
+   `test/trailing-rail-layout.test.ts` keeps the property it always asserted —
+   nothing a pointer changes is drawn after something that stays — with the pin
+   named as one of the two things that do change.
 
 ## Changes
 
@@ -320,6 +366,8 @@ Two smaller mismatches shaped the rest:
 | `components/inbox/row-context-menu.tsx` | Rewritten from the thread-only right-click menu into `RowMenu` + `RowMenuItem`: the one menu every level in the tree opens. |
 | `components/inbox/thread-menu-items.tsx` | `ThreadMenuItem` is now `RowMenuItem`, and `ThreadRowMenu` wires the thread items to the shared surface for the card, a child row and a shelf row. |
 | `components/ui/menu.tsx` | The item styling and the submenu surface are exported, so the dropdown and the context menu draw their rows from one place. |
+| `components/ui/icon.tsx` | `PinFilled` — the solid pin, derived from `PinIcon`'s own artwork by filling every closed outline. |
+| `components/inbox/thread-card.tsx` (pin) | `PinButton`, the pin as a toggle: drawn at rest on a pinned row and under the pointer on the rest, leading the trailing cluster; the decorative `Pinned thread` marker it replaces is gone. |
 | `components/inbox/group-section.tsx`, `project-node.tsx`, `tree-rows.tsx` | An animate ref on each list they own, kept mounted while its rows come and go; paging on the project's and the worktree's thread lists; the connector line and padding only while open. |
 | `components/inbox/slim-row.tsx`, `row-actions.tsx`, `row-metadata.tsx`, `family-status.tsx`, `provider-glyph.tsx`, `rollup-badge.tsx`, `status-glyph.tsx`, `bulk-delete-dialog.tsx`, `remove-worktree-dialog.tsx` | Timing and reduced-motion on transitions, spinners and the shine. |
 | `package.json`, `package-lock.json` | `@formkit/auto-animate@^0.9.0` as a runtime dependency. |
@@ -434,6 +482,19 @@ Two smaller mismatches shaped the rest:
   `reconcileWorkingSince` is what keeps it from costing a render per row. The exit
   sweep adds one timer per child-list mutation, each doing one pass over that
   container's direct children.
+- **The pin is a glyph, not a colour.** The fill is the whole signal: a pinned row
+  is not tinted, raised or underlined for being pinned, because a pin is where the
+  user *put* the thread rather than something the thread is *doing* — and every
+  colour a card already spends is a status. The cost is that the state is legible
+  only at `size-3.5`, which is why the accessible name carries it as well
+  ("Unpin thread" / "Pin thread") and why pressing it is a toggle rather than two
+  separate controls.
+- **A row that is not pinned shows no pin without a pointer.** The control appears
+  under the pointer, so a device without hover reaches *pinning* through the
+  long-press menu that already held it (`Pin thread` in `useThreadMenuActions`)
+  while *unpinning* stays on the row at rest. The asymmetry is deliberate: the
+  state a row must report with no pointer at all is "pinned", and the action it can
+  afford to hide behind the menu is the one the menu already has.
 
 ## Verification
 

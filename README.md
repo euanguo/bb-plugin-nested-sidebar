@@ -304,6 +304,9 @@ The section obeys search and the filter and **ignores the group tab**, which is
 deliberate: a pin that vanishes because you are looking at another group is the
 one thing a pin is for.
 
+The way back out is the row itself: the pin on a pinned row is its own unpin, and
+pressing it drops the thread back into its project at the place bb's order says.
+
 ### Projects and parked shelves
 
 - **Projects** — drag an existing project header to sort projects, or focus the
@@ -378,15 +381,26 @@ is no outline around a family and no second panel inside it. The title leads at
 `text-sm` and owns the full width of its line.
 
 Under it, one line carries the branch: the **branch icon and name on the left,
-truncating**, and at its right end everything that is not a word — the age or the
-park buttons, the pin, the PR number, the children chip, the provider mark, and the
-row menu. bb's card ends its branch line the same way; Nest used to keep those in a
-second column beside the two lines, which spent width on a vertical run of glyphs
-and squeezed the title into what was left. The menu is the only one of them that is
-added and removed, so it goes first in the cluster — a right-aligned cluster would
-shift every glyph to its left the moment it appeared. In the **One line** row layout,
-or with details in the hover card, there is no branch line and the same cluster ends
-the title line instead.
+truncating**, and at its right end everything that is not a word — the pin, the age
+or the park buttons, the PR number, the children chip, and the provider mark. bb's
+card ends its branch line the same way; Nest used to keep those in a second column
+beside the two lines, which spent width on a vertical run of glyphs and squeezed the
+title into what was left. Nothing the pointer adds is drawn after something that
+stays: the pin leads the cluster, and the two things hover changes — the age
+becoming the park buttons, and the pin appearing on a row that is not pinned — both
+sit at its head, so the glyphs already on screen never move and only the width the
+title has changes. In the **One line** row layout, or with details in the hover card,
+there is no branch line and the same cluster ends the title line instead.
+
+**A thread's pin is a control, not a mark.** A pinned row wears a **solid pin at
+rest** — which threads are pinned is worth reading without pointing at a row — and a
+row that is not pinned draws the outlined one under the pointer, so pinning is one
+press on the row it is about rather than two through the context menu. The glyph
+carries the state and the press carries the toggle, with `aria-pressed` and the
+label ("Pin thread" / "Unpin thread") saying both to a screen reader. The solid is
+**made from the outlined artwork** rather than drawn a second time — every closed
+outline in the glyph takes the fill, the open one stays a stroke — so the two states
+are one silhouette, and the pin does not change shape when it is pinned.
 
 **Failed**, **Needs you**, **Working**, **Unread**, **Inactive**, and seven-day
 **Stale** states have separate shapes, labels, tooltips, and customizable colors.
@@ -432,8 +446,19 @@ default when the family is selected or a child is working, unread, or waiting fo
 you. Child rows keep their own provider mark (including Codex and Claude), branch,
 age, working state, unread ring, context menu, split drag, and keyboard-readable
 status help. Provider names are announced by the child disclosure without adding
-nested tab stops. A parent chip in the thread header still gives a focused child
-a direct route back up.
+nested tab stops.
+
+**The thread header carries both directions of the tree.** A **parent chip** gives
+a focused child a route back up. A **children chip** — beside it, not instead of
+it — names how many children this thread has, turns to **Needs you** in your
+palette's waiting colour when one of them has a hand raised, and opens a list of
+them: each with its disc, its title, what kind of thread it is and its status.
+Clicking one opens it.
+
+The sidebar's own chip covers a family that is on screen and expanded. The header
+chip is for when it is not: another group tab, a filter that excludes this family,
+a collapsed project, or a sidebar that simply is not where the eyes are. It draws
+nothing at all for a thread with no children.
 
 **A child can have children, and the tree draws them.** A child row with its own
 child threads carries a `count + chevron` control of its own, opening a list

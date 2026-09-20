@@ -30,6 +30,14 @@ const hook = await readFile(
   "utf8",
 );
 const server = await readFile(new URL("../server.ts", import.meta.url), "utf8");
+const card = await readFile(
+  new URL("../components/inbox/thread-card.tsx", import.meta.url),
+  "utf8",
+);
+const icons = await readFile(
+  new URL("../components/ui/icon.tsx", import.meta.url),
+  "utf8",
+);
 
 function thread(
   id: string,
@@ -306,5 +314,70 @@ describe("pinned section wiring", () => {
     assert.match(section, /event\.dataTransfer\.types\.includes\(PINNED_DRAG_TYPE\)/);
     assert.match(section, /closest\("\[data-nest-family\]"\)/);
     assert.match(treeRows, /pinned\s*\n?\s*\? \(\) => undefined/);
+  });
+});
+
+/**
+ * The pin on the row itself.
+ *
+ * The section answers *which* threads are pinned; the row's own control answers
+ * whether this one is, and it is the way back out of the section — a pin you can
+ * only undo from a right-click menu is a pin you have to remember you made. One
+ * control with two states: the fill carries the state, the press carries the
+ * toggle, so neither has to be guessed from the other.
+ */
+describe("the row's pin control", () => {
+  const pinButton = card.slice(card.indexOf("function PinButton"));
+
+  it("is solid on a pinned thread and outlined on one that is not", () => {
+    assert.match(pinButton, /name=\{pinned \? "PinFilled" : "Pin"\}/);
+    assert.match(pinButton, /data-nest-pin=\{pinned \? "pinned" : "unpinned"\}/);
+    // A toggle reports the state it holds, rather than only naming its action.
+    assert.match(pinButton, /aria-pressed=\{pinned\}/);
+    assert.match(
+      pinButton,
+      /const label = pinned \? "Unpin thread" : "Pin thread"/,
+    );
+    // The decorative marker it replaces: a pin that said "pinned" and could not
+    // be pressed.
+    assert.doesNotMatch(card, /title="Pinned thread"/);
+  });
+
+  it("writes the pin through bb's own mutation", () => {
+    assert.match(card, /void actions\.setPinned\(thread\.id, !thread\.isPinned\)/);
+  });
+
+  it("draws it at rest on a pinned thread and under the pointer on the rest", () => {
+    assert.match(
+      card,
+      /const showRootPin =\n\s+!selectionMode && \(thread\.isPinned \|\| \(showRowDetails && reveal\.revealed\)\);/,
+    );
+    assert.match(
+      card,
+      /const showRootRail =\n\s+showRootPin \|\| showRootParkActions \|\| showRootTime \|\| hasRootMetadata;/,
+    );
+  });
+
+  it("leads the cluster, so appearing beside the controls cannot move them", () => {
+    const cluster = card.slice(
+      card.indexOf("const rootTrailingCluster"),
+      card.indexOf('data-nest-root-metadata=""'),
+    );
+    assert.ok(cluster.indexOf("<PinButton") >= 0, "the cluster draws the pin");
+    assert.ok(
+      cluster.indexOf("<PinButton") < cluster.indexOf("data-nest-root-time"),
+      "the pin is the first thing the cluster adds",
+    );
+  });
+
+  it("makes the solid glyph from the outlined one rather than importing a second", () => {
+    // Hugeicons' free set has no solid pin. Filling by rule — every closed
+    // outline takes the fill, every open one stays a stroke — is what keeps the
+    // two states one silhouette, and what fails loudly rather than silently if
+    // the artwork is ever redrawn as lines.
+    assert.match(icons, /const PinFilledIcon: IconSvgElement = PinIcon\.map\(/);
+    assert.match(icons, /attrs\.d\.trimEnd\(\)\.endsWith\("Z"\)/);
+    assert.match(icons, /fill: "currentColor"/);
+    assert.match(icons, /PinFilled: PinFilledIcon/);
   });
 });

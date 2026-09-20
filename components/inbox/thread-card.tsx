@@ -179,18 +179,27 @@ export function ThreadCard({
   const rootIsActive = thread.id === activeThreadId;
   const familyState = familyStatus([thread, ...childThreads], now);
   const hasRootMetadata =
-    thread.isPinned ||
-    (showRowDetails &&
-      (thread.activity.backgroundAgents > 0 ||
-        (preferences.showPullRequestMetadata && pullRequest != null) ||
-        (childThreads.length > 0 && preferences.showChildCount) ||
-        preferences.showProviderIcons));
+    showRowDetails &&
+    (thread.activity.backgroundAgents > 0 ||
+      (preferences.showPullRequestMetadata && pullRequest != null) ||
+      (childThreads.length > 0 && preferences.showChildCount) ||
+      preferences.showProviderIcons);
+  /**
+   * The pin, and when it is drawn.
+   *
+   * A pinned thread wears it at rest — which thread is pinned is worth reading
+   * without pointing at the row — and an unpinned one shows it with the rest of
+   * the revealed controls, so pinning is one click from the row it is about
+   * rather than two through the menu.
+   */
+  const showRootPin =
+    !selectionMode && (thread.isPinned || (showRowDetails && reveal.revealed));
   const showRootParkActions =
     canPark && !selectionMode && showRowDetails && reveal.revealed;
   const showRootTime =
     !showRootParkActions && preferences.showRelativeTime && showRowDetails;
   const showRootRail =
-    showRootParkActions || showRootTime || hasRootMetadata;
+    showRootPin || showRootParkActions || showRootTime || hasRootMetadata;
   /**
    * Whether the location — the branch, or the machine when there is no branch —
    * is drawn on the row at all.
@@ -208,17 +217,27 @@ export function ThreadCard({
   const clusterRidesTheTitle = !branchLineRenders;
 
   /**
-   * Everything a card puts at the end of a line: the age or the park buttons,
-   * the pin, the PR, the children chip, the provider mark, and the row menu.
+   * Everything a card puts at the end of a line: the pin, the age or the park
+   * buttons, the PR, the children chip, the provider mark, and the row menu.
    *
    * One cluster, not a rail of its own. bb's card ends its branch line with
    * exactly these, right aligned on the same line as the branch, which leaves
    * the title the full width of the card above it. A second column beside the
    * two lines spent width on a vertical run of glyphs and squeezed the title
    * into whatever was left.
+   *
+   * The pin leads the cluster, and holds that place in both states: it is drawn
+   * whether or not the row is revealed, so pinning a thread does not move the
+   * control that did it.
    */
   const rootTrailingCluster = showRootRail ? (
     <>
+      {showRootPin ? (
+        <PinButton
+          pinned={thread.isPinned}
+          onToggle={() => void actions.setPinned(thread.id, !thread.isPinned)}
+        />
+      ) : null}
       {showRootParkActions ? (
         <span data-nest-root-time="" className="flex h-4 items-center gap-0.5">
           <ParkButton
@@ -249,18 +268,6 @@ export function ThreadCard({
           data-nest-root-metadata=""
           className="flex h-4 min-w-0 items-center gap-1 whitespace-nowrap leading-none"
         >
-          {thread.isPinned ? (
-            <span
-              className="flex size-3.5 shrink-0 items-center justify-center"
-              title="Pinned thread"
-            >
-              <Icon
-                name="Pin"
-                aria-label="Pinned thread"
-                className="size-3 text-muted-foreground/70"
-              />
-            </span>
-          ) : null}
           {showRowDetails &&
           preferences.showPullRequestMetadata &&
           pullRequest ? (
@@ -1165,6 +1172,55 @@ function ParkButton({
               </span>
             ))}
       </span>
+    </button>
+  );
+}
+
+/**
+ * The pin, as a control rather than a mark.
+ *
+ * The state is the glyph — solid when the thread is pinned, outlined when it is
+ * not — and the press is its toggle, so unpinning is one click on the thing that
+ * says pinned. The colour does not carry the state as well: a pinned row is not
+ * louder than the thread it belongs to, and the fill is unambiguous on its own.
+ */
+function PinButton({
+  pinned,
+  onToggle,
+}: {
+  pinned: boolean;
+  onToggle: () => void;
+}) {
+  const label = pinned ? "Unpin thread" : "Pin thread";
+  return (
+    <button
+      type="button"
+      data-nest-pin={pinned ? "pinned" : "unpinned"}
+      aria-label={label}
+      // A toggle, not a one-way action: the button reports the state it holds.
+      aria-pressed={pinned}
+      title={label}
+      onClick={(event) => {
+        // The row's full-bleed anchor sits underneath, so both of these are
+        // load-bearing: without them a pin also opens the thread.
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-md",
+        "transition-colors duration-150 ease-out motion-reduce:transition-none",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        pinned
+          ? "text-muted-foreground hover:text-foreground"
+          : "text-muted-foreground/70 hover:text-foreground",
+      )}
+    >
+      <Icon
+        name={pinned ? "PinFilled" : "Pin"}
+        className="size-3.5"
+        aria-hidden
+      />
     </button>
   );
 }

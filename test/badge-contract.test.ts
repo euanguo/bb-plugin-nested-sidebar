@@ -161,11 +161,17 @@ describe("SubagentBadge", () => {
   });
 
   // The chip that used to carry this was never registered anywhere — a leftover
-  // from the fork, kept alive only by its own file.
+  // from the fork, kept alive only by its own file. The capability is back, and
+  // named for what it draws; this is what keeps it from going dead a second
+  // time, which is the failure the old name stood for.
   it("leaves no dead subagent chip behind", async () => {
     const entries = await readdir(
       new URL("../components/inbox/", import.meta.url),
     );
     assert.ok(!entries.includes("subagents-chip.tsx"));
+    assert.ok(entries.includes("children-chip.tsx"));
+    const app = await readFile(new URL("../app.tsx", import.meta.url), "utf8");
+    assert.match(app, /import \{ ChildrenChip \} from "@\/components\/inbox\/children-chip";/);
+    assert.match(app, /component: ChildrenChip,/);
   });
 });
