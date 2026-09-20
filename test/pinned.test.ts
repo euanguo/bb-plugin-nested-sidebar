@@ -347,15 +347,44 @@ describe("the row's pin control", () => {
     assert.match(card, /void actions\.setPinned\(thread\.id, !thread\.isPinned\)/);
   });
 
-  it("draws it at rest on a pinned thread and under the pointer on the rest", () => {
+  it("is drawn at rest when pinned, and with the row's actions when it is not", () => {
+    // One derived fact, so an unpinned pin and the park pair beside it cannot
+    // drift apart: the three arrive together or not at all.
     assert.match(
       card,
-      /const showRootPin =\n\s+!selectionMode && \(thread\.isPinned \|\| \(showRowDetails && reveal\.revealed\)\);/,
+      /const rowActionsRevealed =\n    canPark && !selectionMode && showRowDetails && reveal\.revealed;/,
+    );
+    assert.match(card, /const showRootParkActions = rowActionsRevealed;/);
+    assert.match(
+      card,
+      /const showRootPin = !selectionMode && \(thread\.isPinned \|\| rowActionsRevealed\);/,
     );
     assert.match(
       card,
       /const showRootRail =\n\s+showRootPin \|\| showRootParkActions \|\| showRootTime \|\| hasRootMetadata;/,
     );
+  });
+
+  it("moves like an action when it is one, and not at all when it is a state", () => {
+    // One glyph in two roles. Unpinned it is one of the row's revealed actions
+    // and takes the park pair's own motion; pinned it is a state the row
+    // reports, and a state that dances when the pointer passes is noise.
+    // The table lives above the component, so the motion is one place.
+    assert.match(card, /const PIN_MOTION = \{/);
+    assert.match(card, /"nest-pin group\/pin cursor-pointer"/);
+    assert.match(pinButton, /: cn\("hover:text-foreground", PIN_MOTION\.button\)/);
+    // The ground, the lift and the effect are on the unpinned branch only.
+    assert.match(pinButton, /!pinned &&\n            cn\(/);
+    assert.match(pinButton, /!pinned &&\n              "nest-pin-seat/);
+    assert.match(pinButton, /\{pinned\n          \? null/);
+    // And the pinned branch is a plain class string: colour is its whole answer.
+    const pinnedBranch =
+      pinButton.match(/"hover:text-foreground focus-visible:ring-1[^"]*"/)?.[0] ??
+      "";
+    assert.ok(pinnedBranch.length > 0, "the pinned state names its classes");
+    assert.doesNotMatch(pinnedBranch, /nest-pin|PIN_MOTION|group\//);
+    // The pair's own construction: the target does not move, the artwork does.
+    assert.match(pinButton, /"pointer-events-none relative flex size-full/);
   });
 
   it("leads the cluster, so appearing beside the controls cannot move them", () => {
@@ -368,6 +397,28 @@ describe("the row's pin control", () => {
       cluster.indexOf("<PinButton") < cluster.indexOf("data-nest-root-time"),
       "the pin is the first thing the cluster adds",
     );
+  });
+
+  it("hands back its own inset, so its glyph keeps the cluster's rhythm", () => {
+    // The target is 20px around a 14px glyph. Those 3px of padding on the side
+    // facing the next control read as space rather than as a target: the cluster
+    // gap is 6px, so the glyph sat 9px from the age and 12px from the snooze
+    // button that takes the age's place under the pointer, while the controls
+    // around it sit 6px and 8px apart. The trim is that inset, asserted as the
+    // arithmetic it is — change either size and this fails instead of quietly
+    // pushing the pin out of line again.
+    const button = Number(pinButton.match(/flex size-(\d(?:\.\d)?)/)?.[1]) * 4;
+    const glyph =
+      Number(
+        pinButton
+          .slice(pinButton.indexOf('name={pinned ? "PinFilled" : "Pin"}'))
+          .match(/size-(\d(?:\.\d)?)/)?.[1],
+      ) * 4;
+    const trim = -Number(pinButton.match(/ -mr-\[(\d+)px\] /)?.[1] ?? 0);
+    assert.equal(trim, -(button - glyph) / 2);
+    // On the trailing side, which is the one that faces the next control: the
+    // cluster is right aligned, so a leading trim would not move the glyph at all.
+    assert.doesNotMatch(pinButton, /-ml-\[/);
   });
 
   it("makes the solid glyph from the outlined one rather than importing a second", () => {

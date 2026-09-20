@@ -52,6 +52,7 @@ import { useThreadMenuActions } from "@/components/inbox/thread-menu-items";
 import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
 import "./settle-button.css";
 import "./snooze-button.css";
+import "./pin-button.css";
 
 export function ThreadCard({
   thread,
@@ -186,17 +187,29 @@ export function ThreadCard({
       (childThreads.length > 0 && preferences.showChildCount) ||
       preferences.showProviderIcons);
   /**
+   * The row's revealed actions, as one fact.
+   *
+   * The park pair and an unpinned pin are one set of controls that arrives
+   * together or not at all: same gate, same moment. Asking "can this thread be
+   * parked" is what decides whether the row offers actions at all, so a thread
+   * that is working or has a hand raised shows neither — the pin it would
+   * otherwise offer is in the row's menu, which is where the rest of a thread's
+   * verbs live anyway. Written once so the two cannot drift apart.
+   */
+  const rowActionsRevealed =
+    canPark && !selectionMode && showRowDetails && reveal.revealed;
+  /**
    * The pin, and when it is drawn.
    *
-   * A pinned thread wears it at rest — which thread is pinned is worth reading
-   * without pointing at the row — and an unpinned one shows it with the rest of
-   * the revealed controls, so pinning is one click from the row it is about
-   * rather than two through the menu.
+   * Pinned, it is a state rather than an action: it is drawn at rest, because
+   * which threads are pinned is worth reading without pointing at a row, and it
+   * does not take part in the reveal above.
+   *
+   * Unpinned, it is one of those actions, and behaves exactly like the pair it
+   * arrives with — same conditions, and the same motion in `PIN_MOTION`.
    */
-  const showRootPin =
-    !selectionMode && (thread.isPinned || (showRowDetails && reveal.revealed));
-  const showRootParkActions =
-    canPark && !selectionMode && showRowDetails && reveal.revealed;
+  const showRootPin = !selectionMode && (thread.isPinned || rowActionsRevealed);
+  const showRootParkActions = rowActionsRevealed;
   const showRootTime =
     !showRootParkActions && preferences.showRelativeTime && showRowDetails;
   const showRootRail =
@@ -1185,9 +1198,45 @@ function ParkButton({
  *
  * The state is the glyph — solid when the thread is pinned, outlined when it is
  * not — and the press is its toggle, so unpinning is one click on the thing that
- * says pinned. The colour does not carry the state as well: a pinned row is not
- * louder than the thread it belongs to, and the fill is unambiguous on its own.
+ * says pinned. **The colour never carries the state.** It wears exactly what the
+ * park buttons beside it wear, so the three read as one row of controls, and the
+ * fill is what says which of the two states this one is in. An earlier version
+ * drew the unpinned pin a shade lighter and it read as a *disabled* control
+ * rather than as a different state of the same one.
+ *
+ * It is two controls wearing one glyph. **Unpinned it is an action**, one of the
+ * three the row reveals under the pointer, and it moves like the other two —
+ * same target, same lift, same tinted ground, and an effect of its own in
+ * `pin-button.css`. **Pinned it is a state**, drawn at rest, and it moves like
+ * nothing at all: a pin that is holding a thread in place should not dance when
+ * the pointer passes over it.
+ *
+ * The 20px target is padding around a 14px glyph, and the 3px on the side facing
+ * the next control would be read as space: the cluster's own gap is 6px, so the
+ * glyph would sit 9px from the age — and 12px from the snooze button that takes
+ * the age's place under the pointer — while the controls around it sit 6px and
+ * 8px apart. So the button hands its own inset back on that one side. Trimming
+ * the other side would change nothing at all: the cluster is right aligned, and
+ * the leading edge of its first child is not what separates anything.
  */
+const PIN_MOTION = {
+  button: cn(
+    "nest-pin group/pin cursor-pointer",
+    "focus-visible:text-foreground",
+    "focus-visible:ring-2 focus-visible:ring-ring",
+  ),
+  ground: cn(
+    // The tint and its halo are declared in `pin-button.css`, not as a
+    // `bg-current/10` variant: Tailwind compiles that variant to a *solid*
+    // `background-color: currentColor`, which would be a grey disc where the
+    // park pair's grounds are a 15% wash. The lift is a utility because it is
+    // the one part that has to sit behind `motion-safe:`.
+    "nest-pin-ground",
+    "motion-safe:group-hover/pin:-translate-y-0.5 motion-safe:group-focus-visible/pin:-translate-y-0.5",
+    "motion-safe:group-active/pin:translate-y-0 motion-safe:group-active/pin:scale-90",
+  ),
+} as const;
+
 function PinButton({
   pinned,
   onToggle,
@@ -1212,19 +1261,52 @@ function PinButton({
         onToggle();
       }}
       className={cn(
-        "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-md",
+        "relative z-10 -mr-[3px] flex size-5 shrink-0 items-center justify-center rounded-md",
         "transition-colors duration-150 ease-out motion-reduce:transition-none",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "focus-visible:outline-none",
         pinned
-          ? "text-muted-foreground hover:text-foreground"
-          : "text-muted-foreground/70 hover:text-foreground",
+          ? // A state, not an action: it never lifts, tints, presses or bites —
+            // it answers the pointer with colour and nothing else.
+            "hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+          : cn("hover:text-foreground", PIN_MOTION.button),
       )}
     >
-      <Icon
-        name={pinned ? "PinFilled" : "Pin"}
-        className="size-3.5"
-        aria-hidden
-      />
+      <span
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none relative flex size-full items-center justify-center rounded-[inherit]",
+          // Move only the artwork, so hovering an edge cannot move the hit area.
+          // The pinned pin has no ground to move at all.
+          !pinned &&
+            cn(
+              "transition-[background-color,box-shadow,transform] duration-200 ease-out motion-reduce:transition-none",
+              PIN_MOTION.ground,
+            ),
+        )}
+      >
+        <Icon
+          name={pinned ? "PinFilled" : "Pin"}
+          className={cn(
+            "size-3.5",
+            !pinned &&
+              "nest-pin-seat transition-transform duration-200 ease-out motion-reduce:transition-none",
+          )}
+          aria-hidden
+        />
+        {pinned
+          ? null
+          : // The P's the pin leaves behind as it turns in: three of them, each
+            // with its own delay and its own path — the construction the park
+            // pair's effects use, and the shortest of the three. A letter, like
+            // the snooze's `z`: that pair of marks says *which* act this is
+            // without a legend, where a ring or a dot says only "something
+            // happened here".
+            [0, 1, 2].map((mark) => (
+              <span key={mark} aria-hidden="true" className="nest-pin-mark">
+                P
+              </span>
+            ))}
+      </span>
     </button>
   );
 }
