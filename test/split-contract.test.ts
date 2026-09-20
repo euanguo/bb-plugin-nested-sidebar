@@ -18,6 +18,10 @@ const slimRow = await readFile(
   new URL("../components/inbox/slim-row.tsx", import.meta.url),
   "utf8",
 );
+const familyStatus = await readFile(
+  new URL("../components/inbox/family-status.tsx", import.meta.url),
+  "utf8",
+);
 
 /**
  * `useSidebarThreadSplit` answers two questions and they are not the same one.
@@ -41,13 +45,13 @@ describe("split availability contract", () => {
   it("gates every split affordance on isAvailable, never on layout", () => {
     assert.doesNotMatch(card, /splitAvailable=\{layout/);
     const gated = card.match(/splitAvailable=\{isAvailable\}/g);
-    // The root card's context menu, the root card's menu, the child row's
-    // context menu, and the child row's menu.
-    assert.equal(gated?.length, 4);
+    // One menu per row — the family's card and a child row — because every row
+    // opens the same context menu rather than a dropdown of its own.
+    assert.equal(gated?.length, 2);
   });
 
   it("keeps the pane tint reading layout, which is a different question", () => {
-    assert.match(card, /!familyIsActive && layout !== null/);
+    assert.match(card, /!rootIsActive && layout !== null/);
     assert.match(card, /!isActive && layout !== null/);
   });
 
@@ -58,10 +62,14 @@ describe("split availability contract", () => {
 
   it("drops the open-in-split item when splits are unavailable", () => {
     // The gate has to survive the hand-off: a boolean that arrives and is
-    // ignored would look correct at the call site and do nothing.
-    assert.match(contextMenu, /splitAvailable = false/);
-    assert.match(contextMenu, /splitAvailable,/);
+    // ignored would look correct at the call site and do nothing. The one menu
+    // surface draws the items it is handed, so the gate belongs to the list.
     assert.match(menuItems, /if \(splitAvailable\)/);
+    assert.match(menuItems, /splitAvailable = false/);
+    // And the surface itself keeps no opinion, so the gate cannot drift into
+    // two places that disagree.
+    assert.doesNotMatch(contextMenu, /splitAvailable/);
+    assert.match(card, /splitAvailable=\{isAvailable\}/);
   });
 });
 
@@ -85,7 +93,8 @@ describe("one row, two drags", () => {
     assert.match(card, /<FamilyStatusIcon/);
     assert.match(card, /draggable=\{reorderEnabled\}/);
     // Above the full-bleed anchor: a press on the icon is a press on the icon.
-    assert.match(card, /"relative z-10 flex shrink-0 items-center"/);
+    // The handle is the shared status component, so the rule lives with it.
+    assert.match(familyStatus, /relative z-10 inline-flex/);
   });
 
   it("never spreads splitProps onto the reorder handle", () => {

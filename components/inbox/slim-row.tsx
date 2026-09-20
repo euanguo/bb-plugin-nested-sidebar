@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
@@ -6,13 +5,10 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { RowContextMenu } from "@/components/inbox/row-context-menu";
-import { RenameField } from "@/components/inbox/rename-field";
+import { ThreadRowMenu } from "@/components/inbox/thread-menu-items";
 import { StatusOrTime } from "@/components/inbox/status-slot";
 import { threadDisplayTitle } from "@/lib/inbox";
 import { snoozeWakeLabel } from "@/lib/lifecycle";
-import { renameIntent } from "@/lib/groups";
-import { announceToSidebar } from "@/lib/clipboard";
 
 /**
  * A parked thread: one line instead of a card. Density comes from the user
@@ -50,24 +46,9 @@ export function SlimRow({
    */
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
   const title = threadDisplayTitle(thread);
-  // A parked thread renames in place like every other row. The shelf is where
-  // work waits, not where it stops being editable.
-  const [renaming, setRenaming] = useState(false);
-  const commitRename = (draft: string) => {
-    setRenaming(false);
-    const next = renameIntent(draft, title);
-    if (next === null) return;
-    void actions.rename(thread.id, next).catch(() => {
-      announceToSidebar("The thread could not be renamed");
-    });
-  };
 
   return (
-    <RowContextMenu
-      thread={thread}
-      onUnarchive={onRestore}
-      onRename={() => setRenaming(true)}
-    >
+    <ThreadRowMenu thread={thread} onUnarchive={onRestore}>
       <li className="list-none">
         <div
           className={cn(
@@ -96,29 +77,20 @@ export function SlimRow({
             }}
             className="absolute inset-0 cursor-pointer rounded-md"
           />
-          {renaming ? (
-            <RenameField
-              initial={title}
-              ariaLabel={`Rename ${title}`}
-              onCommit={commitRename}
-              onCancel={() => setRenaming(false)}
-            />
-          ) : (
-            <span
-              className={cn(
-                "pointer-events-none relative min-w-0 flex-1 truncate",
-                "text-foreground",
-                "group-hover/slim:text-foreground",
-              )}
-            >
-              {title}
-            </span>
-          )}
+          <span
+            className={cn(
+              "pointer-events-none relative min-w-0 flex-1 truncate",
+              "text-foreground",
+              "group-hover/slim:text-foreground",
+            )}
+          >
+            {title}
+          </span>
           {/* The age is intrinsic. Restore is a hover-only overlay, so it does
               not make every parked row reserve an action-sized column. */}
           <span
             className={cn(
-              "pointer-events-none shrink-0 tabular-nums text-2xs text-muted-foreground/60 transition-opacity",
+              "pointer-events-none shrink-0 tabular-nums text-2xs text-muted-foreground/60 transition-opacity duration-150 ease-out motion-reduce:transition-none",
               "group-hover/slim:opacity-0",
             )}
           >
@@ -147,6 +119,6 @@ export function SlimRow({
           </button>
         </div>
       </li>
-    </RowContextMenu>
+    </ThreadRowMenu>
   );
 }

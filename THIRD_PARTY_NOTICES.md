@@ -39,6 +39,45 @@ Source: <https://github.com/stablyai/orca>
 
 ---
 
+## BB Sidebar — `yusuf8834/bb-sidebar`
+
+MIT License, Copyright (c) 2026 Michael Yong and Copyright (c) 2026 Yusuf Akbulut.
+
+The list transitions (`hooks/use-list-auto-animate.ts`), the settle button's sparkle
+and motion (`components/inbox/settle-button.css`, `components/inbox/thread-card.tsx` —
+the *snooze* button's tick and ripple, in `components/inbox/snooze-button.css`, are
+Nest's own, since upstream's snooze control is a select and has no effect to follow),
+the settled shelf's paging rule (`lib/paging.ts`,
+`components/inbox/thread-inbox.tsx`), the live working-duration model
+(`lib/working-since.ts`, `hooks/use-working-since.ts`,
+`components/inbox/status-slot.tsx`), and the row's shape — the borderless card, the
+child rows' status flag, the children chip, and the three-level disclosure
+(`components/inbox/thread-card.tsx`, `components/inbox/disc.tsx`,
+`lib/inbox.ts`, `lib/family-branches.test.ts`) — are ported from BB Sidebar at commit
+`e3f60343fecbe1bfa552070724514a3c2f74cf1f` (2026-09-19). They ship in `dist/app.js`
+and `dist/app.css`.
+
+The row's shape is ported as a *shape*, not as bb's colours: bb hard-codes Tailwind
+hues and Nest's palette is the user's to choose, so every tint on those rows is
+derived from the semantic status colour instead. `lib/inbox.ts`'s nesting is Nest's
+own — bb draws exactly three levels from a flat list, while `familyBranches` rebuilds
+the tree from `parentThreadId` at any depth.
+
+Source: <https://github.com/yusuf8834/bb-sidebar>
+
+---
+
+## @formkit/auto-animate
+
+MIT License, Copyright 2022 FormKit Inc.
+
+The list-transition engine behind `hooks/use-list-auto-animate.ts`. Compiled into
+`dist/app.js`.
+
+Source: <https://github.com/formkit/auto-animate>
+
+---
+
 ## shadcn/ui
 
 MIT License, Copyright (c) 2023 shadcn.

@@ -5,16 +5,26 @@ import { cn } from "@/lib/utils";
 /**
  * The trailing controls every row shares.
  *
- * A row exposes at most TWO things: the one action frequent enough to deserve
- * its own button (`+` — start a thread here), and a menu holding everything
- * else. The menu trigger reads as a disclosure chevron at rest and as three
- * dots once the row is hovered or focused, so the chevron and the menu are one
- * slot rather than two competing affordances.
+ * A row exposes at most THREE things: the one action frequent enough to deserve
+ * its own button (`+` — start a thread here), the disclosure that says it can
+ * open and which way it is now, and a menu holding everything else. The menu is
+ * a right-click, so it costs no width and needs no trigger.
  *
- * Hover is tracked in React rather than with Tailwind group modifiers on
- * purpose: rows nest (a worktree inside a project), and CSS `group-hover`
- * fires for every ancestor group, which would light up a parent's menu while
- * the pointer is on a child.
+ * The disclosure is its own control rather than part of the menu trigger, which
+ * is what it used to be. One slot doing both jobs meant the arrow vanished the
+ * moment the pointer arrived (the trigger swapped it for three dots), so a row
+ * could not be read as open or closed while you were pointing at it — which is
+ * exactly when you are deciding whether to click it.
+ */
+
+/**
+ * Whether the pointer or the keyboard is on a row, for the one thing that swaps
+ * under them: a thread card's park buttons, which replace its age.
+ *
+ * Tracked in React rather than with Tailwind group modifiers on purpose: rows
+ * nest (a card inside a worktree inside a project), and CSS `group-hover` fires
+ * for every ancestor group, which would light up a parent's controls while the
+ * pointer is on a child.
  */
 export function useRowReveal() {
   const [pointer, setPointer] = React.useState(false);
@@ -28,6 +38,56 @@ export function useRowReveal() {
       onBlurCapture: () => setFocus(false),
     },
   };
+}
+
+/**
+ * The arrow: whether a row is open, and the way to change it.
+ *
+ * Always visible and never swapped for anything, because the state it reports
+ * is worth reading at rest as well as under the pointer.
+ */
+export function RowDisclosure({
+  label,
+  expanded,
+  controls,
+  onToggle,
+}: {
+  /** What the row is, for the accessible name: "Expand Worktrees". */
+  label: string;
+  expanded: boolean;
+  controls: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-expanded={expanded}
+      aria-controls={controls}
+      title={label}
+      data-bb-icon-button=""
+      onClick={(event) => {
+        // The row's own button toggles too; this must not do both.
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={cn(
+        "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-md",
+        "text-muted-foreground transition-colors duration-150 ease-out hover:text-foreground motion-reduce:transition-none",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+      )}
+    >
+      <Icon
+        name="ChevronDown"
+        className={cn(
+          "size-3 transition-transform duration-150 ease-out motion-reduce:transition-none",
+          expanded && "rotate-180",
+        )}
+        aria-hidden
+      />
+    </button>
+  );
 }
 
 /** A frequent, always-visible row action. */
@@ -54,7 +114,7 @@ export function RowActionButton({
       }}
       className={cn(
         "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-md",
-        "text-muted-foreground transition-colors hover:text-foreground",
+        "text-muted-foreground transition-colors duration-150 ease-out hover:text-foreground motion-reduce:transition-none",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         className,
       )}
@@ -63,62 +123,6 @@ export function RowActionButton({
     </button>
   );
 }
-
-/**
- * The chevron/dots trigger. Forwarded ref because Radix's `asChild` clones
- * this element and needs to attach its own ref and event handlers.
- */
-export const RowMenuTrigger = React.forwardRef<
-  HTMLButtonElement,
-  {
-    label: string;
-    /** Render a disclosure chevron when the row is at rest. */
-    chevron?: boolean;
-    expanded?: boolean;
-    /** True while the row is hovered/focused or its menu is open. */
-    revealed?: boolean;
-    className?: string;
-  } & React.ComponentPropsWithoutRef<"button">
->(function RowMenuTrigger(
-  { label, chevron = false, expanded = false, revealed = false, className, ...props },
-  ref,
-) {
-  return (
-    <button
-      ref={ref}
-      type="button"
-      aria-label={label}
-      aria-haspopup="menu"
-      title={label}
-      data-bb-icon-button=""
-      className={cn(
-        "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-md",
-        "text-muted-foreground transition-colors hover:text-foreground",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        revealed && "text-foreground",
-        className,
-      )}
-      {...props}
-    >
-      {chevron ? (
-        <Icon
-          name="ChevronDown"
-          className={cn(
-            "size-3 transition-transform",
-            expanded && "rotate-180",
-            revealed && "hidden",
-          )}
-          aria-hidden
-        />
-      ) : null}
-      <Icon
-        name="More"
-        className={cn("size-3", revealed ? "block" : "hidden")}
-        aria-hidden
-      />
-    </button>
-  );
-});
 
 /** The trailing cluster: an optional primary action, then the menu trigger. */
 export function RowActions({

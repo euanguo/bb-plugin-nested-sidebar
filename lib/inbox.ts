@@ -246,3 +246,80 @@ export function childrenOf(
     .filter((thread) => thread.parentThreadId === parentThreadId)
     .sort((left, right) => left.createdAt - right.createdAt);
 }
+
+/** One thread in the shape it is drawn in: hung off the row that owns it. */
+export interface FamilyBranch {
+  thread: PluginSidebarThread;
+  children: FamilyBranch[];
+}
+
+/**
+ * A family's descendants as the tree they actually form.
+ *
+ * `ThreadFamily.children` is flat — every descendant of the root, oldest first —
+ * because that is the shape ordering, selection and the rollup all want. Drawing
+ * wants the nesting back, so each thread is hung off the nearest ancestor that is
+ * also being drawn. A filter that hides a middle thread promotes its children
+ * rather than losing them, which is the same rule `visibleRootOf` applies one
+ * level up.
+ *
+ * Siblings keep the order they arrived in, so a level reads oldest-first like the
+ * one above it.
+ */
+export function familyBranches(family: ThreadFamily): FamilyBranch[] {
+  const byId = new Map<string, PluginSidebarThread>([
+    [family.root.id, family.root],
+  ]);
+  for (const thread of family.children) byId.set(thread.id, thread);
+
+  // Every node first, then every link: a parent is not guaranteed to come
+  // before its child in the flat list, and linking as we went would promote a
+  // child whose parent had not been seen yet.
+  const branchById = new Map<string, FamilyBranch>();
+  const created: { thread: PluginSidebarThread; branch: FamilyBranch }[] = [];
+  for (const thread of family.children) {
+    const branch: FamilyBranch = { thread, children: [] };
+    branchById.set(thread.id, branch);
+    created.push({ thread, branch });
+  }
+
+  const drawn = new Set(family.children.map((thread) => thread.id));
+  const branches: FamilyBranch[] = [];
+
+  for (const { thread, branch } of created) {
+    // Walk up past anything the filter dropped, to the nearest ancestor that is
+    // being drawn — the same rule `visibleRootOf` applies when it decides which
+    // family a thread belongs to. The walk is short: every thread in this map is
+    // itself being drawn, so the first step either lands on one or on nothing.
+    let ancestorId = thread.parentThreadId;
+    while (
+      ancestorId !== null &&
+      ancestorId !== family.root.id &&
+      !drawn.has(ancestorId)
+    ) {
+      const next = byId.get(ancestorId)?.parentThreadId ?? null;
+      if (next === ancestorId) break;
+      ancestorId = next;
+    }
+
+    const parent = ancestorId === null ? undefined : branchById.get(ancestorId);
+    // A row is never hung off itself: the shape is impossible to draw, and a
+    // thread that named itself as its parent would otherwise vanish instead of
+    // appearing at the top level.
+    if (parent === undefined || parent === branch) branches.push(branch);
+    else parent.children.push(branch);
+  }
+
+  return branches;
+}
+
+/** Whether a thread is this row or anywhere under it. */
+export function branchHoldsThread(
+  branch: FamilyBranch,
+  threadId: string | null,
+): boolean {
+  if (threadId === null) return false;
+  if (branch.thread.id === threadId) return true;
+  return branch.children.some((child) => branchHoldsThread(child, threadId));
+}
+

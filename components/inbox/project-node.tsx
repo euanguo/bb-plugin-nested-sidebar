@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   useBbNavigate,
@@ -7,24 +7,27 @@ import {
 import type { nestRpcContract } from "@/server";
 import { Modal } from "@/components/ui/modal";
 import { ArchivedShelf } from "@/components/inbox/archived-shelf";
-import { Icon } from "@/components/ui/icon";
+import { PageControls } from "@/components/inbox/page-controls";
 import {
-  Menu,
-  MenuCheckboxItem,
-  MenuItem,
-  MenuSeparator,
-  MenuSub,
-} from "@/components/ui/menu";
+  RowMenu,
+  type RowMenuItem,
+} from "@/components/inbox/row-context-menu";
+import {
+  hasMoreRows,
+  nextPageSize,
+  visibleRows,
+} from "@/lib/paging";
+import { cn } from "@/lib/utils";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import {
   RowActionButton,
   RowActions,
-  RowMenuTrigger,
-  useRowReveal,
+  RowDisclosure,
 } from "@/components/inbox/row-actions";
 import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import { useNestViewState } from "@/components/inbox/view-state-context";
+import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
 import {
   FlatFamilies,
   WorkspaceGroup,
@@ -90,8 +93,17 @@ export function ProjectNode({
   const expanded = !viewState.isProjectCollapsed(node.project.id);
   const setExpanded = (open: boolean) =>
     viewState.setProjectCollapsed(node.project.id, !open);
-  const reveal = useRowReveal();
   const listId = useId();
+  const attachListAutoAnimateRef = useListAutoAnimate<HTMLDivElement>();
+  /**
+   * How many pages of this project's own thread list are drawn.
+   *
+   * Counted in pages rather than rows so a change to the page size re-scales
+   * what is already on screen. It lives here rather than in the tree so that
+   * collapsing and reopening the project keeps the place, and it is unused when
+   * the project draws a workspace level, where each worktree pages its own.
+   */
+  const [flatPages, setFlatPages] = useState(1);
   const dragStarted = useRef(false);
   const badge = projectBadgePresentation(
     node.project.id,
@@ -102,6 +114,28 @@ export function ProjectNode({
     0,
   );
   const projectPath = handlers.paths.projects[node.project.id]?.sourcePath ?? null;
+
+  /**
+   * The project's own thread list, paged. A project that draws a workspace
+   * level pages per worktree instead — each of those is a list of its own, and
+   * a single limit spanning them would have to drop a worktree row or draw it
+   * claiming to be empty.
+   */
+  const flatLimit =
+    (handlers.searching ? Number.MAX_SAFE_INTEGER : flatPages) *
+    handlers.preferences.pageSize;
+  const visibleFamilies = visibleRows(
+    node.families,
+    flatLimit,
+    handlers.activeThreadId,
+    (family) => family.root.id,
+  );
+  const flatHasMore = hasMoreRows(node.families.length, flatLimit);
+  const flatNextPage = nextPageSize(
+    node.families.length,
+    flatLimit,
+    handlers.preferences.pageSize,
+  );
 
   const workspaceHandlers: TreeRowHandlers = {
     ...handlers,
@@ -120,8 +154,29 @@ export function ProjectNode({
   ];
 
   const projectRow = (
+    <ProjectRowMenu
+      projectId={node.project.id}
+      projectName={node.project.name}
+      projectPath={projectPath}
+      isPersonal={node.project.isPersonal}
+      groups={groups}
+      currentGroupId={currentGroupId}
+      expanded={expanded}
+      archivedShelfOn={viewState.isArchivedShelfOn(node.project.id)}
+      onToggleExpanded={() => setExpanded(!expanded)}
+      onToggleArchivedShelf={() =>
+        viewState.setArchivedShelf(
+          node.project.id,
+          !viewState.isArchivedShelfOn(node.project.id),
+        )
+      }
+      onNewThread={() =>
+        onNewThreadInProject(node.project.id, node.project.name)
+      }
+      onNewWorktree={() => onNewWorktree(node.project.id, node.project.name)}
+      onAssignGroup={(groupId) => onAssignGroup(node.project.id, groupId)}
+    >
     <div
-      {...reveal.handlers}
       className="group/project relative flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 hover:bg-sidebar-accent/60"
     >
         <button
@@ -198,33 +253,17 @@ export function ProjectNode({
               onNewThreadInProject(node.project.id, node.project.name)
             }
           />
-          <ProjectMenu
-            projectId={node.project.id}
-            projectName={node.project.name}
-            projectPath={projectPath}
-            isPersonal={node.project.isPersonal}
-            groups={groups}
-            currentGroupId={currentGroupId}
+          {/* The arrow says the project is open, and is the way to change it
+              without hunting for the name button. */}
+          <RowDisclosure
+            label={`${expanded ? "Collapse" : "Expand"} ${node.project.name}`}
             expanded={expanded}
-            revealed={reveal.revealed}
-            archivedShelfOn={viewState.isArchivedShelfOn(node.project.id)}
-            onToggleExpanded={() => setExpanded(!expanded)}
-            onToggleArchivedShelf={() =>
-              viewState.setArchivedShelf(
-                node.project.id,
-                !viewState.isArchivedShelfOn(node.project.id),
-              )
-            }
-            onNewThread={() =>
-              onNewThreadInProject(node.project.id, node.project.name)
-            }
-            onNewWorktree={() =>
-              onNewWorktree(node.project.id, node.project.name)
-            }
-            onAssignGroup={(groupId) => onAssignGroup(node.project.id, groupId)}
+            controls={listId}
+            onToggle={() => setExpanded(!expanded)}
           />
         </RowActions>
     </div>
+    </ProjectRowMenu>
   );
 
   return (
@@ -290,11 +329,24 @@ export function ProjectNode({
       }}
     >
       <InfoCard trigger={projectRow} label={node.project.name} rows={infoRows} />
-      {expanded ? (
-        <>
-          {node.showWorkspaces ? (
-            <div id={listId} className="mt-0.5 flex flex-col gap-0.5">
-              {node.workspaces.map((workspace) => (
+      {/*
+        Every container here stays mounted and its rows come and go inside it,
+        so that opening and closing the project plays the very same per-row
+        entry and exit a loaded page does. The inset rides on the container
+        rather than on its first child: a child's top margin would collapse
+        through it, and a collapsed project would keep a gap it no longer earns.
+      */}
+      {node.showWorkspaces ? (
+        <div
+          id={listId}
+          ref={attachListAutoAnimateRef}
+          className={cn(
+            "flex flex-col gap-0.5",
+            expanded && "mt-0.5",
+          )}
+        >
+          {expanded
+            ? node.workspaces.map((workspace) => (
                 <WorkspaceGroup
                   key={workspace.ref.key}
                   node={workspace}
@@ -302,41 +354,54 @@ export function ProjectNode({
                   projectName={node.project.name}
                   handlers={workspaceHandlers}
                 />
-              ))}
-            </div>
-          ) : node.families.length === 0 ? (
-            <p id={listId} className={EMPTY_PROJECT_CLASS}>
-              No threads yet
-            </p>
-          ) : (
-            <div id={listId} className="mt-0.5">
-              <FlatFamilies
-                families={node.families}
-                projectId={node.project.id}
-                handlers={workspaceHandlers}
-              />
-            </div>
-          )}
-          {/*
-            The archived shelf sits inside the expanded project, because a list
-            under a collapsed header is a list nobody asked to see. It draws
-            nothing when the project has no archive to show, so a toggle that
-            finds nothing costs one read rather than an empty header.
-          */}
-          {viewState.isArchivedShelfOn(node.project.id) ? (
-            <ArchivedShelf
-              threads={
-                handlers.archivedByProject.get(node.project.id) ?? []
-              }
-              now={handlers.now}
-              onOpen={(threadId) => {
-                actions.open(threadId);
-                handlers.onNavigate();
-              }}
-              onUnarchive={handlers.onUnarchiveArchived}
+              ))
+            : null}
+        </div>
+      ) : node.families.length === 0 ? (
+        // A placeholder has no rows to animate, so it is simply here or not.
+        expanded ? (
+          <p id={listId} className={EMPTY_PROJECT_CLASS}>
+            No threads yet
+          </p>
+        ) : null
+      ) : (
+        <div id={listId} className={cn(expanded && "mt-0.5")}>
+          <FlatFamilies
+            families={expanded ? visibleFamilies : []}
+            projectId={node.project.id}
+            handlers={workspaceHandlers}
+          />
+          {expanded && !handlers.searching && (flatHasMore || flatPages > 1) ? (
+            <PageControls
+              hasMore={flatHasMore}
+              remaining={flatNextPage}
+              page={flatPages}
+              onLoadMore={() => setFlatPages((pages) => pages + 1)}
+              onShowLess={() => setFlatPages(1)}
+              className="ml-4"
             />
           ) : null}
-        </>
+        </div>
+      )}
+      {/*
+        The archived shelf sits inside the expanded project — a list under a
+        collapsed header is a list nobody asked to see — and beside the container
+        above rather than inside it, so the rows the animation owns are never
+        asked to carry a second list they do not own.
+
+        Read from `handlers`, which the inbox fills once for every open shelf:
+        one read for the list, not one subscription per project row.
+      */}
+      {expanded && viewState.isArchivedShelfOn(node.project.id) ? (
+        <ArchivedShelf
+          threads={handlers.archivedByProject.get(node.project.id) ?? []}
+          now={handlers.now}
+          onOpen={(threadId) => {
+            actions.open(threadId);
+            handlers.onNavigate();
+          }}
+          onUnarchive={handlers.onUnarchiveArchived}
+        />
       ) : null}
     </section>
   );
@@ -416,7 +481,7 @@ function parseDraggedProject(raw: string): { projectId: string } | null {
   }
 }
 
-function ProjectMenu({
+function ProjectRowMenu({
   projectId,
   projectName,
   projectPath,
@@ -424,13 +489,13 @@ function ProjectMenu({
   groups,
   currentGroupId,
   expanded,
-  revealed,
   archivedShelfOn,
   onToggleExpanded,
   onToggleArchivedShelf,
   onNewThread,
   onNewWorktree,
   onAssignGroup,
+  children,
 }: {
   projectId: string;
   projectName: string;
@@ -439,7 +504,6 @@ function ProjectMenu({
   groups: readonly ProjectGroup[];
   currentGroupId: string | null;
   expanded: boolean;
-  revealed: boolean;
   /** Whether this project's archived shelf is drawn. */
   archivedShelfOn: boolean;
   onToggleExpanded: () => void;
@@ -447,134 +511,142 @@ function ProjectMenu({
   onNewThread: () => void;
   onNewWorktree: () => void;
   onAssignGroup: (groupId: string | null) => void;
+  children: ReactNode;
 }) {
   const navigate = useBbNavigate();
   const [dialog, setDialog] = useState<"rename" | "remove" | null>(null);
+  const currentGroupName =
+    groups.find((group) => group.id === currentGroupId)?.name ?? "Ungrouped";
+
+  const items: RowMenuItem[] = [
+    { key: "new-thread", icon: "Add", label: "New thread", onSelect: onNewThread },
+  ];
+  if (!isPersonal) {
+    // The personal project has no checkout, and the worktree environment
+    // provider requires one (`requires: { gitCheckout: true }`) — so a worktree
+    // here is not a thing that can be created. Offering it would be a menu item
+    // whose only outcome is a composer with no worktree in it.
+    items.push({
+      key: "new-worktree",
+      icon: "GitBranch",
+      label: "New worktree…",
+      onSelect: onNewWorktree,
+    });
+  }
+  items.push(
+    {
+      key: "disclose",
+      icon: "ChevronDown",
+      label: expanded ? "Collapse" : "Expand",
+      separatorBefore: true,
+      onSelect: onToggleExpanded,
+    },
+    /*
+      The project's archive is a deliberate look, not a section that is always
+      there: it costs a read, and most of the time the answer is "nothing". A
+      checkbox rather than a label that flips, because the shelf stays on until
+      it is turned off — the tick is the only thing that says so.
+    */
+    {
+      key: "archived-shelf",
+      icon: "Archive",
+      label: "Show archived threads",
+      checked: archivedShelfOn,
+      onSelect: onToggleArchivedShelf,
+    },
+    {
+      key: "rename",
+      icon: "Edit",
+      label: "Rename…",
+      onSelect: () => setDialog("rename"),
+    },
+    // Membership is a rarer decision than acting on the project itself, so it
+    // lives one level down instead of crowding this list — and it reports where
+    // the project is now, so the menu does not have to be opened to find out.
+    {
+      key: "move-to-group",
+      icon: "FolderTree",
+      label: "Move to group",
+      hint: currentGroupName,
+      choices: [
+        ...groups.map((group) => ({
+          key: group.id,
+          label: group.name,
+          checked: group.id === currentGroupId,
+          onSelect: () => onAssignGroup(group.id),
+        })),
+        {
+          key: "ungrouped",
+          label: "Ungrouped",
+          checked: currentGroupId === null,
+          onSelect: () => onAssignGroup(null),
+        },
+      ],
+    },
+    {
+      key: "settings",
+      icon: "Settings",
+      label: "Project settings",
+      onSelect: () => navigate.toProject(projectId),
+    },
+    {
+      key: "copy-path",
+      icon: "Copy",
+      label: "Copy path",
+      disabled: projectPath === null,
+      onSelect: () => {
+        if (projectPath !== null) {
+          void copyWithAnnouncement(projectPath, "Path");
+        }
+      },
+    },
+    {
+      key: "copy-id",
+      icon: "IdCard",
+      label: "Copy project ID",
+      onSelect: () => {
+        void copyWithAnnouncement(projectId, "Project ID");
+      },
+    },
+    {
+      key: "remove",
+      icon: "Trash",
+      label: "Remove project…",
+      separatorBefore: true,
+      destructive: true,
+      onSelect: () => setDialog("remove"),
+    },
+  );
 
   return (
-    <>
-      <Menu
-        label={`Actions for ${projectName}`}
-        trigger={
-          <RowMenuTrigger
-            label={`Actions for ${projectName}`}
-            chevron
-            expanded={expanded}
-            revealed={revealed}
-          />
-        }
-      >
-        <MenuItem
-          icon="Add"
-          label="New thread"
-          onSelect={onNewThread}
-        />
-        {/* The personal project has no checkout, and the worktree environment
-            provider requires one (`requires: { gitCheckout: true }`) — so a
-            worktree here is not a thing that can be created. Offering it would
-            be a menu item whose only outcome is a composer with no worktree in
-            it. */}
-        {isPersonal ? null : (
-          <MenuItem
-            icon="GitBranch"
-            label="New worktree…"
-            onSelect={onNewWorktree}
-          />
-        )}
-        <MenuSeparator />
-        <MenuItem
-          icon="ChevronDown"
-          label={expanded ? "Collapse" : "Expand"}
-          onSelect={onToggleExpanded}
-        />
-        <MenuItem
-          icon="Edit"
-          label="Rename…"
-          onSelect={() => setDialog("rename")}
-        />
-        {/*
-          A project's archive is a deliberate look, not a section that is always
-          there: it costs a read, and most of the time the answer is "nothing".
-        */}
-        <MenuCheckboxItem
-          label="Show archived threads"
-          checked={archivedShelfOn}
-          onSelect={onToggleArchivedShelf}
-        />
-        {/* Membership is a rarer decision than acting on the project itself,
-            so it lives one level down instead of crowding this list. */}
-        <MenuSub icon="FolderTree" label="Move to group">
-          {groups.map((group) => (
-            <MenuCheckboxItem
-              key={group.id}
-              label={group.name}
-              checked={group.id === currentGroupId}
-              onSelect={() => onAssignGroup(group.id)}
+    <RowMenu
+      label={`Actions for ${projectName}`}
+      items={items}
+      dialog={
+        <>
+          {dialog === "rename" ? (
+            <RenameProjectDialog
+              projectId={projectId}
+              currentName={projectName}
+              onCancel={() => setDialog(null)}
+              onRenamed={() => setDialog(null)}
             />
-          ))}
-          <MenuCheckboxItem
-            label="Ungrouped"
-            checked={currentGroupId === null}
-            onSelect={() => onAssignGroup(null)}
-          />
-        </MenuSub>
-        <MenuItem
-          icon="Settings"
-          label="Project settings"
-          onSelect={() => navigate.toProject(projectId)}
-        />
-        <MenuItem
-          icon="Copy"
-          label="Copy path"
-          disabled={projectPath === null}
-          onSelect={() => {
-            if (projectPath !== null) {
-              void copyWithAnnouncement(projectPath, "Path");
-            }
-          }}
-        />
-        <MenuItem
-          icon="IdCard"
-          label="Copy project ID"
-          onSelect={() => {
-            void copyWithAnnouncement(projectId, "Project ID");
-          }}
-        />
-        <MenuSeparator />
-        <MenuItem
-          icon="Trash"
-          label="Remove project…"
-          destructive
-          onSelect={() => setDialog("remove")}
-        />
-      </Menu>
-
-      {dialog === "rename" ? (
-        <RenameProjectDialog
-          projectId={projectId}
-          currentName={projectName}
-          onCancel={() => setDialog(null)}
-          onRenamed={() => setDialog(null)}
-        />
-      ) : null}
-
-      {dialog === "remove" ? (
-        <RemoveProjectDialog
-          projectId={projectId}
-          projectName={projectName}
-          onCancel={() => setDialog(null)}
-          onRemoved={() => setDialog(null)}
-        />
-      ) : null}
-    </>
+          ) : null}
+          {dialog === "remove" ? (
+            <RemoveProjectDialog
+              projectId={projectId}
+              projectName={projectName}
+              onCancel={() => setDialog(null)}
+              onRemoved={() => setDialog(null)}
+            />
+          ) : null}
+        </>
+      }
+    >
+      {children}
+    </RowMenu>
   );
 }
-
-
-/**
- * Renaming writes bb's own project name, so this is a thin wrapper rather than
- * a second store: whatever bb shows everywhere else is what the row shows.
- */
 function RenameProjectDialog({
   projectId,
   currentName,

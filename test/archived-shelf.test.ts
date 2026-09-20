@@ -17,6 +17,10 @@ const projectNode = await readFile(
   new URL("../components/inbox/project-node.tsx", import.meta.url),
   "utf8",
 );
+const rowContextMenu = await readFile(
+  new URL("../components/inbox/row-context-menu.tsx", import.meta.url),
+  "utf8",
+);
 const inbox = await readFile(
   new URL("../components/inbox/thread-inbox.tsx", import.meta.url),
   "utf8",
@@ -160,15 +164,21 @@ describe("the archived shelf's read", () => {
 
 describe("the archived shelf's surface", () => {
   it("is a toggle on the project's own menu", () => {
-    assert.match(projectNode, /label="Show archived threads"/);
-    assert.match(projectNode, /checked=\{archivedShelfOn\}/);
+    assert.match(projectNode, /label: "Show archived threads"/);
+    assert.match(projectNode, /checked: archivedShelfOn/);
     assert.match(projectNode, /onToggleArchivedShelf/);
     assert.match(inbox, /isArchivedShelfOn: \(projectId\) =>/);
     assert.match(inbox, /setArchivedShelf: \(projectId, on\) =>/);
+    // A checkbox, not a label that flips: the shelf stays on until it is turned
+    // off, and the tick is the only thing that says so.
+    assert.match(rowContextMenu, /<ContextMenu\.CheckboxItem/);
   });
 
   it("draws inside the expanded project, and only when it has rows", () => {
-    assert.match(projectNode, /viewState\.isArchivedShelfOn\(node\.project\.id\) \? \(/);
+    assert.match(
+      projectNode,
+      /expanded && viewState\.isArchivedShelfOn\(node\.project\.id\) \? \(/,
+    );
     assert.match(shelf, /if \(threads\.length === 0\) return null;/);
   });
 

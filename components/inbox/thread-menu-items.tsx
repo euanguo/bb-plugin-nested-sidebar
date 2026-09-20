@@ -1,38 +1,35 @@
+import { useState, type ReactNode } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import type { IconName } from "@/components/ui/icon";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import { threadLinkUrl } from "@/lib/thread-link";
+import { threadDisplayTitle } from "@/lib/inbox";
+import { ThreadRenameDialog } from "@/components/inbox/thread-rename-dialog";
+import { RowMenu, type RowMenuItem } from "@/components/inbox/row-context-menu";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
 
 /**
- * One thread action, described once and drawn by both surfaces.
+ * One thread action, described once and drawn by the one menu.
  *
- * The row has two ways in — the dropdown behind its menu trigger and the
- * right-click menu — and bb's own sidebar keeps them identical. Describing the
- * items here rather than in each surface is what keeps them identical for us:
- * a new action is added once and appears in both, instead of being added to
- * the dropdown and silently missing from the context menu.
+ * The items are shared by every thread row — the family's card, a child row, and
+ * a parked row on a shelf — so a new action is written once and appears
+ * everywhere, instead of being added to one row and silently missing from the
+ * rest. `RowMenuItem` is the side bar's whole menu vocabulary, so a thread item
+ * and a project item are the same kind of thing.
  *
  * The set matches bb's own thread menu. Copying is deliberately two items:
  * the link is what a person pastes into a chat, and the id is what a person
  * pastes into a command or a bug report. bb offers the link alone, so the id is
  * additive here.
  */
-export interface ThreadMenuItem {
-  readonly key: string;
-  readonly label: string;
-  readonly icon: IconName;
-  readonly destructive?: boolean;
-  /** Draw a divider above this item, so the menu reads in the same groups. */
-  readonly separatorBefore?: boolean;
-  readonly onSelect: () => void;
-}
+export type ThreadMenuItem = RowMenuItem;
 
 export interface ThreadMenuActions {
   readonly items: readonly ThreadMenuItem[];
+  /** Mounted by the caller so the confirmation outlives the menu. */
+  readonly dialog: ReactNode;
 }
 
 export function useThreadMenuActions({
@@ -44,7 +41,6 @@ export function useThreadMenuActions({
   onSettle,
   onSnooze,
   canPark,
-  onRename,
   onUnarchive,
   splitAvailable,
 }: {
@@ -56,14 +52,6 @@ export function useThreadMenuActions({
   onSettle: () => void;
   onSnooze: (snoozedUntil: number) => void;
   canPark: boolean;
-  /**
-   * Switch the row into inline editing.
-   *
-   * The rename itself is not done here, and deliberately: the field has to
-   * replace the title it is renaming, and a menu cannot draw inside the row it
-   * was opened from. The row owns the field; the menu only asks for it.
-   */
-  onRename: () => void;
   /**
    * Restore an archived thread. The SDK exposes `archive` but no inverse, so
    * the plugin's own lifecycle owns the restore and hands it in. Absent for a
@@ -78,6 +66,7 @@ export function useThreadMenuActions({
   splitAvailable: boolean;
 }): ThreadMenuActions {
   const actions = useSidebarThreadActions();
+  const [renaming, setRenaming] = useState(false);
   const tomorrow = () => {
     const preset = resolveTomorrow();
     if (preset !== null) onSnooze(preset);
@@ -137,11 +126,9 @@ export function useThreadMenuActions({
     {
       key: "rename",
       icon: "Edit",
-      // No ellipsis: it means "this opens a dialog", and this one edits the row
-      // in place.
-      label: "Rename",
+      label: "Rename…",
       separatorBefore: true,
-      onSelect: onRename,
+      onSelect: () => setRenaming(true),
     },
   );
 
@@ -187,7 +174,16 @@ export function useThreadMenuActions({
     },
   );
 
-  return { items };
+  return {
+    items,
+    dialog: renaming ? (
+      <ThreadRenameDialog
+        threadId={thread.id}
+        currentTitle={threadDisplayTitle(thread)}
+        onClose={() => setRenaming(false)}
+      />
+    ) : null,
+  };
 }
 
 /**
@@ -199,4 +195,61 @@ function resolveTomorrow(): number | null {
     (candidate) => candidate.id === "tomorrow",
   );
   return preset === undefined ? null : preset.snoozedUntil;
+}
+
+/**
+ * A thread row's menu, wired to the sidebar's one menu surface.
+ *
+ * A component rather than a hook so the three thread rows — a family's card, a
+ * child row, and a parked row on a shelf — cannot each invent their own props
+ * for it. The items and the confirmation are the only thread-specific parts;
+ * `RowMenu` draws them, so every row in the tree opens a menu the same way.
+ */
+export function ThreadRowMenu({
+  thread,
+  expanded = false,
+  childCount = 0,
+  canToggleChildren = false,
+  onToggleChildren,
+  onSettle,
+  onSnooze,
+  canPark = false,
+  onUnarchive,
+  splitAvailable = false,
+  children,
+}: {
+  thread: PluginSidebarThread;
+  expanded?: boolean;
+  childCount?: number;
+  canToggleChildren?: boolean;
+  onToggleChildren?: () => void;
+  onSettle?: () => void;
+  onSnooze?: (snoozedUntil: number) => void;
+  canPark?: boolean;
+  onUnarchive?: () => void;
+  splitAvailable?: boolean;
+  children: ReactNode;
+}) {
+  const { items, dialog } = useThreadMenuActions({
+    thread,
+    expanded,
+    childCount,
+    canToggleChildren,
+    onToggleChildren: onToggleChildren ?? (() => undefined),
+    onSettle: onSettle ?? (() => undefined),
+    onSnooze: onSnooze ?? (() => undefined),
+    canPark,
+    onUnarchive,
+    splitAvailable,
+  });
+
+  return (
+    <RowMenu
+      label={`Actions for ${threadDisplayTitle(thread)}`}
+      items={items}
+      dialog={dialog}
+    >
+      {children}
+    </RowMenu>
+  );
 }
