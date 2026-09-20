@@ -47,6 +47,25 @@ import {
 import { cn } from "@/lib/utils";
 import type { CSSProperties } from "react";
 
+/**
+ * The pin, solid — the other half of the pin control.
+ *
+ * Derived from `PinIcon`'s own artwork rather than drawn again, so pinned and
+ * unpinned are one silhouette: a pin that changed shape when it was pinned
+ * would read as two different controls.
+ *
+ * Hugeicons' free set ships the pin outlined only, so the solid is made here —
+ * and made by rule rather than by index: every closed outline is filled, every
+ * open one stays a stroke. Filling a path that is a line would draw nothing and
+ * fail silently, and the two parts of this glyph differ in exactly that way.
+ */
+const PinFilledIcon: IconSvgElement = PinIcon.map(
+  ([tag, attrs]): [string, { [key: string]: string | number }] =>
+    typeof attrs.d === "string" && attrs.d.trimEnd().endsWith("Z")
+      ? [tag, { ...attrs, fill: "currentColor" }]
+      : [tag, { ...attrs }],
+);
+
 const ICON_MAP = {
   Add: Add01Icon,
   Archive: Archive02Icon,
@@ -85,6 +104,7 @@ const ICON_MAP = {
   Settings: Settings01Icon,
   Sliders: SlidersHorizontalIcon,
   Pin: PinIcon,
+  PinFilled: PinFilledIcon,
   PinOff: PinOffIcon,
   Trash: Delete02Icon,
   Target: Target02Icon,

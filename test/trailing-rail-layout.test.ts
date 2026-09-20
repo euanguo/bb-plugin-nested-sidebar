@@ -27,13 +27,11 @@ describe("trailing rail layout", () => {
   it("keeps the trailing cluster free of anything hover changes", () => {
     // The cluster used to end with the hover menu's trigger, which is why the
     // menu had to come first: a right-aligned cluster would shift every glyph to
-    // its left the moment it appeared. The menu is a right-click now, so nothing
-    // in the cluster is added or removed on hover and the glyphs cannot move.
+    // its left the moment it appeared. The menu is a right-click now, and the two
+    // things the pointer still changes sit at the head of the cluster — the age
+    // for the park buttons, and the pin on a thread that is not pinned — so
+    // nothing already drawn moves, and only the width the title has changes.
     assert.doesNotMatch(threadCard, /<ThreadMenu|<RowMenuTrigger/);
-    assert.match(
-      threadCard,
-      /data-nest-root-metadata=""[\s\S]*name="Pin"/,
-    );
     assert.ok(
       threadCard.includes(
         '"pointer-events-none relative min-w-0 flex-1",',

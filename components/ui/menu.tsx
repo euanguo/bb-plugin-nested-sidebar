@@ -300,3 +300,32 @@ export function MenuLabel({ children }: { children: React.ReactNode }) {
     </DropdownMenu.Label>
   );
 }
+
+/**
+ * A menu item whose inside is the caller's.
+ *
+ * `MenuItem`'s icon-and-label shape cannot carry a row that has to show a disc,
+ * a title, the kind of thing it is *and* a status glyph. This keeps such a row a
+ * real menu item — keyboard walk, highlight, `onSelect` — while the panel and
+ * the row's own styling stay the shared ones. Without it a caller with a richer
+ * row reaches for the primitive and re-draws the menu, which is how a sidebar
+ * ends up with two.
+ */
+export function MenuRow({
+  onSelect,
+  className,
+  children,
+}: {
+  onSelect: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <DropdownMenu.Item
+      onSelect={onSelect}
+      className={cn(MENU_ITEM_CLASS, "items-start gap-2", className)}
+    >
+      {children}
+    </DropdownMenu.Item>
+  );
+}
