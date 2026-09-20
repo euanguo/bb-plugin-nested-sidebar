@@ -30,6 +30,15 @@ export interface StatusRollup {
   readonly working: number;
   readonly needsYou: number;
   readonly unread: number;
+  /**
+   * Up to `MAX_DISC_IDS` of the threads under here, in the order they are drawn.
+   *
+   * Colour identifies a thread and its colour comes from its id, so the ids are
+   * what a folded row needs to draw the same cluster a chip draws. Bounded by
+   * construction rather than capped at the call site, so the width of a folded
+   * row cannot grow with the size of the branch under it.
+   */
+  readonly discIds: readonly string[];
   /** The thread the rollup's dominant state came from, for jump-to. */
   readonly leadThreadId: string | null;
 }
@@ -41,6 +50,7 @@ const EMPTY: StatusRollup = {
   working: 0,
   needsYou: 0,
   unread: 0,
+  discIds: [],
   leadThreadId: null,
 };
 
@@ -114,6 +124,20 @@ export function rollupThreads(
     working,
     needsYou: needs,
     unread,
+    // The threads that put the chip there, not the first three under the row.
+    // Naming idle threads by colour was decoration: a project's first three
+    // threads are usually the quiet ones, and the colour is supposed to point at
+    // what is happening.
+    discIds: threads
+      .filter(
+        (thread) =>
+          isFailed(thread) ||
+          needsYou(thread) ||
+          isWorking(thread) ||
+          isUnread(thread),
+      )
+      .slice(0, MAX_DISC_IDS)
+      .map((thread) => thread.id),
     leadThreadId: lead?.id ?? threads[0]?.id ?? null,
   };
 }
@@ -151,6 +175,19 @@ export interface RollupCount {
  * unread` is the order that puts a blocked thread ahead of a running one, which
  * is the whole point of a rollup.
  */
+/**
+ * How many threads under this row are worth looking at.
+ *
+ * Not `total`: a folded project with twenty-eight threads of which two are
+ * moving answers "28" to a question nobody asked, and the number a folded row
+ * needs is the size of the reason to open it. The states counted here are
+ * exactly the ones that draw the chip at all, so `0` and "no chip" are the same
+ * case and cannot disagree.
+ */
+export function rollupSignalCount(rollup: StatusRollup): number {
+  return rollup.failed + rollup.needsYou + rollup.working + rollup.unread;
+}
+
 export function rollupCounts(rollup: StatusRollup): RollupCount[] {
   const counts: RollupCount[] = [];
   if (rollup.failed > 0) counts.push({ kind: "failed", count: rollup.failed });
@@ -171,6 +208,30 @@ const COUNT_LABELS: Readonly<Partial<Record<FamilyStatusKind, string>>> = {
 };
 
 /**
+ * How a jump target is named: `Jump to the thread that needs you`.
+ *
+ * A phrase about the thread rather than the branch's count summary, because the
+ * summary lists the whole branch — which is what made the old title, "Jump to
+ * the thread that 1 needs you · 2 working", an unfinished sentence as soon as
+ * more than one state was present. The summary still answers what is inside; this
+ * answers where the click goes.
+ */
+export function rollupLeadPhrase(kind: FamilyStatusKind): string {
+  switch (kind) {
+    case "failed":
+      return "failed";
+    case "needs-you":
+      return "needs you";
+    case "working":
+      return "is working";
+    case "unread":
+      return "you have not read";
+    default:
+      return "is in here";
+  }
+}
+
+/**
  * The short string a folded header shows next to its status dot: only the
  * counts that are non-zero, most urgent first. Kept terse because this sits on
  * a row the user scans, and with many worktrees the row has little room.
@@ -180,6 +241,15 @@ export function rollupSummary(rollup: StatusRollup): string {
     .map((entry) => `${entry.count} ${COUNT_LABELS[entry.kind] ?? entry.kind}`)
     .join(" · ");
 }
+
+/**
+ * How many threads a folded row names by colour before it stops.
+ *
+ * Three, the same number a chip shows, because a folded row draws the same
+ * cluster: past three the discs stop identifying anything and start being
+ * decoration. `total` carries the number.
+ */
+export const MAX_DISC_IDS = 3;
 
 /** Merge child rollups into a parent one. Counts add; the worst kind wins. */
 export function mergeRollups(rollups: readonly StatusRollup[]): StatusRollup {
@@ -191,12 +261,18 @@ export function mergeRollups(rollups: readonly StatusRollup[]): StatusRollup {
   let unread = 0;
   let failed = 0;
   let total = 0;
+  const discIds: string[] = [];
   for (const rollup of present) {
     working += rollup.working;
     needs += rollup.needsYou;
     unread += rollup.unread;
     failed += rollup.failed;
     total += rollup.total;
+    // In the order the rows are drawn, so the discs on a folded project name the
+    // threads at its top, which is where opening it lands.
+    for (const id of rollup.discIds) {
+      if (discIds.length < MAX_DISC_IDS) discIds.push(id);
+    }
   }
 
   const kind = worstKind(present.map((rollup) => rollup.kind));
@@ -209,6 +285,7 @@ export function mergeRollups(rollups: readonly StatusRollup[]): StatusRollup {
     working,
     needsYou: needs,
     unread,
+    discIds,
     leadThreadId: lead?.leadThreadId ?? null,
   };
 }

@@ -7,6 +7,8 @@ const read = (relative: string) =>
 
 const card = await read("../components/inbox/thread-card.tsx");
 const disc = await read("../components/inbox/disc.tsx");
+const banner = await read("../components/inbox/rollup-badge.tsx");
+const familyStatus = await read("../components/inbox/family-status.tsx");
 
 describe("the row shape borrowed from BB Sidebar", () => {
   it("draws the card as a tint, never as a box", () => {
@@ -64,7 +66,7 @@ describe("the row shape borrowed from BB Sidebar", () => {
   it("folds the children into a chip with their dots and a chevron", () => {
     // bb's ChildThreadBadge (`src/ChildThreadList.tsx:160`).
     assert.match(card, /function ChildThreadChip\(/);
-    assert.match(card, /flex h-5 shrink-0 items-center gap-1 rounded-full bg-current\/10 px-1\.5/);
+    assert.match(card, /STATE_CHIP_CLASS/);
     assert.match(card, /<DiscCluster threads=\{threads\} compact \/>/);
     const chip = card.slice(
       card.indexOf("function ChildThreadChip("),
@@ -101,5 +103,26 @@ describe("the row shape borrowed from BB Sidebar", () => {
   it("keeps one cluster implementation for the header and the row", () => {
     assert.match(disc, /export function DiscCluster\(/);
     assert.match(disc, /compact \? "size-2\.5" : "size-3\.5"/);
+  });
+
+  it("draws one chip shape, whether the threads under it are folded or open", () => {
+    // A folded project and an opened family are the same kind of thing, so they
+    // wear the same ground, carry the same cluster and take the same tint. They
+    // differ in what clicking them does — which is where the difference belongs.
+    for (const [level, source] of [
+      ["a thread's children", card],
+      ["a folded row's rollup", banner],
+    ] as const) {
+      assert.match(source, /STATE_CHIP_CLASS/, `${level} wears the shared ground`);
+      assert.match(source, /DiscCluster/, `${level} names its threads with discs`);
+      // The variable is named for the level (a chip's `status`, a rollup's
+      // `presentation`); what matters is that the tint comes from the palette.
+      assert.match(source, /style=\{\{ color: familyStatusColor\(/);
+      assert.match(source, /<span className="tabular-nums">\{/, `${level} shows how many`);
+      assert.match(source, /compact/, `${level} uses the chip-sized discs`);
+    }
+    // And the tint is the palette's, on both.
+    assert.match(familyStatus, /export const STATE_CHIP_CLASS =/);
+    assert.match(familyStatus, /bg-current\/10/);
   });
 });

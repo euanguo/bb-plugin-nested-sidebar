@@ -28,6 +28,7 @@ import {
 import { PullRequestMetadata, SubagentBadge } from "@/components/inbox/row-metadata";
 import {
   FamilyStatusIcon,
+  STATE_CHIP_CLASS,
   familyStatusColor,
 } from "@/components/inbox/family-status";
 import { DiscCluster } from "@/components/inbox/disc";
@@ -907,7 +908,10 @@ function ChildThreadChip({
         onToggle();
       }}
       className={cn(
-        "group/children relative flex h-5 shrink-0 items-center gap-1 rounded-full bg-current/10 px-1.5 text-2xs font-medium",
+        STATE_CHIP_CLASS,
+        // The row's own group, for the chip's tooltip. Everything visible is the
+        // shared ground above.
+        "group/children relative",
         "outline-none transition-colors duration-150 ease-out hover:bg-current/20 focus-visible:ring-1 focus-visible:ring-ring motion-reduce:transition-none",
         disabled && "pointer-events-none",
       )}

@@ -1,5 +1,16 @@
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
+
+/**
+ * The one thing a disc needs from a thread: its id, which is where the colour
+ * comes from.
+ *
+ * Narrower than the host's thread DTO on purpose, so a folded row can draw a
+ * cluster from the ids its rollup already carries without holding the threads
+ * themselves — a project's rollup is a summary, and should stay one.
+ */
+export interface DiscThread {
+  readonly id: string;
+}
 
 /**
  * A per-thread dot. Colour comes from the thread's id so the same thread keeps
@@ -12,7 +23,7 @@ export function Disc({
   thread,
   compact = false,
 }: {
-  thread: PluginSidebarThread | null;
+  thread: DiscThread | null;
   /** A size down, for a cluster that has to sit inside a chip. */
   compact?: boolean;
 }) {
@@ -35,15 +46,16 @@ export function Disc({
 
 /**
  * Up to `max` of a thread's children, overlapping, plus an "and more" disc when
- * there are more. Shared by the thread header's chip and the row's, so the two
- * cannot disagree about what a cluster of children looks like.
+ * there are more. Shared by the thread header's chip, the row's chip and a
+ * folded row's rollup, so none of them can disagree about what a cluster of
+ * threads under something looks like.
  */
 export function DiscCluster({
   threads,
   max = 3,
   compact = false,
 }: {
-  threads: readonly PluginSidebarThread[];
+  threads: readonly DiscThread[];
   max?: number;
   compact?: boolean;
 }) {
