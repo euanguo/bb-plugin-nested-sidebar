@@ -29,6 +29,7 @@
     "components",
     "hooks",
     "lib",
-    "test"
+    "test",
+    "styles.d.ts"
   ]
 }

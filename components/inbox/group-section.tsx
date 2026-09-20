@@ -15,6 +15,7 @@ import {
 } from "@/components/inbox/row-actions";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import { useNestViewState } from "@/components/inbox/view-state-context";
+import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
 import { UNGROUPED_SCOPE_KEY } from "@/lib/view-state";
 import {
   ProjectNode as ProjectNodeView,
@@ -86,6 +87,7 @@ export function GroupSection({
     viewState.setGroupCollapsed(groupKey, !open);
   const reveal = useRowReveal();
   const listId = useId();
+  const attachListAutoAnimateRef = useListAutoAnimate<HTMLDivElement>();
   const threadCount = node.projects.reduce(
     (total, project) =>
       total +
@@ -163,26 +165,32 @@ export function GroupSection({
             : [{ label: "Group ID", value: groupId, mono: true, copy: true }]),
         ]}
       />
-      {expanded ? (
-        <div id={listId}>
-          {node.projects.map((project) => (
-            <ProjectNodeView
-              key={project.project.id}
-              node={project}
-              handlers={handlers}
-              groups={groups}
-              currentGroupId={node.groupId}
-              onAssignGroup={onAssignGroup}
-              onNewThreadInProject={onNewThreadInProject}
-              onNewWorktree={onNewWorktree}
-              onNewThreadInWorkspace={onNewThreadInWorkspace}
-              projectColorOverrides={projectColorOverrides}
-              projectIcons={projectIcons}
-              projectReorder={projectReorder}
-            />
-          ))}
-        </div>
-      ) : null}
+      {/*
+        The container stays mounted and the rows come and go inside it: that is
+        what lets auto-animate play the same per-row entry and exit a loaded
+        page does. Hiding the container instead would leave one box to fade,
+        and the list would have nothing to animate.
+      */}
+      <div id={listId} ref={attachListAutoAnimateRef}>
+        {expanded
+          ? node.projects.map((project) => (
+              <ProjectNodeView
+                key={project.project.id}
+                node={project}
+                handlers={handlers}
+                groups={groups}
+                currentGroupId={node.groupId}
+                onAssignGroup={onAssignGroup}
+                onNewThreadInProject={onNewThreadInProject}
+                onNewWorktree={onNewWorktree}
+                onNewThreadInWorkspace={onNewThreadInWorkspace}
+                projectColorOverrides={projectColorOverrides}
+                projectIcons={projectIcons}
+                projectReorder={projectReorder}
+              />
+            ))
+          : null}
+      </div>
     </section>
   );
 }

@@ -39,6 +39,34 @@ Source: <https://github.com/stablyai/orca>
 
 ---
 
+## BB Sidebar — `yusuf8834/bb-sidebar`
+
+MIT License, Copyright (c) 2026 Michael Yong and Copyright (c) 2026 Yusuf Akbulut.
+
+The list transitions (`hooks/use-list-auto-animate.ts`), the settle button's sparkle
+and motion (`components/inbox/settle-button.css`, `components/inbox/thread-card.tsx`),
+the settled shelf's paging rule (`lib/paging.ts`,
+`components/inbox/thread-inbox.tsx`), and the live working-duration model
+(`lib/working-since.ts`, `hooks/use-working-since.ts`,
+`components/inbox/status-slot.tsx`) are ported from BB Sidebar at commit
+`e3f60343fecbe1bfa552070724514a3c2f74cf1f` (2026-09-19). They ship in `dist/app.js`
+and `dist/app.css`.
+
+Source: <https://github.com/yusuf8834/bb-sidebar>
+
+---
+
+## @formkit/auto-animate
+
+MIT License, Copyright 2022 FormKit Inc.
+
+The list-transition engine behind `hooks/use-list-auto-animate.ts`. Compiled into
+`dist/app.js`.
+
+Source: <https://github.com/formkit/auto-animate>
+
+---
+
 ## shadcn/ui
 
 MIT License, Copyright (c) 2023 shadcn.

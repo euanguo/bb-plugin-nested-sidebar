@@ -75,7 +75,7 @@ export function SlimRow({
               not make every parked row reserve an action-sized column. */}
           <span
             className={cn(
-              "pointer-events-none shrink-0 tabular-nums text-2xs text-muted-foreground/60 transition-opacity",
+              "pointer-events-none shrink-0 tabular-nums text-2xs text-muted-foreground/60 transition-opacity duration-150 ease-out motion-reduce:transition-none",
               "group-hover/slim:opacity-0",
             )}
           >

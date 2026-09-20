@@ -29,7 +29,10 @@ import {
   type ProviderGlyphInfo,
 } from "@/components/inbox/provider-glyph";
 import { StatusGlyph } from "@/components/inbox/status-glyph";
-import { threadStatus } from "@/components/inbox/status-slot";
+import {
+  StatusOrTime,
+  threadStatus,
+} from "@/components/inbox/status-slot";
 import { PullRequestMetadata } from "@/components/inbox/row-metadata";
 import {
   FamilyStatusIcon,
@@ -44,6 +47,8 @@ import { relativeTimeLabel } from "@/lib/relative-time";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
 import { useNestViewState } from "@/components/inbox/view-state-context";
 import { useThreadMenuActions } from "@/components/inbox/thread-menu-items";
+import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
+import "./settle-button.css";
 
 export function ThreadCard({
   thread,
@@ -100,6 +105,7 @@ export function ThreadCard({
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
   const { pullRequest } = useSidebarThreadPullRequest(thread.id);
   const childListId = useId();
+  const attachChildListAutoAnimateRef = useListAutoAnimate<HTMLUListElement>();
   /**
    * When details live on hover, the row is a single column: title plus status,
    * nothing else. Everything suppressed here is still reachable from the hover
@@ -187,7 +193,7 @@ export function ThreadCard({
       >
         <div
           className={cn(
-            "rounded-xl border transition-colors",
+            "rounded-xl border transition-colors duration-150 ease-out motion-reduce:transition-none",
             expanded
               ? "border-sidebar-border bg-sidebar-accent/35 py-1"
               : "border-transparent",
@@ -300,7 +306,7 @@ export function ThreadCard({
                   });
                 }}
                 className={cn(
-                  "relative z-10 size-4 shrink-0 cursor-pointer rounded border accent-primary transition-colors",
+                  "relative z-10 size-4 shrink-0 cursor-pointer rounded border accent-primary transition-colors duration-150 ease-out motion-reduce:transition-none",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   selectionDisabledReason !== null &&
                     "cursor-not-allowed opacity-35",
@@ -414,12 +420,13 @@ export function ThreadCard({
                   <ParkButton
                     label="Settle thread"
                     icon="Archive"
+                    sparkle
                     onActivate={onSettle}
                   />
                 </span>
               ) : showRootTime ? (
                 <span data-nest-root-time="" className="flex h-4 items-center justify-end">
-                  <ThreadStatusLabel thread={thread} now={now} />
+                  <StatusOrTime thread={thread} now={now} />
                 </span>
               ) : null}
               {showRootMenu ? (
@@ -481,7 +488,7 @@ export function ThreadCard({
                     }}
                     className={cn(
                       "group/children relative flex h-4 items-center gap-0.5 rounded px-0.5 text-2xs font-medium text-muted-foreground",
-                      "transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                      "transition-colors duration-150 ease-out hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring motion-reduce:transition-none",
                       selectionMode && "pointer-events-none",
                       childNeedsAttention && "text-primary",
                     )}
@@ -489,7 +496,7 @@ export function ThreadCard({
                     <Icon
                       name="ChevronDown"
                       className={cn(
-                        "size-3 transition-transform",
+                        "size-3 transition-transform duration-150 ease-out motion-reduce:transition-none",
                         expanded && "rotate-180",
                       )}
                       aria-hidden
@@ -510,7 +517,7 @@ export function ThreadCard({
                     ) : null}
                     <span
                       role="tooltip"
-                      className="pointer-events-none absolute bottom-full right-0 z-30 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/children:translate-y-0 group-hover/children:opacity-100 group-focus-visible/children:translate-y-0 group-focus-visible/children:opacity-100"
+                      className="pointer-events-none absolute bottom-full right-0 z-30 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all duration-150 ease-out motion-reduce:transition-none group-hover/children:translate-y-0 group-hover/children:opacity-100 group-focus-visible/children:translate-y-0 group-focus-visible/children:opacity-100"
                     >
                       {childDisclosureLabel}
                     </span>
@@ -528,35 +535,44 @@ export function ThreadCard({
             ) : null}
           </div>
 
-          {expanded ? (
-            <ul
-              id={childListId}
-              aria-label={`Agents for ${threadDisplayTitle(thread)}`}
-              className={cn(
-                "ml-[14px] border-l pb-0.5 pl-3 transition-colors",
-                waitingForAgents
+          {/*
+            The list stays mounted and its rows come and go inside it, so the
+            disclosure plays the same per-row entry and exit a loaded page does.
+            The connector line and its padding belong to the expanded state: on
+            a zero-height list they would paint a stub of border under the row.
+          */}
+          <ul
+            id={childListId}
+            ref={attachChildListAutoAnimateRef}
+            aria-label={`Agents for ${threadDisplayTitle(thread)}`}
+            className={cn(
+              "ml-[14px] transition-colors duration-150 ease-out motion-reduce:transition-none",
+              expanded && "border-l pb-0.5 pl-3",
+              expanded &&
+                (waitingForAgents
                   ? "border-current"
-                  : "border-sidebar-border",
-              )}
-              style={
-                waitingForAgents
-                  ? { borderColor: "var(--nest-status-working)" }
-                  : undefined
-              }
-            >
-              {childThreads.map((child) => (
-                <ChildThreadRow
-                  key={child.id}
-                  thread={child}
-                  provider={providerInfoById.get(child.providerId)}
-                  isActive={child.id === activeThreadId}
-                  onNavigate={onNavigate}
-                  now={now}
-                  preferences={preferences}
-                />
-              ))}
-            </ul>
-          ) : null}
+                  : "border-sidebar-border"),
+            )}
+            style={
+              expanded && waitingForAgents
+                ? { borderColor: "var(--nest-status-working)" }
+                : undefined
+            }
+          >
+            {expanded
+              ? childThreads.map((child) => (
+                  <ChildThreadRow
+                    key={child.id}
+                    thread={child}
+                    provider={providerInfoById.get(child.providerId)}
+                    isActive={child.id === activeThreadId}
+                    onNavigate={onNavigate}
+                    now={now}
+                    preferences={preferences}
+                  />
+                ))
+              : null}
+          </ul>
         </div>
       </li>
     </RowContextMenu>
@@ -665,7 +681,7 @@ function ChildThreadRow({
         <span
           aria-hidden
           className={cn(
-            "absolute -left-3 top-1/2 h-px w-3 transition-colors",
+            "absolute -left-3 top-1/2 h-px w-3 transition-colors duration-150 ease-out motion-reduce:transition-none",
             !isWorking && "bg-sidebar-border",
           )}
           style={
@@ -799,24 +815,10 @@ function ThreadStateGlyph({
       {glyph}
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-0 z-30 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all group-hover/child-status:translate-y-0 group-hover/child-status:opacity-100 group-focus-visible/child-status:translate-y-0 group-focus-visible/child-status:opacity-100"
+        className="pointer-events-none absolute bottom-full left-0 z-30 mb-1 w-max max-w-[min(14rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1.5 text-2xs leading-tight text-popover-foreground opacity-0 shadow-md transition-all duration-150 ease-out motion-reduce:transition-none group-hover/child-status:translate-y-0 group-hover/child-status:opacity-100 group-focus-visible/child-status:translate-y-0 group-focus-visible/child-status:opacity-100"
       >
         {label}
       </span>
-    </span>
-  );
-}
-
-function ThreadStatusLabel({
-  thread,
-  now,
-}: {
-  thread: PluginSidebarThread;
-  now: number;
-}) {
-  return (
-    <span className="tabular-nums text-2xs text-muted-foreground/70">
-      {relativeTimeLabel(thread.updatedAt, now)}
     </span>
   );
 }
@@ -857,10 +859,18 @@ function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
 function ParkButton({
   label,
   icon,
+  sparkle = false,
   onActivate,
 }: {
   label: string;
   icon: Extract<IconName, "Archive" | "Clock">;
+  /**
+   * The settle button's sparkle and lift, ported from BB Sidebar (see
+   * THIRD_PARTY_NOTICES.md). Snoozing shares this component but not the
+   * celebration: parking is the act the shelf is about, and a sparkle on the
+   * snooze control would spend the same emphasis on a timer.
+   */
+  sparkle?: boolean;
   onActivate: () => void;
 }) {
   return (
@@ -873,9 +883,47 @@ function ParkButton({
         event.stopPropagation();
         onActivate();
       }}
-      className="rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      className={cn(
+        "text-muted-foreground focus-visible:outline-none",
+        // Split rather than reconciled by `tailwind-merge`: the two branches
+        // disagree on padding (`p-0.5` vs `size-5`), ring width and radius, and
+        // merging them would quietly restyle the snooze button.
+        sparkle
+          ? cn(
+              "nest-settle group/settle relative flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md",
+              "transition-colors duration-200 ease-out hover:text-emerald-700 dark:hover:text-emerald-300",
+              "focus-visible:text-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:focus-visible:text-emerald-300",
+              "motion-reduce:transition-none",
+            )
+          : "rounded p-0.5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring",
+      )}
     >
-      <Icon name={icon} className="size-3.5" />
+      {sparkle ? (
+        /* Move only the artwork so hovering an edge cannot move the hit area. */
+        <span
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none relative flex size-full items-center justify-center rounded-[inherit]",
+            "transition-[background-color,box-shadow,transform] duration-200 ease-out motion-reduce:transition-none",
+            "group-hover/settle:bg-emerald-500/15 group-hover/settle:shadow-[0_0_0_3px_rgb(16_185_129_/_0.08)] group-focus-visible/settle:bg-emerald-500/15",
+            "motion-safe:group-hover/settle:-translate-y-0.5 motion-safe:group-focus-visible/settle:-translate-y-0.5 motion-safe:group-active/settle:translate-y-0 motion-safe:group-active/settle:scale-90 group-active/settle:bg-emerald-500/25",
+          )}
+        >
+          <Icon
+            name={icon}
+            className="size-3.5 transition-transform duration-200 ease-out motion-reduce:transition-none motion-safe:group-hover/settle:rotate-[-8deg] motion-safe:group-hover/settle:scale-110 motion-safe:group-focus-visible/settle:rotate-[-8deg] motion-safe:group-focus-visible/settle:scale-110"
+          />
+          {[0, 1, 2, 3, 4].map((sparkle) => (
+            <span
+              key={sparkle}
+              aria-hidden="true"
+              className="nest-settle-sparkle"
+            />
+          ))}
+        </span>
+      ) : (
+        <Icon name={icon} className="size-3.5" />
+      )}
     </button>
   );
 }

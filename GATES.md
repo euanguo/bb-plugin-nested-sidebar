@@ -1,34 +1,54 @@
-# Gates: project-first rendering
+# Gates: BB Sidebar's motion, paging and working duration
 
-OWNS: lib/inbox.ts, lib/tree.ts, lib/workspace.ts, components/inbox/project-node.tsx, components/inbox/thread-inbox.tsx, test/**, README.md, PLAN.md, GATES.md
+OWNS: hooks/use-list-auto-animate.ts, hooks/use-working-since.ts, lib/paging.ts, components/inbox/page-controls.tsx, lib/working-since.ts, lib/preferences.ts, styles.d.ts, server.ts, components/inbox/{thread-inbox,thread-card,slim-row,status-slot,row-actions,row-metadata,family-status,provider-glyph,rollup-badge,status-glyph,group-section,project-node,tree-rows,bulk-delete-dialog,remove-worktree-dialog}.tsx, components/inbox/settle-button.css, package.json, package-lock.json, tsconfig.json, test/**, README.md, THIRD_PARTY_NOTICES.md, PLAN.md, GATES.md
 
-Scope: render every project bb reports as a sidebar node, with its workspaces under it, so a project with no visible thread is still reachable; keep the workspace and thread levels unchanged; leave no dead path behind.
+Scope: give Nest the motion, the disclosure animation, the paging on every long list, and the working duration that BB Sidebar gets right — the disclosure being one upstream does not have — without changing the tree's structure, any persisted store, or any RPC; the only server change is one declarative page-size setting.
 
-- [x] G1: a project with no threads produces a project group with empty families, in bb's project order
-  CHECK: node --test --experimental-strip-types --test-name-pattern='project thread groups' test/inbox.test.ts
-  EXPECT: project-first seeding verified
-  EVIDENCE: 'lists every project bb reports, with an empty body when it has no threads' asserts the group order and the empty families array; 'files a thread whose project is not listed after the known ones' covers the stray-project tail; the four pre-existing grouping tests still pass unchanged.
+- [x] G1: the list-transition hook is upstream's, minus the drag machinery Nest cannot need, and every row container animates
+  CHECK: node --test --experimental-strip-types test/list-auto-animate-contract.test.ts
+  EXPECT: hook ported without the drag hold
+  EVIDENCE: 6/6 pass. The four upstream behaviours are pinned — `autoAnimate(node, {…})` with `duration: 150` / `easing: "ease-out"`, the `typeof window.matchMedia !== "function"` bail that keeps it silent without a DOM, and `animation.destroy?.()`; the three drag-registry names (`listAnimations`, `listAnimationHolds`, `suspendListAnimations`/`resumeListAnimations`) and `animation.disable()/enable()` are asserted **absent**, so the omission cannot be quietly undone. Six ref attachments across five files are pinned, plus the ordering rule that `ParkedShelf` runs its hook above `if (count === 0) return null`.
 
-- [x] G2: the flat-list helpers the nested tree replaced are gone, and nothing references them
-  CHECK: rg -n 'filterByProject|partitionPinned|hideChildrenOfVisibleParents|ProjectScope|groupThreadsByProject|visibleTotal|activeVisibleCount' lib components hooks server.ts app.tsx host.ts test
-  EXPECT: no matches
-  EVIDENCE: no matches on 2026-09-19. lib/inbox.ts went from 287 to 248 lines.
+- [x] G2: the settle sparkle ships with the button, under Nest's own names, and only on settle
+  CHECK: node --test --experimental-strip-types test/settle-button-contract.test.ts
+  EXPECT: sparkle ported, re-prefixed, settle-only
+  EVIDENCE: 11/11 pass. Pins the five `:nth-of-type` rules, the five `.nest-settle-sparkle` spans (`[0, 1, 2, 3, 4].map`), the `750ms var(--sparkle-delay) ease-out both` shorthand, and the `@media (prefers-reduced-motion: no-preference)` gate with the un-gated `opacity: 0.85` rule that keeps the stars visible. `assert.doesNotMatch(rules, /bb-sidebar/)` covers every selector and the keyframe name, because both plugins can be installed at once. The two `<ParkButton>` call sites are compared: snooze has no `sparkle`, settle does. The three-part motion (inner-span lift, `active:scale-90`, icon `rotate-[-8deg]`) is pinned so it cannot be split.
 
-- [x] G3: the plugin typechecks and builds
+- [x] G3: the settled shelf, a project's thread list and a worktree's thread list each draw one page — five rows by default, adjustable — and none holds back the open thread
+  CHECK: node --test --experimental-strip-types test/paging.test.ts test/paging-contract.test.ts
+  EXPECT: every long list paged
+  EVIDENCE: 13/13 unit cases and 15/15 wiring cases. Unit: the first page in order, the open row kept past the limit, **not** doubled when already inside it, an empty list, `nextPageSize` at whole-page / last-page / nothing-left / short-page, and `resolvePageSize` — the default 5, a configured 12, clamping at 0, a negative, `MAX + 1` and a floor of 7.9, and the fallback to 5 on a string, `NaN`, `Infinity` or `null`. The escape hatch is exercised through **both** kinds of row (a settled thread and a family whose id is its root's), which is what `idOf` exists for. Wiring: all three lists derive their limit from one `preferences.pageSize`, each holds a *page* count (`settledPages` / `flatPages` / `familyPages`) rather than a row count and adds a page per click, each resets to one page for **Show less**, and each asks for its own row id and compares its own total. Show less is pinned to the right of Load more in one row, gated on `page > 1`, and both controls are hidden while a search draws every match. The settled shelf still pages and the snoozed one still does not; an empty list still reads the whole list rather than the page. The two controls are one shared `PageControls` used by all three lists, with one class string between them.
+
+- [x] G4: expand and collapse play the row animation a loaded page plays, and nothing else does
+  CHECK: node --test --experimental-strip-types test/disclosure-contract.test.ts
+  EXPECT: one mechanism, no height animation left behind
+  EVIDENCE: 5/5 pass. Pins that every disclosure gates its rows on `{expanded ?` and that **no** file imports a `Collapse` (the height-animated wrapper this replaced); that each watched container carries the auto-animate ref *and* its `aria-controls` id, and is not itself behind an `{expanded ?` — a container inside the conditional would unmount with its own children and leave auto-animate nothing to animate; that the connector line and padding are gated on `expanded` in the worktree list and the child-agent list, since a border on a zero-height list paints a stub; that both placeholders render only when open; and a negative over all five files for `transition-\[height\]`, `scrollHeight` and `requestAnimationFrame`, so the deleted mechanism cannot creep back.
+  NOTE: this supersedes a height-animated `Collapse` (with its own pure state machine, `lib/collapse.ts`) that was written, tested and then removed. The two cannot coexist: a smooth box height needs the leaving rows to stay in flow so the box can measure them, while auto-animate's row exit needs them out of it — its `remove` re-inserts the node as `position: absolute`, `z-index: 100`, at its old coordinates. The height version also had a real bug that the source-text suite could not see — deciding to animate an opening *after* reading the body's DOM node, which an opening body does not have yet, so every expansion snapped open while every collapse animated. `PLAN.md` keeps the research behind both, including the Material tokens the first version used.
+
+- [x] G5: Nest honours reduced motion, which it previously did nowhere
+  CHECK: rg -c 'motion-reduce:' components/inbox/*.tsx
+  EXPECT: the discipline is present in the tree
+  EVIDENCE: 32 `motion-reduce:` utilities across `components/`, where a grep for the same token returned **zero** before this change; 8 `motion-safe:` in the settle button's transforms. Pinned by `test/settle-button-contract.test.ts`: `animate-spin motion-reduce:animate-none` and `animate-shine-icon motion-reduce:animate-none` on the status glyph, `animate-pulse motion-reduce:animate-none` on the family dot and icon, and the `duration-150 ease-out … motion-reduce:transition-none` strings on the card, the slim row and both row-action controls. Nest's `useRowReveal` stays React state rather than CSS `group-hover` — rows nest, and an ancestor group would light up while the pointer is on a child.
+
+- [x] G6: a working thread reports how long it has been working
+  CHECK: node --test --experimental-strip-types test/working-since.test.ts
+  EXPECT: the working clock keeps upstream's semantics
+  EVIDENCE: 12/12 pass. Upstream's seven cases came over unchanged (`statusWithDuration` after a minute and across buckets, bare under a minute and with no stamp, a stamp ahead of the quantized clock treated as fresh, the first-work stamp, the kept stamp, the same-map identity, the cleared stamp, and background activity counting as work), plus four for the storage round trip under `bb.nest.working-since.v1` through an injected fake — including malformed JSON, non-numeric entries, and a store that throws on write.
+
+- [x] G7: the plugin typechecks and builds
   CHECK: npm run typecheck && npm run build
-  EXPECT: project-first build passed
-  EVIDENCE: both passed on 2026-09-19 (dist/server.js, dist/app.js, dist/host.js written).
+  EXPECT: motion build passed
+  EVIDENCE: both passed on 2026-09-20 (`dist/server.js`, `dist/app.js`, `dist/app.css`, `dist/host.js` written). The build reports the pre-existing SDK pin notice (0.4.87 pinned, 0.4.106 running), which is unchanged by this work.
 
-- [x] G4: the complete test suite passes
+- [x] G8: the complete test suite passes
   CHECK: npm test
-  EXPECT: project-first test suite passed
-  EVIDENCE: 467 tests, 113 suites, 0 failures on 2026-09-19, re-run after rebasing onto the four commits that landed in the meantime (the worktree sort lens, project icon detection, a composer fix, and the 0.2.0 release).
+  EXPECT: motion test suite passed
+  EVIDENCE: 530 tests, 125 suites, 0 failures on 2026-09-20, up from 467/113 — the new cases are the seven new files plus two in `test/preferences.test.ts`, and no existing assertion needed a change except `test/distribution-contract.test.ts`, which gained `@formkit/auto-animate` in `REQUIRED_RUNTIME_DEPENDENCIES` because bb does not shim it.
 
-- [x] G5: in the running app the zero-thread project bb-plugins appears in the sidebar with a placeholder body, and a zero-thread project draws its workspace level
-  EVIDENCE: on 2026-09-19 the plugin was reloaded and the running UI was driven at http://127.0.0.1:38886. The tree reads All | My | Work | Ungrouped; Ungrouped contains bb-plugins with the 'No threads yet' placeholder, and pi-maestro-flow (0 threads) draws its 'master' workspace row. 日常聊天 still draws Project checkout and bb under it, and chaoshangtong's thread-less checkout says 'No threads yet' when expanded rather than drawing the disclosure's border around nothing.
-  NOTE: the same rule was exercised against the live payload outside the browser (lib/inbox.ts -> lib/ordering.ts -> lib/tree.ts over /api/v1/sidebar-bootstrap plus the plugin's own listWorkspacePaths), which is what a freshly created worktree in an empty project would go through.
+- [x] G9: the shipped bundle carries the sparkle stylesheet and the transition engine
+  CHECK: grep -c 'nest-settle-sparkle' dist/app.css; grep -c 'prefers-reduced-motion: reduce' dist/app.js
+  EXPECT: all in the artifacts
+  EVIDENCE: on 2026-09-20 `dist/app.css` contains the `nest-settle-sparkle` rule (10 occurrences across the base rule, the five `:nth-of-type` overrides and the keyframes) and two `prefers-reduced-motion:no-preference` blocks (the sparkle gate and the `motion-safe:` variants) plus one `reduce` block (the `motion-reduce:` variants) — a source-text test cannot see `dist/`, so this was checked by hand. `dist/app.js` carries auto-animate's engine: its `prefers-reduced-motion: reduce` literal appears exactly once and no other dependency in the tree defines that string, which is what distinguishes a real bundle from a tree-shaken import.
 
-- [x] G6: a worktree that has never held a thread still draws, and can still be arranged
-  CHECK: node --test --experimental-strip-types --test-name-pattern='projectWorkspaceRefs' test/workspace-environments.test.ts
-  EXPECT: thread-less worktrees named
-  EVIDENCE: the arrangement was built from the project's threads, so it named nothing for a project with worktrees and no threads and then refused the move as "missing-workspace". projectWorkspaceRefs is now the one source for both the drawn rows and the arrangement; unit-tested, and checked against the live environment descriptors with two synthetic thread-less worktrees added to proj_i2excbt33u (both draw, both arrange).
+- [x] G10: the plugin reloads clean in the running app
+  EVIDENCE: on 2026-09-20 `bb plugin reload nested-sidebar` reported the plugin running with no errors, `bb plugin logs nested-sidebar` was empty, and its handler count climbed 122 → 141 → 188 → 219 → 249 → 263 across six checks — the sidebar is mounted and calling the plugin, so the new providers, hooks and components render. **Not verified:** the visual result in the sidebar itself (the sparkle on hover, the collapse curves, a Load more button, and `Working · 5m` on a live thread) was not driven in the UI; that check is still owed. Nothing has been settled on this machine, so the settled shelf is not drawn at all yet — which is why the shelf paging has no on-screen evidence here, though the project lists do (Personal holds 17 threads and `tea-app-im` 26).

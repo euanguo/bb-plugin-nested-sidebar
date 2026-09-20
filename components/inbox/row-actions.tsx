@@ -54,7 +54,7 @@ export function RowActionButton({
       }}
       className={cn(
         "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-md",
-        "text-muted-foreground transition-colors hover:text-foreground",
+        "text-muted-foreground transition-colors duration-150 ease-out hover:text-foreground motion-reduce:transition-none",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         className,
       )}
@@ -93,7 +93,7 @@ export const RowMenuTrigger = React.forwardRef<
       data-bb-icon-button=""
       className={cn(
         "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-md",
-        "text-muted-foreground transition-colors hover:text-foreground",
+        "text-muted-foreground transition-colors duration-150 ease-out hover:text-foreground motion-reduce:transition-none",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         revealed && "text-foreground",
         className,
@@ -104,7 +104,7 @@ export const RowMenuTrigger = React.forwardRef<
         <Icon
           name="ChevronDown"
           className={cn(
-            "size-3 transition-transform",
+            "size-3 transition-transform duration-150 ease-out motion-reduce:transition-none",
             expanded && "rotate-180",
             revealed && "hidden",
           )}

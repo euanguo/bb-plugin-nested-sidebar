@@ -119,7 +119,11 @@ export function BulkDeleteDialog({
             className="flex h-8 items-center gap-1.5 rounded-md bg-destructive px-3 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
           >
             {busy ? (
-              <Icon name="Loading" className="size-3.5 animate-spin" aria-hidden />
+              <Icon
+                name="Loading"
+                className="size-3.5 animate-spin motion-reduce:animate-none"
+                aria-hidden
+              />
             ) : (
               <Icon name="Trash" className="size-3.5" aria-hidden />
             )}

@@ -302,6 +302,42 @@ wording is still in the tooltip and the accessible label.
 
 An empty shelf disappears.
 
+### Long lists
+
+A project's thread list, a worktree's thread list, and the settled shelf each
+draw **five rows** and offer **Load more** for the rest, so a project with
+twenty-six threads is not a wall of text. Once a list has more than one page
+drawn it also offers **Show less**, beside Load more, which puts the whole list
+back to its first page in one click rather than one page at a time. **Rows per
+page** in Settings sets the page for all three (1–100). The row you have open
+keeps its place whatever the page, a list that is `No threads yet` still says so
+rather than claiming to be empty because of the page, and **a search draws every
+match** — results the list is holding back are the one case where a page works
+against you, so both controls step aside while a search is running.
+
+### Motion
+
+Rows move with the order rather than jumping to it: a reorder, an insert, a
+remove and a shelf opening or closing all transition over 150ms. **Expand and
+collapse are the same animation** — a group, a project, a worktree, a thread's
+inline agents, and a parked shelf all open and close by taking their rows out of
+their own list and putting them back, so each row enters and leaves exactly the
+way a loaded page does. There is one mechanism, not two: the box follows its
+rows rather than gliding to meet them, and a closed list is empty rather than
+hidden, so its rows are unmounted and stop running their own lookups. A
+collapsed list also drops its connector line and padding, because a border on a
+zero-height element paints a stub. The settle button lifts, tilts its tick and
+throws a five-point sparkle. Every one of those is suppressed under
+`prefers-reduced-motion`, which the rest of the sidebar honours too — the
+spinner and the shine on a working thread are the only motion left, and they are
+what says the work is still alive.
+
+A thread that is working says how long it has been: **Working · 5m**. The host
+reports that a thread is working, not since when, so Nest keeps its own clock —
+stamped on the first render that sees the thread work, cleared when it stops, and
+carried across a reload. A pause for a question ends the stretch, so the number
+answers the question you actually have: how long since you last had to look.
+
 ### Cards
 
 Root rows always use exactly two compact lines. The first has a distinct semantic
@@ -402,8 +438,8 @@ Nest Settings offers Default, High contrast, Colorblind-friendly, and Custom
 semantic palettes. Every status, live activity type, and PR role is previewed;
 custom values accept only six-digit hex colors and otherwise fall back safely.
 You can also choose row density, the worktree row label, default child
-expansion, provider marks, parent-only PR metadata, and relative-time
-visibility.
+expansion, provider marks, parent-only PR metadata, relative-time visibility,
+and the **page size for long lists** (five rows by default, 1–100).
 
 **Detect project icons** (on by default) gives a project its own badge. The
 machine that owns the checkout looks in the conventional places — `favicon.png`,
@@ -441,7 +477,8 @@ archived and the thread leaves the sidebar until you unarchive it in bb yourself
 **Uninstalling left data behind.** The shelves live in the plugin's own database,
 which bb removes with the plugin — but a copy of them is cached in the browser's
 `localStorage` under `nest:v1:*` (thread ids, park timestamps, and legacy
-provider metadata). bb's uninstall does not clear web storage. Clear site data
+provider metadata), alongside `bb.nest.*` (the view state and the working-since
+clock). bb's uninstall does not clear web storage. Clear site data
 if that matters to you. The separate `t3sidebar:v1:*` keys belong to the old
 plugin and are not claimed by Nest.
 
@@ -452,6 +489,12 @@ sidebar (MIT, Copyright (c) 2026 Michael Yong), Dockside by Mateo Cerquetella
 (MIT), and the unpublished fork this repository started from. `LICENSE` carries
 the terms; `THIRD_PARTY_NOTICES.md` lists everything bundled on top of that,
 including shadcn/ui and the Hugeicons the group picker draws from.
+
+The motion, the settled shelf's **Load more**, and the working duration are
+ported from [BB Sidebar](https://github.com/yusuf8834/bb-sidebar) (MIT, Copyright
+(c) 2026 Michael Yong and Yusuf Akbulut), and the transitions run on
+[@formkit/auto-animate](https://github.com/formkit/auto-animate) (MIT). Both are
+recorded in `THIRD_PARTY_NOTICES.md`.
 
 The provider brand marks are vendored SVG geometry from `get-bb/bb` and depict
 third-party brands. A host-served logo always wins over them, rendered as a muted
