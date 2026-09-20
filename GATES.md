@@ -60,30 +60,36 @@ Scope: give Nest the motion, the disclosure animation, the paging on every long 
   EVIDENCE: 16/16 pass, and the case was checked against the bug rather than only against the fix: removing `relative` from the worktree row makes it fail with "worktree row is positioned", and restoring it makes it pass. It covers the thread card, a child row, a worktree row, a project row and a parked row.
   NOTE: this is the light that showed the bug — the user reported that hovering one row opened a *different* row's hover card. `position: absolute` resolves against the nearest **positioned** ancestor, so an unpositioned row stretched its own click target across a far-away ancestor's whole box, and took the hover (and the click, and the drag) for rows it does not belong to. The other absolute-positioned children in the tree were checked at the same time: they either have a positioned host or resolve to the row's own card, which is where they were meant to land anyway.
 
-- [x] G11: Nest honours reduced motion, which it previously did nowhere
+- [x] G11: each park button has its own effect, in its own hue
+  CHECK: node --test --experimental-strip-types test/settle-button-contract.test.ts
+  EXPECT: the settle celebrates in emerald, the snooze defers in violet
+  EVIDENCE: 16/16 pass. Pins both tones by name (`tone="settle"`, `tone="snooze"`), that only the settle draws `nest-settle-sparkle`, that both lift their artwork and neither moves its hit area (`motion-safe:group-hover/<tone>:-translate-y-0.5`, `…group-active/<tone>:scale-90`), the snooze's own stylesheet and its two keyframes, that it names nothing after the plugin next door, and that its motion sits behind `prefers-reduced-motion: no-preference` while the marks stay visible outside the gate. Also that **three** marks are sent (`[0, 1, 2].map`) and that each has its own `--z-delay` and `--z-rise`, because that — several elements, staggered, each drawing its own path — is the whole difference between the effect and the ring it replaced, and the case asserts the settle still spends five so the asymmetry cannot drift. Paired with a case in the row-shape contract: the park tones are the only place a row writes a hue down, and neither may use amber or sky.
+  NOTE: two revisions are recorded here rather than hidden. The first draft used sky for the snooze and the row-shape contract caught it — sky is what a working row says, so the button would have read as a status rather than an action. The second draft was a single expanding ring: correct in colour, but it was one element doing one smooth thing, and the user said so ("not as fun to look at as the settle"). Both the rule and its one exception are pinned, so the next person gets the same message.
+
+- [x] G12: Nest honours reduced motion, which it previously did nowhere
   CHECK: rg -c 'motion-reduce:' components/inbox/*.tsx
   EXPECT: the discipline is present in the tree
   EVIDENCE: 32 `motion-reduce:` utilities across `components/`, where a grep for the same token returned **zero** before this change; 8 `motion-safe:` in the settle button's transforms. Pinned by `test/settle-button-contract.test.ts`: `animate-spin motion-reduce:animate-none` and `animate-shine-icon motion-reduce:animate-none` on the status glyph, `animate-pulse motion-reduce:animate-none` on the family dot and icon, and the `duration-150 ease-out … motion-reduce:transition-none` strings on the card, the slim row and both row-action controls. Nest's `useRowReveal` stays React state rather than CSS `group-hover` — rows nest, and an ancestor group would light up while the pointer is on a child.
 
-- [x] G12: a working thread reports how long it has been working
+- [x] G13: a working thread reports how long it has been working
   CHECK: node --test --experimental-strip-types test/working-since.test.ts
   EXPECT: the working clock keeps upstream's semantics
   EVIDENCE: 12/12 pass. Upstream's seven cases came over unchanged (`statusWithDuration` after a minute and across buckets, bare under a minute and with no stamp, a stamp ahead of the quantized clock treated as fresh, the first-work stamp, the kept stamp, the same-map identity, the cleared stamp, and background activity counting as work), plus four for the storage round trip under `bb.nest.working-since.v1` through an injected fake — including malformed JSON, non-numeric entries, and a store that throws on write.
 
-- [x] G13: the plugin typechecks and builds
+- [x] G14: the plugin typechecks and builds
   CHECK: npm run typecheck && npm run build
   EXPECT: motion build passed
   EVIDENCE: both passed on 2026-09-20 (`dist/server.js`, `dist/app.js`, `dist/app.css`, `dist/host.js` written). The build reports the pre-existing SDK pin notice (0.4.87 pinned, 0.4.106 running), which is unchanged by this work.
 
-- [x] G14: the complete test suite passes
+- [x] G15: the complete test suite passes
   CHECK: npm test
   EXPECT: motion test suite passed
-  EVIDENCE: 556 tests, 128 suites, 0 failures on 2026-09-20, up from 467/113 — the new cases are the twelve new files plus three in `test/preferences.test.ts`, and no existing assertion needed a change except `test/distribution-contract.test.ts`, which gained `@formkit/auto-animate` in `REQUIRED_RUNTIME_DEPENDENCIES` because bb does not shim it.
+  EVIDENCE: 560 tests, 129 suites, 0 failures on 2026-09-20, up from 467/113 — the new cases are the twelve new files plus three in `test/preferences.test.ts`, and no existing assertion needed a change except `test/distribution-contract.test.ts`, which gained `@formkit/auto-animate` in `REQUIRED_RUNTIME_DEPENDENCIES` because bb does not shim it.
 
-- [x] G15: the shipped bundle carries the sparkle stylesheet and the transition engine
-  CHECK: grep -c 'nest-settle-sparkle' dist/app.css; grep -c 'prefers-reduced-motion: reduce' dist/app.js
+- [x] G16: the shipped bundle carries both park stylesheets and the transition engine
+  CHECK: grep -o 'nest-settle-sparkle\|nest-snooze' dist/app.css | sort | uniq -c
   EXPECT: all in the artifacts
-  EVIDENCE: on 2026-09-20 `dist/app.css` contains the `nest-settle-sparkle` rule (10 occurrences across the base rule, the five `:nth-of-type` overrides and the keyframes) and two `prefers-reduced-motion:no-preference` blocks (the sparkle gate and the `motion-safe:` variants) plus one `reduce` block (the `motion-reduce:` variants) — a source-text test cannot see `dist/`, so this was checked by hand. `dist/app.js` carries auto-animate's engine: its `prefers-reduced-motion: reduce` literal appears exactly once and no other dependency in the tree defines that string, which is what distinguishes a real bundle from a tree-shaken import.
+  EVIDENCE: re-checked 2026-09-20 after the snooze effect: `dist/app.css` also carries `nest-snooze-ring` (3), `nest-snooze-hand` (1) and both keyframes, and Tailwind emitted the snooze tone's utilities (`snooze:bg-violet-500/15`, its `:where(.group/snooze):hover *` variants, the shadow and the lift). On 2026-09-20 `dist/app.css` contains the `nest-settle-sparkle` rule (10 occurrences across the base rule, the five `:nth-of-type` overrides and the keyframes) and two `prefers-reduced-motion:no-preference` blocks (the sparkle gate and the `motion-safe:` variants) plus one `reduce` block (the `motion-reduce:` variants) — a source-text test cannot see `dist/`, so this was checked by hand. `dist/app.js` carries auto-animate's engine: its `prefers-reduced-motion: reduce` literal appears exactly once and no other dependency in the tree defines that string, which is what distinguishes a real bundle from a tree-shaken import.
 
-- [x] G16: the plugin reloads clean in the running app
+- [x] G17: the plugin reloads clean in the running app
   EVIDENCE: on 2026-09-20 `bb plugin reload nested-sidebar` reported the plugin running with no errors, `bb plugin logs nested-sidebar` was empty, and its handler count climbed 122 → 141 → 188 → 219 → 249 → 263 across six checks — the sidebar is mounted and calling the plugin, so the new providers, hooks and components render. **Not verified:** the visual result in the sidebar itself (the sparkle on hover, the collapse curves, a Load more button, and `Working · 5m` on a live thread) was not driven in the UI; that check is still owed. Nothing has been settled on this machine, so the settled shelf is not drawn at all yet — which is why the shelf paging has no on-screen evidence here, though the project lists do (Personal holds 17 threads and `tea-app-im` 26).
