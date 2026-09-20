@@ -1,4 +1,5 @@
 import type { WorkspaceLabelMode } from "./workspace.ts";
+import { resolvePageSize } from "./paging.ts";
 
 export const PALETTE_PRESET_OPTIONS = [
   "Default",
@@ -11,7 +12,18 @@ export const ROW_DENSITY_OPTIONS = ["Comfortable", "Compact"] as const;
 export const CHILD_EXPANSION_OPTIONS = ["Expanded", "Collapsed"] as const;
 export const ROW_LAYOUT_OPTIONS = ["Two lines", "One line"] as const;
 export const STATUS_DISPLAY_OPTIONS = ["Dot", "Status icon"] as const;
-export const ROW_DETAIL_OPTIONS = ["In the row", "On hover"] as const;
+export const ROW_DETAIL_OPTIONS = [
+  "In the row",
+  "In the row, no branch",
+  "On hover",
+] as const;
+/**
+ * The row keeps its details, and drops the branch it shares with every other
+ * row under the same workspace. The worktree row above already names it, so
+ * repeating it on each thread spends the width the title wants.
+ */
+export const DEFAULT_ROW_DETAILS: (typeof ROW_DETAIL_OPTIONS)[number] =
+  "In the row, no branch";
 export const WORKTREE_LABEL_OPTIONS = [
   "Alias over branch",
   "Alias + branch",
@@ -24,8 +36,16 @@ export type RowDensity = "comfortable" | "compact";
 export type RowLayout = "two-line" | "one-line";
 export type StatusDisplay = "dot" | "icon";
 /** Where a thread row's non-essential fields live. */
-export type RowDetailPlacement = "row" | "hover";
+export type RowDetailPlacement = "row" | "row-no-branch" | "hover";
 export type WorktreeLabelOption = (typeof WORKTREE_LABEL_OPTIONS)[number];
+export type RowDetailOption = (typeof ROW_DETAIL_OPTIONS)[number];
+
+/** The declared option labels, mapped onto the row's own vocabulary. */
+const ROW_DETAIL_MODES: Readonly<Record<RowDetailOption, RowDetailPlacement>> = {
+  "In the row": "row",
+  "In the row, no branch": "row-no-branch",
+  "On hover": "hover",
+};
 
 /** The declared option labels, mapped onto the row's own vocabulary. */
 const WORKTREE_LABEL_MODES: Readonly<
@@ -90,6 +110,11 @@ export interface NestPreferences {
    * sidebar asks for it and whether the answer is drawn.
    */
   autoProjectIcons: boolean;
+  /**
+   * How many rows one page holds, everywhere the sidebar pages: what a list
+   * draws at first, and what each **Load more** adds.
+   */
+  pageSize: number;
 }
 
 export const CUSTOM_COLOR_DEFAULTS = {
@@ -239,10 +264,13 @@ export function resolveNestPreferences(
         ? "icon"
         : "dot",
     rowDetails:
-      readOption(values?.rowDetails, ROW_DETAIL_OPTIONS, "In the row") ===
-      "On hover"
-        ? "hover"
-        : "row",
+      ROW_DETAIL_MODES[
+        readOption(
+          values?.rowDetails,
+          ROW_DETAIL_OPTIONS,
+          DEFAULT_ROW_DETAILS,
+        )
+      ],
     defaultChildrenExpanded:
       readOption(
         values?.defaultChildExpansion,
@@ -258,6 +286,7 @@ export function resolveNestPreferences(
     showChildCount: readBoolean(values?.showChildCount, true),
     showThreadLocation: readBoolean(values?.showThreadLocation, true),
     autoProjectIcons: readBoolean(values?.autoProjectIcons, true),
+    pageSize: resolvePageSize(values?.pageSize),
   };
 }
 

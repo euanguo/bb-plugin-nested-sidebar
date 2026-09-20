@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const REQUIRED_RUNTIME_DEPENDENCIES = {
+  "@formkit/auto-animate": "^0.9.0",
   "@hugeicons/core-free-icons": "^4.1.3",
   "@hugeicons/react": "^1.1.6",
   zod: "^4.3.6",

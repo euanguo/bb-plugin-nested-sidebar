@@ -1,35 +1,39 @@
 import {
   useId,
-  useMemo,
   useRef,
   useState,
   type DragEvent,
+  type ReactNode,
+  type RefObject,
 } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
+import { PageControls } from "@/components/inbox/page-controls";
+import {
+  RowMenu,
+  type RowMenuItem,
+} from "@/components/inbox/row-context-menu";
+import {
+  hasMoreRows,
+  nextPageSize,
+  visibleRows,
+} from "@/lib/paging";
 import { cn } from "@/lib/utils";
 import { ThreadCard } from "@/components/inbox/thread-card";
-import { RenameField } from "@/components/inbox/rename-field";
-import { WindowedRows } from "@/components/inbox/windowed-rows";
 import type { ProviderGlyphInfo } from "@/components/inbox/provider-glyph";
 import { RollupJump } from "@/components/inbox/rollup-badge";
 import { useNestViewState } from "@/components/inbox/view-state-context";
+import { useListAutoAnimate } from "@/hooks/use-list-auto-animate";
 import { workspaceExpansionKeys } from "@/lib/view-state";
 import { InfoCard, type InfoCardRow } from "@/components/ui/hover-card";
 import {
   RowActionButton,
   RowActions,
-  RowMenuTrigger,
-  useRowReveal,
+  RowDisclosure,
 } from "@/components/inbox/row-actions";
-import {
-  Menu,
-  MenuItem,
-  MenuSeparator,
-} from "@/components/ui/menu";
 import type { LifecycleApi } from "@/hooks/use-lifecycle";
 import type { ThreadFamily } from "@/lib/inbox";
 import type { WorkspaceNode } from "@/lib/tree";
@@ -62,6 +66,12 @@ function workspaceKindLabel(kind: WorkspaceKind): string {
 export interface TreeRowHandlers {
   readonly providerInfoById: ReadonlyMap<string, ProviderGlyphInfo>;
   readonly activeThreadId: string | null;
+  /**
+   * A search reveals every match rather than a page of them: the results are
+   * what the user asked for, and holding some behind a Load more the search box
+   * cannot explain is the one case where a limit works against the list.
+   */
+  readonly searching: boolean;
   readonly forceExpanded: boolean;
   readonly lifecycle: LifecycleApi;
   readonly onNavigate: () => void;
@@ -104,6 +114,17 @@ export interface TreeRowHandlers {
     direction: -1 | 1,
   ) => void;
   /**
+   * The pinned section's own reorder, which lands in bb's pin order rather than
+   * in a project's family order.
+   *
+   * Separate from `onReorder` rather than folded into it: the two write to
+   * different stores, and a drop that reached the wrong one would move a row in a
+   * list the user was not looking at.
+   */
+  readonly pinnedReorderEnabled: boolean;
+  readonly pinnedReorderDisabledReason: string | null;
+  readonly onPinnedKeyboardMove: (rootId: string, direction: -1 | 1) => void;
+  /**
    * A project's archived shelf, keyed by project id.
    *
    * Read once for every project whose shelf is on, in the inbox, rather than by
@@ -117,17 +138,6 @@ export interface TreeRowHandlers {
   >;
   /** Take bb's archive off a thread the shelf is showing. */
   readonly onUnarchiveArchived: (threadId: string) => void;
-  /**
-   * The pinned section's own reorder, which lands in bb's pin order rather than
-   * in a project's family order.
-   *
-   * Separate from `onReorder` rather than folded into it: the two write to
-   * different stores, and a drop that reached the wrong one would move a row in
-   * a list the user was not looking at.
-   */
-  readonly pinnedReorderEnabled: boolean;
-  readonly pinnedReorderDisabledReason: string | null;
-  readonly onPinnedKeyboardMove: (rootId: string, direction: -1 | 1) => void;
   readonly projectReorderEnabled: boolean;
   readonly projectReorderDisabledReason: string | null;
   readonly onProjectReorder: (input: ProjectReorderInput) => void;
@@ -215,12 +225,32 @@ export function WorkspaceGroup({
     handlers.workspaceReorderEnabled && node.ref.kind === "git-worktree";
   const canRename = node.ref.environmentId !== null && node.ref.kind !== "unresolved";
   const canRemove = node.ref.environmentId !== null && node.ref.kind === "git-worktree";
-  const reveal = useRowReveal();
   const listId = useId();
+  const attachListAutoAnimateRef = useListAutoAnimate<HTMLUListElement>();
   const renameInput = useRef<HTMLInputElement>(null);
   const threadCount = node.families.reduce(
     (total, family) => total + 1 + family.children.length,
     0,
+  );
+  /**
+   * How many pages of this worktree's threads are drawn. Counted in pages so a
+   * change to the page size re-scales what is already on screen.
+   */
+  const [familyPages, setFamilyPages] = useState(1);
+  const familyLimit =
+    (handlers.searching ? Number.MAX_SAFE_INTEGER : familyPages) *
+    handlers.preferences.pageSize;
+  const visibleFamilies = visibleRows(
+    node.families,
+    familyLimit,
+    handlers.activeThreadId,
+    (family) => family.root.id,
+  );
+  const familyHasMore = hasMoreRows(node.families.length, familyLimit);
+  const familyNextPage = nextPageSize(
+    node.families.length,
+    familyLimit,
+    handlers.preferences.pageSize,
   );
 
   const label = node.ref.label;
@@ -252,14 +282,68 @@ export function WorkspaceGroup({
     ...(node.ref.diagnostic === null ? [] : [{ label: "Diagnostic", value: node.ref.diagnostic }]),
   ];
 
+  /**
+   * The row's own controls, drawn at the right end of whichever line is its
+   * last: the branch line when there is one, the only line when there is not.
+   */
+  const workspaceRowActions = (
+    <RowActions className="pointer-events-auto">
+      <RollupJump
+        rollup={node.rollup}
+        onJump={(threadId) => {
+          actions.open(threadId);
+          handlers.onNavigate();
+        }}
+        onFallback={() => setExpanded(!expanded)}
+      />
+      {/* Starting a thread in *this* worktree is the reason to be here, so it
+          keeps its own button outside the menu. */}
+      <RowActionButton
+        label={`New thread in ${label}`}
+        icon="Add"
+        onClick={() =>
+          handlers.onNewThreadInWorkspace({ node, projectId, projectName })
+        }
+      />
+      <RowDisclosure
+        label={`${expanded ? "Collapse" : "Expand"} ${label}`}
+        expanded={expanded}
+        controls={listId}
+        onToggle={() => setExpanded(!expanded)}
+      />
+    </RowActions>
+  );
+
   return (
     <section aria-label={node.ref.label}>
       <InfoCard
         trigger={
+      <WorkspaceRowMenu
+        label={label}
+        node={node}
+        projectId={projectId}
+        projectName={projectName}
+        branch={branch}
+        path={path}
+        expanded={expanded}
+        canRename={canRename}
+        canRemove={canRemove}
+        threadCount={threadCount}
+        handlers={handlers}
+        onToggleExpanded={() => setExpanded(!expanded)}
+        onRename={() => setRenaming(true)}
+        onArchiving={() => setArchiving(true)}
+        onRemoving={() => setRemoving(true)}
+      >
       <div
-        {...reveal.handlers}
         className={cn(
-          "group/ws flex w-full items-center gap-1.5 rounded-md pl-4 pr-1.5 hover:bg-sidebar-accent/50",
+          // `relative` is load-bearing: the row's full-bleed button below is
+          // `absolute inset-0`, and an absolutely positioned element resolves
+          // against the nearest *positioned* ancestor. Without this the button
+          // stretched across whatever ancestor happened to be positioned and
+          // took the pointer for rows it does not belong to — a hover anywhere
+          // in that area opened another row's card, and a click toggled it.
+          "group/ws relative flex w-full items-center gap-1.5 rounded-md pl-4 pr-1.5 hover:bg-sidebar-accent/50",
           stacked ? "min-h-11 py-1" : "h-7",
         )}
         onDragOver={(event) => {
@@ -291,12 +375,10 @@ export function WorkspaceGroup({
         }}
       >
         {renaming && node.ref.environmentId !== null ? (
-          <RenameField
+          <WorkspaceNameField
             inputRef={renameInput}
             initial={alias ?? branch ?? ""}
-            placeholder={label}
-            maxLength={120}
-            icon="Edit"
+            fallback={label}
             ariaLabel={`Rename worktree ${label}`}
             onCommit={(draft) => {
               const next = renameIntent(draft, alias ?? "");
@@ -314,6 +396,11 @@ export function WorkspaceGroup({
           aria-expanded={expanded}
           aria-controls={listId}
           aria-keyshortcuts={canReorder ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+          // The label is drawn beside this button rather than inside it: the
+          // branch line ends with the row's own controls, and a control cannot
+          // live inside a button. So the name is spelled out here instead of
+          // coming from the text the button used to wrap.
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${label}. ${canReorder ? "Drag this row to reorder worktrees, or press Alt+Up or Alt+Down." : "Worktree reordering is unavailable."}`}
           // The flag spans the whole gesture, not just the drag: a browser may
           // follow a drag with a click, and clearing it on `dragend` left that
           // click to toggle the row a second time — which, after the toggle the
@@ -355,162 +442,80 @@ export function WorkspaceGroup({
             );
           }}
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            "absolute inset-0 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             canReorder && "cursor-grab active:cursor-grabbing",
           )}
-          title={
-            rowLabel.detail !== null && !stacked
-              ? `${rowLabel.label} → ${rowLabel.detail}`
-              : rowLabel.label
-          }
+        />
+        )}
+        <div
+          className={cn(
+            "pointer-events-none relative flex min-w-0 flex-1",
+            // `gap-1.5` spaces a row's icon, label and controls on one line. A
+            // column is not that: the same number becomes the line gap and reads
+            // as a paragraph break between a worktree's alias and its branch.
+            stacked ? "flex-col gap-0.5" : "items-center gap-1.5",
+          )}
         >
-          {/* A worktree is a branch of the project; a checkout is the project's
-              own directory, and the two are worth telling apart at a glance. */}
-          <Icon
-            name={node.ref.kind === "project-checkout" ? "Folder" : node.ref.kind === "git-worktree" ? "GitBranch" : "Folder"}
-            className="size-3 shrink-0 text-muted-foreground/60"
-            aria-hidden
-          />
-          <span
-            className={cn(
-              "flex min-w-0 flex-1",
-              stacked ? "flex-col items-start" : "items-baseline gap-1.5",
-            )}
-          >
-            {/* The alias reads as a name, so it is not monospaced; the branch
-                is an identifier, so it is. */}
-            <span
-              className={cn(
-                "min-w-0 max-w-full truncate text-xs",
-                rowLabel.labelIsBranch
-                  ? "font-mono text-2xs text-muted-foreground/80"
-                  : "text-foreground/80",
-              )}
-            >
-              {rowLabel.label}
-            </span>
-            {rowLabel.detail === null ? null : (
+          {stacked ? (
+            <>
+              <span className="min-w-0 max-w-full truncate text-xs text-foreground/80">
+                {rowLabel.label}
+              </span>
+              {/* The branch line, the shape a thread card's branch line has one
+                  level down: the branch's own icon and name on the left, and
+                  the row's controls at the right end of the same line. The kind
+                  icon that used to open the alias is dropped here rather than
+                  repeated — a row with a branch line is a worktree, and the
+                  branch icon already says so. */}
+              <span className="flex min-w-0 max-w-full items-center gap-1.5">
+                <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
+                  <Icon
+                    name={
+                      node.ref.kind === "git-worktree" ? "FolderGit" : "GitBranch"
+                    }
+                    aria-label="Branch"
+                    className="size-3 shrink-0 text-muted-foreground/60"
+                  />
+                  <span className="truncate font-mono text-2xs text-muted-foreground/80">
+                    {rowLabel.detail}
+                  </span>
+                </span>
+                {workspaceRowActions}
+              </span>
+            </>
+          ) : (
+            <>
+              {/* A worktree is a branch of the project; a checkout is the
+                  project's own directory, and the two are worth telling apart
+                  at a glance. */}
+              <Icon
+                name={node.ref.kind === "project-checkout" ? "Folder" : node.ref.kind === "git-worktree" ? "GitBranch" : "Folder"}
+                className="size-3 shrink-0 text-muted-foreground/60"
+                aria-hidden
+              />
+              {/* The alias reads as a name, so it is not monospaced; the branch
+                  is an identifier, so it is. */}
               <span
                 className={cn(
-                  "min-w-0 max-w-full truncate font-mono text-2xs text-muted-foreground/80",
-                  stacked && "mt-0.5",
+                  "min-w-0 max-w-full truncate text-xs",
+                  rowLabel.labelIsBranch
+                    ? "font-mono text-2xs text-muted-foreground/80"
+                    : "text-foreground/80",
                 )}
               >
-                {rowLabel.detail}
+                {rowLabel.label}
               </span>
-            )}
-          </span>
-        </button>
-        )}
-        <RowActions>
-          <RollupJump
-            rollup={node.rollup}
-            onJump={(threadId) => {
-              actions.open(threadId);
-              handlers.onNavigate();
-            }}
-            onFallback={() => setExpanded(!expanded)}
-          />
-          {/* Starting a thread in *this* worktree is the reason to be here, so
-              it keeps its own button beside the menu. */}
-          <RowActionButton
-            label={`New thread in ${label}`}
-            icon="Add"
-            onClick={() =>
-              handlers.onNewThreadInWorkspace({ node, projectId, projectName })
-            }
-          />
-          <Menu
-            label={`Actions for ${label}`}
-            trigger={
-              <RowMenuTrigger
-                label={`Actions for ${label}`}
-                chevron
-                expanded={expanded}
-                revealed={reveal.revealed}
-              />
-            }
-          >
-            <MenuItem
-              icon="Add"
-              label="New thread here"
-              onSelect={() =>
-                handlers.onNewThreadInWorkspace({ node, projectId, projectName })
-              }
-            />
-            <MenuItem
-              icon="ChevronDown"
-              label={expanded ? "Collapse" : "Expand"}
-              onSelect={() => setExpanded(!expanded)}
-            />
-            {!canRename ? (
-              <MenuItem
-                icon="Edit"
-                label="Rename workspace…"
-                disabled
-                onSelect={() => undefined}
-              />
-            ) : (
-              <MenuItem
-                icon="Edit"
-                label={node.ref.kind === "git-worktree" ? "Rename worktree…" : "Rename workspace…"}
-                onSelect={() => setRenaming(true)}
-              />
-            )}
-            {node.ref.environmentId === null ? null : (
-              <>
-                <MenuItem
-                  icon="Copy"
-                  label="Copy path"
-                  disabled={path === null}
-                  onSelect={() => {
-                    if (path !== null) void copyWithAnnouncement(path, "Path");
-                  }}
-                />
-                <MenuItem
-                  icon="Copy"
-                  label="Copy branch"
-                  disabled={branch === null}
-                  onSelect={() => {
-                    if (branch !== null) {
-                      void copyWithAnnouncement(branch, "Branch");
-                    }
-                  }}
-                />
-                <MenuItem
-                  icon="IdCard"
-                  label="Copy environment ID"
-                  onSelect={() => {
-                    if (node.ref.environmentId !== null) {
-                      void copyWithAnnouncement(
-                        node.ref.environmentId,
-                        "Environment ID",
-                      );
-                    }
-                  }}
-                />
-              </>
-            )}
-            {threadCount === 0 ? null : (
-              <>
-                <MenuSeparator />
-                <MenuItem
-                  icon="Archive"
-                  label="Archive threads here"
-                  onSelect={() => setArchiving(true)}
-                />
-              </>
-            )}
-            <MenuSeparator />
-            <MenuItem
-              icon="Trash"
-              label="Remove worktree…"
-              disabled={!canRemove}
-              onSelect={() => { if (canRemove) setRemoving(true); }}
-            />
-          </Menu>
-        </RowActions>
+              {rowLabel.detail === null ? null : (
+                <span className="min-w-0 max-w-full truncate font-mono text-2xs text-muted-foreground/80">
+                  {rowLabel.detail}
+                </span>
+              )}
+              {workspaceRowActions}
+            </>
+          )}
+        </div>
       </div>
+      </WorkspaceRowMenu>
         }
         label={label}
         rows={rows}
@@ -534,39 +539,178 @@ export function WorkspaceGroup({
           onClose={() => setRemoving(false)}
         />
       ) : null}
-      {expanded ? (
-        node.families.length === 0 ? (
-          // A workspace outlives the conversations in it, so an empty one is a
-          // real row — and an empty list under it would draw the disclosure's
-          // own border around nothing.
+      {/*
+        The list stays mounted and its rows come and go inside it, so opening
+        and closing a worktree plays the same per-row entry and exit a loaded
+        page does. Its connector line and padding are dropped while it is
+        closed: an empty list is zero tall, and a border and a padding-bottom
+        on zero height would leave a stub of the border hanging under the row.
+      */}
+      {node.families.length === 0 ? (
+        // A workspace outlives the conversations in it, so an empty one is a
+        // real row. It has no rows to animate, so it is simply here or not.
+        expanded ? (
           <p id={listId} className={EMPTY_WORKSPACE_CLASS}>
             No threads yet
           </p>
-        ) : (
-          <WindowedRows
+        ) : null
+      ) : (
+        <>
+          <ul
             id={listId}
-            className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3"
-            keys={node.families.map((family) => family.root.id)}
-            windowable={mayWindow(handlers)}
-            shortcutIdFor={(key) => key}
-            onOpenShortcut={(threadId) => actions.open(threadId)}
-            renderRow={(key) => {
-              const family = node.families.find(
-                (candidate) => candidate.root.id === key,
-              );
-              return family === undefined ? null : (
-                <FamilyRow
-                  key={key}
-                  family={family}
-                  projectId={projectId}
-                  handlers={handlers}
-                />
-              );
-            }}
-          />
-        )
-      ) : null}
+            ref={attachListAutoAnimateRef}
+            className={cn(
+              "ml-4 flex flex-col gap-0.5",
+              expanded && "border-l border-sidebar-border pl-3",
+            )}
+          >
+            {expanded
+              ? visibleFamilies.map((family) => (
+                  <FamilyRow
+                    key={family.root.id}
+                    family={family}
+                    projectId={projectId}
+                    handlers={handlers}
+                  />
+                ))
+              : null}
+          </ul>
+          {expanded && !handlers.searching && (familyHasMore || familyPages > 1) ? (
+            <PageControls
+              hasMore={familyHasMore}
+              remaining={familyNextPage}
+              page={familyPages}
+              onLoadMore={() => setFamilyPages((pages) => pages + 1)}
+              onShowLess={() => setFamilyPages(1)}
+              className="ml-4"
+            />
+          ) : null}
+        </>
+      )}
     </section>
+  );
+}
+
+/**
+ * Every action a worktree row offers, as the tree's one menu.
+ *
+ * The row itself is the trigger: right-click anywhere on it. The two dialogs it
+ * opens are mounted by the row, not here, so they outlive the menu.
+ */
+function WorkspaceRowMenu({
+  label,
+  node,
+  projectId,
+  projectName,
+  branch,
+  path,
+  expanded,
+  canRename,
+  canRemove,
+  threadCount,
+  handlers,
+  onToggleExpanded,
+  onRename,
+  onArchiving,
+  onRemoving,
+  children,
+}: {
+  label: string;
+  node: WorkspaceNode;
+  projectId: string;
+  projectName: string;
+  branch: string | null;
+  path: string | null;
+  expanded: boolean;
+  canRename: boolean;
+  canRemove: boolean;
+  threadCount: number;
+  handlers: TreeRowHandlers;
+  onToggleExpanded: () => void;
+  onRename: () => void;
+  onArchiving: () => void;
+  onRemoving: () => void;
+  children: ReactNode;
+}) {
+  const items: RowMenuItem[] = [
+    {
+      key: "new-thread",
+      icon: "Add",
+      label: "New thread here",
+      onSelect: () =>
+        handlers.onNewThreadInWorkspace({ node, projectId, projectName }),
+    },
+    {
+      key: "disclose",
+      icon: "ChevronDown",
+      label: expanded ? "Collapse" : "Expand",
+      onSelect: onToggleExpanded,
+    },
+    {
+      key: "rename",
+      icon: "Edit",
+      label:
+        node.ref.kind === "git-worktree"
+          ? "Rename worktree…"
+          : "Rename workspace…",
+      disabled: !canRename,
+      onSelect: onRename,
+    },
+  ];
+  if (node.ref.environmentId !== null) {
+    const environmentId = node.ref.environmentId;
+    items.push(
+      {
+        key: "copy-path",
+        icon: "Copy",
+        label: "Copy path",
+        separatorBefore: true,
+        disabled: path === null,
+        onSelect: () => {
+          if (path !== null) void copyWithAnnouncement(path, "Path");
+        },
+      },
+      {
+        key: "copy-branch",
+        icon: "Copy",
+        label: "Copy branch",
+        disabled: branch === null,
+        onSelect: () => {
+          if (branch !== null) void copyWithAnnouncement(branch, "Branch");
+        },
+      },
+      {
+        key: "copy-environment",
+        icon: "IdCard",
+        label: "Copy environment ID",
+        onSelect: () => {
+          void copyWithAnnouncement(environmentId, "Environment ID");
+        },
+      },
+    );
+  }
+  if (threadCount > 0) {
+    items.push({
+      key: "archive",
+      icon: "Archive",
+      label: "Archive threads here",
+      separatorBefore: true,
+      onSelect: onArchiving,
+    });
+  }
+  items.push({
+    key: "remove",
+    icon: "Trash",
+    label: "Remove worktree…",
+    separatorBefore: true,
+    disabled: !canRemove,
+    onSelect: onRemoving,
+  });
+
+  return (
+    <RowMenu label={`Actions for ${label}`} items={items}>
+      {children}
+    </RowMenu>
   );
 }
 
@@ -582,10 +726,10 @@ export function FamilyRow({
   /**
    * Draw this row in the pinned section.
    *
-   * The row is otherwise identical — same status, children, menu, split gesture,
-   * rename — and only the reorder differs: a pinned row's drag carries the pinned
-   * payload and its drops are the section's, because they land in bb's pin order
-   * rather than in a project's family order.
+   * The row is otherwise identical — same status, children, menu, split gesture —
+   * and only the reorder differs: a pinned row's drag carries the pinned payload
+   * and its drops are the section's, because they land in bb's pin order rather
+   * than in a project's family order.
    */
   pinned?: boolean;
 }) {
@@ -687,42 +831,84 @@ export function FlatFamilies({
   projectId: string;
   handlers: TreeRowHandlers;
 }) {
-  const actions = useSidebarThreadActions();
-  const byId = useMemo(
-    () => new Map(families.map((family) => [family.root.id, family])),
-    [families],
-  );
+  const attachListAutoAnimateRef = useListAutoAnimate<HTMLUListElement>();
   return (
-    <WindowedRows
-      className="flex flex-col gap-0.5"
-      keys={families.map((family) => family.root.id)}
-      windowable={mayWindow(handlers)}
-      shortcutIdFor={(key) => key}
-      onOpenShortcut={(threadId) => actions.open(threadId)}
-      renderRow={(key) => {
-        const family = byId.get(key);
-        return family === undefined ? null : (
-          <FamilyRow
-            key={key}
-            family={family}
-            projectId={projectId}
-            handlers={handlers}
-          />
-        );
-      }}
-    />
+    <ul ref={attachListAutoAnimateRef} className="flex flex-col gap-0.5">
+      {families.map((family) => (
+        <FamilyRow
+          key={family.root.id}
+          family={family}
+          projectId={projectId}
+          handlers={handlers}
+        />
+      ))}
+    </ul>
   );
 }
 
 /**
- * Whether a family list may window right now.
+ * The worktree alias editor.
  *
- * A spacer is neither a drop target nor a checkbox, so windowing stands down
- * while either is in play. The list then renders in full, which is exactly what
- * it did before windowing existed — the guard is a condition, not a hope.
+ * Commits on a mounted-field basis only: a plain function component whose
+ * input is autofocused and whose Enter/blur/Escape rules mirror the group
+ * name field, so the two levels rename the same way.
  */
-function mayWindow(handlers: TreeRowHandlers): boolean {
-  return !handlers.selectionMode && !handlers.reorderEnabled;
+function WorkspaceNameField({
+  inputRef,
+  initial,
+  fallback,
+  ariaLabel,
+  onCommit,
+  onCancel,
+}: {
+  inputRef?: RefObject<HTMLInputElement | null>;
+  initial: string;
+  /** Shown as help text; the alias the user types replaces what is shown. */
+  fallback: string;
+  ariaLabel: string;
+  onCommit: (draft: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const [done, setDone] = useState(false);
+  const finish = (commit: boolean) => {
+    if (done) return;
+    setDone(true);
+    if (commit) onCommit(value);
+    else onCancel();
+  };
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+      <Icon
+        name="Edit"
+        className="size-3 shrink-0 text-muted-foreground/60"
+        aria-hidden
+      />
+      <input
+        ref={inputRef}
+        autoFocus
+        value={value}
+        maxLength={120}
+        aria-label={ariaLabel}
+        placeholder={fallback}
+        onChange={(event) => setValue(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            finish(true);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            finish(false);
+          }
+        }}
+        onBlur={() => finish(true)}
+        className={cn(
+          "h-6 min-w-0 flex-1 rounded border border-border bg-background px-1.5 text-xs",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        )}
+      />
+    </span>
+  );
 }
 
 /** Parses the drag payload a family row puts on the data transfer. */

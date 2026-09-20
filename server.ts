@@ -29,12 +29,18 @@ import {
   CHILD_EXPANSION_OPTIONS,
   CUSTOM_COLOR_DEFAULTS,
   PALETTE_PRESET_OPTIONS,
+  DEFAULT_ROW_DETAILS,
   ROW_DETAIL_OPTIONS,
   ROW_DENSITY_OPTIONS,
   ROW_LAYOUT_OPTIONS,
   STATUS_DISPLAY_OPTIONS,
   WORKTREE_LABEL_OPTIONS,
 } from "./lib/preferences.ts";
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  MIN_PAGE_SIZE,
+} from "./lib/paging.ts";
 import {
   PROJECT_COLOR_MIGRATION,
   createProjectColorStore,
@@ -1062,9 +1068,9 @@ export default function plugin(bb: BbPluginApi) {
       type: "select",
       label: "Thread details",
       description:
-        "On hover moves branch, provider, PR, age, and child count into the row's hover card.",
+        "Where a row's non-essential fields live. In the row keeps them all on the row; In the row, no branch keeps the provider, the age, the controls and the status but leaves out the branch and the machine, which the worktree row above already names; On hover moves branch, provider, PR, age, and child count into the row's hover card.",
       options: [...ROW_DETAIL_OPTIONS],
-      default: "In the row",
+      default: DEFAULT_ROW_DETAILS,
     },
     worktreeLabel: {
       type: "select",
@@ -1088,6 +1094,12 @@ export default function plugin(bb: BbPluginApi) {
       description: "Search still reveals matching child threads.",
       options: [...CHILD_EXPANSION_OPTIONS],
       default: "Expanded",
+    },
+    pageSize: {
+      type: "number",
+      label: "Rows per page",
+      description: `How many rows a thread list or the settled shelf draws, and how many each Load more adds (${MIN_PAGE_SIZE}–${MAX_PAGE_SIZE}). A search draws every match.`,
+      default: DEFAULT_PAGE_SIZE,
     },
     showProviderIcons: {
       type: "boolean",

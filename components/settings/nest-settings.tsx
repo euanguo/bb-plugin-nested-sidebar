@@ -17,6 +17,7 @@ import {
   nestPreferenceStyle,
   resolveNestPreferences,
   type NestPreferences,
+  type RowDetailPlacement,
   type SemanticColorRole,
 } from "@/lib/preferences";
 import type { WorkspaceLabelMode } from "@/lib/workspace";
@@ -32,6 +33,12 @@ const WORKTREE_LABEL_SUMMARY: Readonly<Record<WorkspaceLabelMode, string>> = {
   "alias-and-branch": "alias + branch",
   "alias-only": "alias only",
   "branch-only": "branch only",
+};
+
+const ROW_DETAIL_SUMMARY: Readonly<Record<RowDetailPlacement, string>> = {
+  row: "in the row",
+  "row-no-branch": "in the row, no branch",
+  hover: "on hover",
 };
 
 const THREAD_STATES: readonly FamilyStatusKind[] = [
@@ -104,7 +111,7 @@ export function NestSettingsSection() {
         {preferences.rowLayout === "one-line" ? "one line" : "two lines"} ·
         worktree labels {WORKTREE_LABEL_SUMMARY[preferences.worktreeLabel]} ·
         {preferences.statusDisplay === "dot" ? "dot" : "icon"} status ·
-        details {preferences.rowDetails === "hover" ? "on hover" : "in the row"} ·
+        details {ROW_DETAIL_SUMMARY[preferences.rowDetails]} ·
         children {preferences.defaultChildrenExpanded ? "expanded" : "collapsed"} ·
         child counts {preferences.showChildCount ? "shown" : "hidden"} · branch{" "}
         {preferences.showThreadLocation ? "shown" : "hidden"} · providers{" "}

@@ -101,7 +101,7 @@ export function StatusGlyph({
         <Icon
           name="Loading"
           aria-label={aria}
-          className={cn(shared, "animate-spin")}
+          className={cn(shared, "animate-spin motion-reduce:animate-none")}
           style={style}
         />
       );
@@ -160,7 +160,10 @@ function ShineIcon({
     <Icon
       name={name}
       aria-label={label}
-      className={cn("animate-shine-icon", className)}
+      className={cn(
+        "animate-shine-icon motion-reduce:animate-none",
+        className,
+      )}
       style={{ color: statusColor("working") }}
     />
   );

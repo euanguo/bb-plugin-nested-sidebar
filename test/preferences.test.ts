@@ -21,6 +21,7 @@ describe("resolveNestPreferences", () => {
     assert.equal(loading.showRelativeTime, true);
     assert.equal(loading.showChildCount, true);
     assert.equal(loading.showThreadLocation, true);
+    assert.equal(loading.pageSize, 5);
     assert.equal(loading.colors.working, "#34A853");
     assert.equal(loading.colors.prReady, "#34A853");
 
@@ -31,6 +32,7 @@ describe("resolveNestPreferences", () => {
       statusDisplay: "Sparkles",
       defaultChildExpansion: "Sometimes",
       showProviderIcons: "false",
+      pageSize: Number.NaN,
     });
     assert.equal(malformed.palettePreset, "Default");
     assert.equal(malformed.density, "comfortable");
@@ -39,6 +41,44 @@ describe("resolveNestPreferences", () => {
     assert.equal(malformed.statusDisplay, "dot");
     assert.equal(malformed.defaultChildrenExpanded, true);
     assert.equal(malformed.showProviderIcons, true);
+    assert.equal(malformed.pageSize, 5);
+  });
+
+  it("takes a configured page size, bounded", () => {
+    assert.equal(
+      resolveNestPreferences({ pageSize: 12 }).pageSize,
+      12,
+    );
+    assert.equal(
+      resolveNestPreferences({ pageSize: 0 }).pageSize,
+      1,
+    );
+    assert.equal(
+      resolveNestPreferences({ pageSize: 5000 }).pageSize,
+      100,
+    );
+  });
+
+  it("resolves where a row's details live, defaulting to no branch", () => {
+    assert.equal(resolveNestPreferences(undefined).rowDetails, "row-no-branch");
+    assert.equal(
+      resolveNestPreferences({ rowDetails: "In the row" }).rowDetails,
+      "row",
+    );
+    assert.equal(
+      resolveNestPreferences({ rowDetails: "In the row, no branch" }).rowDetails,
+      "row-no-branch",
+    );
+    assert.equal(
+      resolveNestPreferences({ rowDetails: "On hover" }).rowDetails,
+      "hover",
+    );
+    // A label that is no longer offered lands on the default, not on a mode
+    // with no label of its own.
+    assert.equal(
+      resolveNestPreferences({ rowDetails: "Sideways" }).rowDetails,
+      "row-no-branch",
+    );
   });
 
   it("reads the compact row options by their declared labels", () => {

@@ -140,12 +140,12 @@ describe("SubagentBadge", () => {
 
   it("is drawn on the root row, apart from the child disclosure", () => {
     const subagent = card.indexOf("<SubagentBadge");
-    // The child disclosure is the button that controls the child list; the
+    // The child disclosure is the chip that controls the child list; the
     // subagent badge is a plain count before it, so the two cannot be read as
     // one figure.
-    const disclosure = card.indexOf("aria-controls={childListId}");
+    const disclosure = card.indexOf("controls={childListId}");
     assert.ok(subagent >= 0, "the badge is rendered");
-    assert.ok(disclosure >= 0, "the child disclosure is still the button");
+    assert.ok(disclosure >= 0, "the child disclosure is still the chip");
     assert.ok(
       subagent < disclosure,
       "the subagent count is not the child disclosure",
