@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
-import { ORDER_CHANNEL } from "@/server";
+import { ORDER_CHANNEL } from "@/lib/realtime-channels";
 import type { ManualOrderMap } from "@/lib/manual-order";
 import { clearFamilyOrder, readFamilyOrder } from "@/lib/family-order";
 import { clearProjectOrder, readProjectOrder } from "@/lib/project-order";

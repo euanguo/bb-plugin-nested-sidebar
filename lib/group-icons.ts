@@ -6030,6 +6030,31 @@ export const GROUP_ICON_OPTIONS: readonly string[] = [
 export type GroupIconName = string;
 export const DEFAULT_GROUP_ICON: GroupIconName = "LayerIcon";
 
+/**
+ * One icon's artwork: the element list `@hugeicons/react` draws.
+ *
+ * Deliberately a structural copy of that package's `IconSvgElement` rather than
+ * an import of it. The server validates this shape on the RPC boundary, and it
+ * has no reason to pull a React component library in to say what an icon is.
+ *
+ * Mutable arrays, where `IconSvgElement` uses readonly ones: this is the type
+ * the RPC contract infers, and a readonly shape is not assignable to it. The
+ * other direction is, which is the one the component needs.
+ */
+export type GroupIconArtwork = [
+  string,
+  { [key: string]: string | number },
+][];
+
+/**
+ * How many icons one `getGroupIcons` call may ask for.
+ *
+ * The picker draws 240 at a time and the rows draw a handful, so a batch is
+ * normally far below this; the ceiling is here so a client cannot ask for the
+ * whole library in one request and turn a lazy read into a 6 MB response.
+ */
+export const MAX_GROUP_ICON_BATCH = 512;
+
 const GROUP_ICON_SET = new Set(GROUP_ICON_OPTIONS);
 const LEGACY_GROUP_ICON_ALIASES: ReadonlyMap<string, string> = new Map([
   ["Layer", "LayerIcon"],

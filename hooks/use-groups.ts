@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { nestRpcContract } from "@/server";
-import { GROUP_CHANNEL } from "@/server";
+import { GROUP_CHANNEL } from "@/lib/realtime-channels";
 import type { GroupAssignment, ProjectGroup } from "@/lib/groups";
 import {
   DEFAULT_SCOPE_ICONS,
