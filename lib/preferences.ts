@@ -8,7 +8,6 @@ export const PALETTE_PRESET_OPTIONS = [
   "Custom",
 ] as const;
 
-export const ROW_DENSITY_OPTIONS = ["Comfortable", "Compact"] as const;
 export const CHILD_EXPANSION_OPTIONS = ["Expanded", "Collapsed"] as const;
 export const ROW_LAYOUT_OPTIONS = ["Two lines", "One line"] as const;
 export const STATUS_DISPLAY_OPTIONS = ["Dot", "Status icon"] as const;
@@ -32,7 +31,6 @@ export const WORKTREE_LABEL_OPTIONS = [
 ] as const;
 
 export type PalettePreset = (typeof PALETTE_PRESET_OPTIONS)[number];
-export type RowDensity = "comfortable" | "compact";
 export type RowLayout = "two-line" | "one-line";
 export type StatusDisplay = "dot" | "icon";
 /** Where a thread row's non-essential fields live. */
@@ -84,7 +82,6 @@ export type SemanticPalette = Readonly<Record<SemanticColorRole, string>>;
 export interface NestPreferences {
   palettePreset: PalettePreset;
   colors: SemanticPalette;
-  density: RowDensity;
   /** One line saves height; two lines keep the branch on its own line. */
   rowLayout: RowLayout;
   /** How a worktree row divides the alias and the branch between its lines. */
@@ -237,11 +234,6 @@ export function resolveNestPreferences(
   return {
     palettePreset,
     colors,
-    density:
-      readOption(values?.rowDensity, ROW_DENSITY_OPTIONS, "Comfortable") ===
-      "Compact"
-        ? "compact"
-        : "comfortable",
     rowLayout:
       readOption(values?.rowLayout, ROW_LAYOUT_OPTIONS, "Two lines") ===
       "One line"

@@ -1810,7 +1810,6 @@ export function ThreadInbox({
     <div
       ref={inboxRef}
       data-nest-palette={preferences.palettePreset}
-      data-nest-density={preferences.density}
       style={nestPreferenceStyle(preferences) as CSSProperties}
       className="flex min-h-0 flex-1 flex-col"
     >

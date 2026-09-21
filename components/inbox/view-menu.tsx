@@ -43,7 +43,7 @@ import {
  * top-level row is a submenu, and each one reports its current value on the
  * trigger, so the menu does not have to be opened to read the tree's order.
  *
- * Display toggles (density, row layout, which metadata shows) stay in Settings:
+ * Display toggles (row layout, which metadata shows) stay in Settings:
  * they are `bb.settings`, which the frontend can read but not write, so a menu
  * item could not change them.
  */

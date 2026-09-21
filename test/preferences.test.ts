@@ -11,7 +11,6 @@ describe("resolveNestPreferences", () => {
   it("preserves current behavior while settings load or are unknown", () => {
     const loading = resolveNestPreferences(undefined);
     assert.equal(loading.palettePreset, "Default");
-    assert.equal(loading.density, "comfortable");
     assert.equal(loading.rowLayout, "two-line");
     assert.equal(loading.worktreeLabel, "alias-over-branch");
     assert.equal(loading.statusDisplay, "dot");
@@ -27,7 +26,6 @@ describe("resolveNestPreferences", () => {
 
     const malformed = resolveNestPreferences({
       palettePreset: "Unknown",
-      rowDensity: "Tiny",
       rowLayout: "Three lines",
       statusDisplay: "Sparkles",
       defaultChildExpansion: "Sometimes",
@@ -35,7 +33,6 @@ describe("resolveNestPreferences", () => {
       pageSize: Number.NaN,
     });
     assert.equal(malformed.palettePreset, "Default");
-    assert.equal(malformed.density, "comfortable");
     assert.equal(malformed.rowLayout, "two-line");
     assert.equal(malformed.worktreeLabel, "alias-over-branch");
     assert.equal(malformed.statusDisplay, "dot");
@@ -156,14 +153,12 @@ describe("resolveNestPreferences", () => {
   it("resolves behavior preferences independently of palette", () => {
     const preferences = resolveNestPreferences({
       palettePreset: "Custom",
-      rowDensity: "Compact",
       defaultChildExpansion: "Collapsed",
       showProviderIcons: false,
       showPullRequestMetadata: false,
       showRelativeTime: false,
     });
 
-    assert.equal(preferences.density, "compact");
     assert.equal(preferences.defaultChildrenExpanded, false);
     assert.equal(preferences.showProviderIcons, false);
     assert.equal(preferences.showPullRequestMetadata, false);

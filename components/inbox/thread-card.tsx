@@ -378,9 +378,7 @@ export function ThreadCard({
           className={cn(
             "group/root @container relative flex min-w-0 items-center gap-x-2 rounded-md px-2.5 transition-colors duration-150 ease-out motion-reduce:transition-none",
           clusterRidesTheTitle ? "min-h-5" : "min-h-10",
-          preferences.density === "compact"
-            ? "py-1"
-            : "py-2",
+          "py-1",
           rootIsActive
             ? "bg-sidebar-accent"
             : "hover:bg-sidebar-accent/60",
@@ -705,7 +703,7 @@ function ChildThreadRow({
         <div
           className={cn(
             "group/child @container relative flex min-w-0 items-center gap-1.5 rounded-md px-1.5",
-            preferences.density === "compact" ? "h-6" : "h-7",
+            "h-6",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
             !isActive && layout !== null && "bg-sidebar-accent/25",
           )}

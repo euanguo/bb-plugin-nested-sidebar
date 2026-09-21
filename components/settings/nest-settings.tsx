@@ -2,7 +2,7 @@ import {
   experimental_useSidebarThreads as useSidebarThreads,
   useSettings,
 } from "@get-bb/plugin-sdk/app";
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   FamilyStatusBadge,
   FamilyStatusIcon,
@@ -85,40 +85,98 @@ export function NestSettingsSection() {
     <section
       data-nest-settings-preview=""
       style={nestPreferenceStyle(preferences) as CSSProperties}
-      className="space-y-3 rounded-lg border border-border bg-muted/20 p-3"
+      className="space-y-4 rounded-lg border border-border bg-muted/20 p-3"
     >
-      <div>
-        <p className="text-xs font-semibold text-foreground">
-          Effective palette · {preferences.palettePreset}
+      <SettingsGroup
+        id="appearance"
+        title="Appearance"
+        description="Semantic colors and project identity use the same quiet, readable visual language."
+      >
+        <p className="text-2xs text-muted-foreground">
+          Effective palette: <span className="font-medium text-foreground">{preferences.palettePreset}</span>.
+          Custom color fields are used only when Custom is selected. Icon shape,
+          animation, labels, and tooltips remain available in every palette.
         </p>
-        <p className="mt-1 text-2xs leading-relaxed text-muted-foreground">
-          Choose Default to reset the active palette. Custom color fields are
-          used only when Custom is selected, and accept six-digit hex values.
-          Icon shape, animation, labels, and tooltips always remain.
+        <StatePreview />
+        <PalettePreview title="Pull requests" items={PR_SWATCHES} preferences={preferences} />
+      </SettingsGroup>
+
+      <SettingsGroup
+        id="threads"
+        title="Thread list"
+        description="Nest always uses Compact rows. The options below decide which information shares each row."
+      >
+        <div className="rounded-md border border-border/70 bg-background/50 px-2 py-2 text-2xs leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">Current layout:</span>{" "}
+          Compact rows · {preferences.rowLayout === "one-line" ? "one line" : "two lines"} ·
+          worktree labels {WORKTREE_LABEL_SUMMARY[preferences.worktreeLabel]} ·
+          {preferences.statusDisplay === "dot" ? "dot" : "icon"} status ·
+          details {ROW_DETAIL_SUMMARY[preferences.rowDetails]} ·
+          children {preferences.defaultChildrenExpanded ? "expanded" : "collapsed"} ·
+          child counts {preferences.showChildCount ? "shown" : "hidden"} ·
+          branch/host {preferences.showThreadLocation ? "shown" : "hidden"} ·
+          providers {preferences.showProviderIcons ? "shown" : "hidden"} ·
+          PR metadata {preferences.showPullRequestMetadata ? "shown" : "hidden"} ·
+          times {preferences.showRelativeTime ? "shown" : "hidden"} ·
+          {preferences.pageSize} rows per page.
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup
+        id="projects"
+        title="Projects and workspaces"
+        description="Project badge colors are stable by project ID, so renaming a project does not change its identity."
+      >
+        <ProjectColorEditor
+          projects={projects}
+          overrides={projectColors.overrides}
+          isLoading={projectColors.isLoading}
+          setProjectColor={projectColors.setProjectColor}
+          resetProjectColor={projectColors.resetProjectColor}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        id="advanced"
+        title="Advanced behavior"
+        description="These behaviors are automatic and intentionally have no extra switches."
+      >
+        <ul className="grid gap-1.5 text-2xs text-muted-foreground">
+          <li className="rounded-md border border-border/70 bg-background/50 px-2 py-1.5">
+            Search reveals every matching row, regardless of pagination.
+          </li>
+          <li className="rounded-md border border-border/70 bg-background/50 px-2 py-1.5">
+            Default child expansion applies until you explicitly expand or collapse a family.
+          </li>
+          <li className="rounded-md border border-border/70 bg-background/50 px-2 py-1.5">
+            Project icons are detected on the machine that owns the checkout and cached per project.
+          </li>
+        </ul>
+      </SettingsGroup>
+    </section>
+  );
+}
+
+function SettingsGroup({
+  id,
+  title,
+  description,
+  children,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section data-nest-settings-group={id} className="space-y-2">
+      <div>
+        <p className="text-xs font-semibold text-foreground">{title}</p>
+        <p className="mt-0.5 text-2xs leading-relaxed text-muted-foreground">
+          {description}
         </p>
       </div>
-      <StatePreview />
-      <ProjectColorEditor
-        projects={projects}
-        overrides={projectColors.overrides}
-        isLoading={projectColors.isLoading}
-        setProjectColor={projectColors.setProjectColor}
-        resetProjectColor={projectColors.resetProjectColor}
-      />
-      <PalettePreview title="Pull requests" items={PR_SWATCHES} preferences={preferences} />
-      <p className="text-2xs text-muted-foreground">
-        {preferences.density === "compact" ? "Compact" : "Comfortable"} rows ·
-        {preferences.rowLayout === "one-line" ? "one line" : "two lines"} ·
-        worktree labels {WORKTREE_LABEL_SUMMARY[preferences.worktreeLabel]} ·
-        {preferences.statusDisplay === "dot" ? "dot" : "icon"} status ·
-        details {ROW_DETAIL_SUMMARY[preferences.rowDetails]} ·
-        children {preferences.defaultChildrenExpanded ? "expanded" : "collapsed"} ·
-        child counts {preferences.showChildCount ? "shown" : "hidden"} · branch{" "}
-        {preferences.showThreadLocation ? "shown" : "hidden"} · providers{" "}
-        {preferences.showProviderIcons ? "shown" : "hidden"} · PR metadata{" "}
-        {preferences.showPullRequestMetadata ? "shown" : "hidden"} · times{" "}
-        {preferences.showRelativeTime ? "shown" : "hidden"}
-      </p>
+      {children}
     </section>
   );
 }

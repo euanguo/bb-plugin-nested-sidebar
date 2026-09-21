@@ -72,6 +72,13 @@ describe("project badge colors", () => {
     }
   });
 
+  it("keeps every automatic badge color readable with its selected foreground", () => {
+    for (const color of PROJECT_BADGE_PALETTE) {
+      const foreground = bestBadgeForeground(color);
+      assert.ok(contrastRatio(color, foreground) >= 4.5);
+    }
+  });
+
   it("bounds project ids and rejects control characters", () => {
     assert.equal(validProjectId("project-1"), true);
     assert.equal(validProjectId(""), false);
