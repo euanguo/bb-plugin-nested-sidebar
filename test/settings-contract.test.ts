@@ -56,7 +56,6 @@ describe("Nest settings contract", () => {
       "prDraftColor",
       "prBlockedColor",
       "prClosedColor",
-      "rowDensity",
       "rowLayout",
       "worktreeLabel",
       "statusDisplay",
@@ -70,8 +69,9 @@ describe("Nest settings contract", () => {
       assert.match(server, new RegExp(`${key}:`));
     }
     assert.match(server, /default: "Default"/);
-    assert.match(server, /default: "Comfortable"/);
     assert.match(server, /default: "Expanded"/);
+    assert.doesNotMatch(server, new RegExp(["row", "Density"].join("")));
+    assert.doesNotMatch(server, new RegExp(["Row", " density"].join("")));
   });
 
   it("registers one settings preview and reads live settings", () => {
@@ -93,6 +93,25 @@ describe("Nest settings contract", () => {
     ]) {
       assert.match(settings, new RegExp(`"${label}"`));
     }
+  });
+
+  it("organizes the preview into the four public configuration groups", () => {
+    for (const [id, title] of [
+      ["appearance", "Appearance"],
+      ["threads", "Thread list"],
+      ["projects", "Projects and workspaces"],
+      ["advanced", "Advanced behavior"],
+    ] as const) {
+      assert.equal(
+        settings.split("id=\"" + id + "\"").length - 1,
+        1,
+      );
+      assert.match(settings, new RegExp("title=\\\"" + title + "\\\""));
+    }
+    assert.match(settings, /Nest always uses Compact rows/);
+    assert.match(settings, /Current layout:/);
+    assert.match(settings, /Compact rows/);
+    assert.equal(settings.split("data-nest-settings-group={id}").length - 1, 1);
   });
 
   it("edits durable project-id colors and paints only project letter badges", () => {
@@ -124,7 +143,8 @@ describe("Nest settings contract", () => {
   });
 
   it("uses optional metadata and layout preferences without changing defaults", () => {
-    assert.match(card, /preferences\.density === "compact"/);
+    assert.match(card, /"py-1"/);
+    assert.match(card, /"h-6"/);
     assert.match(card, /defaultExpanded: preferences\.defaultChildrenExpanded/);
     assert.match(card, /preferences\.showProviderIcons/);
     assert.match(card, /preferences\.showPullRequestMetadata/);

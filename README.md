@@ -18,6 +18,18 @@
 Nest replaces the scrolling thread list in bb's left sidebar with a
 compact project-first inbox designed for parallel agent work.
 
+Nest keeps the sidebar's model visible instead of flattening everything into one
+thread stream:
+
+\`\`\`text
+group -> project -> worktree -> thread
+\`\`\`
+
+Child threads remain attached to their root family, status rolls up through the
+tree, and project/worktree rows stay visible even when there are no active
+threads. Nest uses a fixed Compact row layout; the settings decide which
+metadata is visible and where it lives.
+
 The project list is bb's project list. Every project gets a row whether or not it
 has a thread yet, so a project you just created is on the sidebar the moment it
 exists rather than the moment you start something in it; a project with nothing in
@@ -128,8 +140,7 @@ vendored SDK declarations under `types/`. It now depends on the
 
 ## Usage
 
-Installing does not change your sidebar by itself. Open **Settings → Appearance →
-Sidebar** and choose **Nest (projects)**.
+Installing does not change your sidebar by itself. Open **Settings → Appearance → Sidebar → Nest (projects)** to enable it.
 
 <picture><img src="docs/media/enable.png" alt="bb's Appearance settings where a sidebar replacement can be selected" width="100%" /></picture>
 
@@ -271,8 +282,11 @@ everything you can do to a project:
 The sidebar is the scarcest surface in bb, so a row says as little as it can
 and each of those pieces can be turned off:
 
-- **Thread row layout** — *One line* drops the branch beside the title and
-  halves the row height; *Two lines* keeps the dedicated branch line.
+- **Thread row layout** — Nest always uses fixed Compact rows. *One line* places
+  a visible branch or host beside the title; *Two lines* puts it on a dedicated
+  line below the title. One line and Two lines only look different when a branch
+  or host is shown and the location is kept in the row. If location is hidden or
+  moved into the hover card, both choices naturally look the same.
 - **Thread status marker** — *Dot* trades the per-state shape for a small
   coloured dot (still animated while working, still colour-coded). The state's
   name lives in the tooltip and the screen-reader label either way.
@@ -636,22 +650,53 @@ The arrangement and the two sort modes are stored on the server, so they are the
 same on every client. The tree's *shape* — the selected group tab, the filter,
 and what you collapsed or expanded — stays per browser.
 
-Nest Settings offers Default, High contrast, Colorblind-friendly, and Custom
-semantic palettes. Every status, live activity type, and PR role is previewed;
-custom values accept only six-digit hex colors and otherwise fall back safely.
-You can also choose row density, **where a row's details live** (see *Thread
-details* above), the worktree row label, default child
-expansion, provider marks, parent-only PR metadata, relative-time visibility,
-and the **page size for long lists** (five rows by default, 1–100).
+Nest Settings groups the durable display options by the decision they affect:
 
-**Detect project icons** (on by default) gives a project its own badge. The
-machine that owns the checkout looks in the conventional places — `favicon.png`,
-`logo.webp`, `public/icon.png`, Tauri's `src-tauri/icons/icon.png`, and the rest
-— then at what the project's own `index.html` or route root declares as its
-icon, and finally, failing both, at the website in `package.json`. The result is
-cached per project. A project with nothing to find keeps its colored letter, and
-moving a project's source makes Nest look again. Turning it off stops the
-lookups; it does not discard what was already found.
+### Appearance
+
+- **Palette preset** — Default follows the theme; High contrast and
+  Colorblind-friendly are ready-made palettes; Custom enables the semantic color
+  fields below it.
+- **Custom colors** — status, activity, and pull-request roles accept six-digit
+  hex values. They are used only with the Custom preset and fall back safely when
+  invalid.
+
+### Thread list
+
+- **Thread row layout** — One line / Two lines, with the dependency described in
+  *Compact rows* above.
+- **Thread details** — keep metadata in the row, keep the row's location out,
+  or move non-essential details into the hover card.
+- **Worktree label** — choose how an alias and branch share the worktree row.
+- **Status marker** — use a quieter dot or a distinct status icon.
+- **Default child expansion** — choose whether child families open initially;
+  search still reveals matching children.
+- **Rows per page** — set the page size for thread lists and the settled shelf
+  from 1 to 100; five is the default.
+- **Optional metadata** — provider icons, parent PR metadata, relative time,
+  child counts, and branch/host visibility.
+
+The row rhythm is fixed Compact so the sidebar has one predictable base shape.
+The options above control content and wrapping instead of creating separate
+layout systems.
+
+### Projects and workspaces
+
+Projects contain their checkout and worktrees, and thread families belong under
+the workspace of their root. Project badges use a stable project-ID mapping, so
+renaming a project does not change its automatic color. You can override a
+project's badge color from Settings. **Detect project icons** is on by default;
+the owning machine checks conventional icon locations and caches the result per
+project. A missing icon keeps the muted letter badge.
+
+### Advanced behavior
+
+- Search reveals every matching row, regardless of pagination.
+- An open thread remains visible when it falls beyond the current page.
+- Explicit expand/collapse choices override the default until changed.
+- Settings are read from `bb.settings`; the frontend preview reflects the live
+  values, while view ordering and collapse state use their separate persistence
+  scopes.
 
 Those display settings stay in Settings — the frontend can read `bb.settings`
 but not write it — so the sidebar footer carries a **Nest settings** button as

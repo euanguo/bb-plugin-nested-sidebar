@@ -560,7 +560,7 @@ export function WorkspaceGroup({
             id={listId}
             ref={attachListAutoAnimateRef}
             className={cn(
-              "ml-4 flex flex-col gap-0.5",
+              "ml-4 flex flex-col gap-px",
               expanded && "border-l border-sidebar-border pl-3",
             )}
           >
@@ -833,7 +833,7 @@ export function FlatFamilies({
 }) {
   const attachListAutoAnimateRef = useListAutoAnimate<HTMLUListElement>();
   return (
-    <ul ref={attachListAutoAnimateRef} className="flex flex-col gap-0.5">
+    <ul ref={attachListAutoAnimateRef} className="flex flex-col gap-px">
       {families.map((family) => (
         <FamilyRow
           key={family.root.id}

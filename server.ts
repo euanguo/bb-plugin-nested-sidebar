@@ -31,7 +31,6 @@ import {
   PALETTE_PRESET_OPTIONS,
   DEFAULT_ROW_DETAILS,
   ROW_DETAIL_OPTIONS,
-  ROW_DENSITY_OPTIONS,
   ROW_LAYOUT_OPTIONS,
   STATUS_DISPLAY_OPTIONS,
   WORKTREE_LABEL_OPTIONS,
@@ -1048,9 +1047,9 @@ export default function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
     palettePreset: {
       type: "select",
-      label: "Palette preset",
+      label: "Appearance · Palette preset",
       description:
-        "Default resets the active palette. Custom uses the hex fields below.",
+        "Appearance · Default follows the theme; High contrast and Colorblind-friendly are ready-made palettes; Custom enables the color fields below.",
       options: [...PALETTE_PRESET_OPTIONS],
       default: "Default",
     },
@@ -1108,23 +1107,17 @@ export default function plugin(bb: BbPluginApi) {
       "Custom · PR closed",
       CUSTOM_COLOR_DEFAULTS.prClosed,
     ),
-    rowDensity: {
-      type: "select",
-      label: "Row density",
-      options: [...ROW_DENSITY_OPTIONS],
-      default: "Comfortable",
-    },
     rowLayout: {
       type: "select",
-      label: "Thread row layout",
+      label: "Thread list · Row layout",
       description:
-        "One line puts the branch beside the title and halves the row height.",
+        "Only applies when the thread branch or host is shown. One line puts it beside the title; Two lines puts it below the title.",
       options: [...ROW_LAYOUT_OPTIONS],
       default: "Two lines",
     },
     rowDetails: {
       type: "select",
-      label: "Thread details",
+      label: "Thread list · Details",
       description:
         "Where a row's non-essential fields live. In the row keeps them all on the row; In the row, no branch keeps the provider, the age, the controls and the status but leaves out the branch and the machine, which the worktree row above already names; On hover moves branch, provider, PR, age, and child count into the row's hover card.",
       options: [...ROW_DETAIL_OPTIONS],
@@ -1132,7 +1125,7 @@ export default function plugin(bb: BbPluginApi) {
     },
     worktreeLabel: {
       type: "select",
-      label: "Worktree row label",
+      label: "Thread list · Worktree label",
       description:
         "Alias over branch stacks the two lines; the other options keep the row on one line. A half a worktree does not have falls back to the other.",
       options: [...WORKTREE_LABEL_OPTIONS],
@@ -1140,7 +1133,7 @@ export default function plugin(bb: BbPluginApi) {
     },
     statusDisplay: {
       type: "select",
-      label: "Thread status marker",
+      label: "Thread list · Status marker",
       description:
         "A dot is quieter and narrower; the status icon keeps a distinct shape per state.",
       options: [...STATUS_DISPLAY_OPTIONS],
@@ -1148,46 +1141,46 @@ export default function plugin(bb: BbPluginApi) {
     },
     defaultChildExpansion: {
       type: "select",
-      label: "Default child expansion",
+      label: "Thread list · Default child expansion",
       description: "Search still reveals matching child threads.",
       options: [...CHILD_EXPANSION_OPTIONS],
       default: "Expanded",
     },
     pageSize: {
       type: "number",
-      label: "Rows per page",
+      label: "Thread list · Rows per page",
       description: `How many rows a thread list or the settled shelf draws, and how many each Load more adds (${MIN_PAGE_SIZE}–${MAX_PAGE_SIZE}). A search draws every match.`,
       default: DEFAULT_PAGE_SIZE,
     },
     showProviderIcons: {
       type: "boolean",
-      label: "Show provider icons",
+      label: "Thread list · Show provider icons",
       default: true,
     },
     showPullRequestMetadata: {
       type: "boolean",
-      label: "Show parent PR metadata",
+      label: "Thread list · Show parent PR metadata",
       default: true,
     },
     showRelativeTime: {
       type: "boolean",
-      label: "Show relative time",
+      label: "Thread list · Show relative time",
       default: true,
     },
     showChildCount: {
       type: "boolean",
-      label: "Show child thread count",
+      label: "Thread list · Show child thread count",
       description: "The disclosure beside a thread that has agents.",
       default: true,
     },
     showThreadLocation: {
       type: "boolean",
-      label: "Show thread branch or host",
+      label: "Thread list · Show branch or host",
       default: true,
     },
     autoProjectIcons: {
       type: "boolean",
-      label: "Detect project icons",
+      label: "Projects · Detect project icons",
       description:
         "Look for a favicon, logo, or app icon in a project's checkout and use it as the project's badge. Only conventional locations are read, on the machine that owns the checkout, and nothing is written there.",
       default: true,

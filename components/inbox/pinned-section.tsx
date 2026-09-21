@@ -62,7 +62,7 @@ export function PinnedSection({
         card having to know this section exists.
       */}
       <ul
-        className="flex flex-col gap-0.5"
+        className="flex flex-col gap-px"
         onDragOver={(event) => {
           if (!reorderEnabled) return;
           if (!event.dataTransfer.types.includes(PINNED_DRAG_TYPE)) return;
