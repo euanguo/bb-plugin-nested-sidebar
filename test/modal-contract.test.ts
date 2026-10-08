@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 
 const modal = await readFile(new URL("../components/ui/modal.tsx", import.meta.url), "utf8");
+const dialog = await readFile(new URL("../components/ui/dialog.tsx", import.meta.url), "utf8");
 const inbox = await readFile(new URL("../components/inbox/thread-inbox.tsx", import.meta.url), "utf8");
 const newThread = await readFile(new URL("../components/inbox/new-thread-dialog.tsx", import.meta.url), "utf8");
 const menu = await readFile(new URL("../components/ui/menu.tsx", import.meta.url), "utf8");
@@ -73,6 +74,30 @@ describe("modal and overlay contracts", () => {
     assert.match(modal, /aria-label="Close"/);
     assert.doesNotMatch(modal, /<dialog/);
     assert.doesNotMatch(modal, /showModal\(\)/);
+  });
+
+  /**
+   * On a compact viewport the drawer *is* the box: it already fills the
+   * viewport and already carries the sheet's chrome. A caller's floating-card
+   * sizing used to survive into that branch anyway — the inline
+   * `width`/`max-width` of `min(56rem, calc(100vw - 2rem))` beat the branch's
+   * own `max-w-none`, so the content rendered 2rem narrower than the sheet it
+   * sat in. Measured on the running app, a 390px viewport gave a 358px content
+   * box inside a 390px drawer, with the drawer's own background showing as a
+   * strip down the right edge; the card chrome (radius, popover fill, shadow,
+   * height cap) came with it, drawing a smaller card floating inside the sheet.
+   * The inline size has to be removed rather than overridden, because an inline
+   * style outranks a class.
+   */
+  it("gives the drawer the box on a compact viewport", () => {
+    assert.match(dialog, /stripInlineSize/);
+    assert.match(
+      dialog,
+      /w-full max-w-none max-h-none rounded-none border-0 bg-transparent shadow-none/,
+    );
+    // …and the business wrapper stops describing a box it does not own.
+    assert.match(modal, /useIsCompactViewport/);
+    assert.match(modal, /isFloating/);
   });
 
   it("keeps floating surfaces in the official portal path", () => {
