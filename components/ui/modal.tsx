@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { cn } from "@/lib/utils";
 
 /**
@@ -45,6 +46,14 @@ import { cn } from "@/lib/utils";
  * have one or the other. Only the compose surface wants the panel; every other
  * dialog in the plugin draws ordinary content, which is meant to scroll inside
  * its box rather than spill out of it.
+ *
+ * On a compact viewport there is no box to describe at all. The content is
+ * rendered inside the shared drawer shell, which is already the full width of
+ * the viewport and already carries the sheet's chrome — so this wrapper stops
+ * describing a floating card there: no capped width, no radius, no popover
+ * fill, no shadow, no max-height, and no overflow of its own, because the
+ * drawer's content scrolls itself. See the compact branch of `DialogContent`
+ * for what the leftover card chrome used to cost.
  */
 export function Modal({
   open,
@@ -75,6 +84,9 @@ export function Modal({
   footer?: ReactNode;
 }) {
   const across = (value: string) => "min(" + value + ", calc(100vw - 2rem))";
+  // The drawer is the box on a compact viewport, so the floating-card half of
+  // this wrapper is simply not expressed there.
+  const isFloating = !useIsCompactViewport();
   return (
     <Dialog
       open={open}
@@ -84,10 +96,16 @@ export function Modal({
     >
       <DialogContent
         hideCloseButton
-        style={{ width: across(width), maxWidth: across(width) }}
+        style={
+          isFloating
+            ? { width: across(width), maxWidth: across(width) }
+            : undefined
+        }
         className={cn(
-          "flex max-h-[min(85vh,44rem)] flex-col gap-0 rounded-xl border-border bg-popover p-0 text-popover-foreground shadow-xl",
-          allowOverflow ? "overflow-visible" : "overflow-hidden",
+          "flex flex-col gap-0 p-0",
+          isFloating &&
+            "max-h-[min(85vh,44rem)] rounded-xl border-border bg-popover text-popover-foreground shadow-xl",
+          isFloating && (allowOverflow ? "overflow-visible" : "overflow-hidden"),
         )}
       >
         <DialogHeader className="flex shrink-0 flex-row items-center gap-2 border-b border-border px-3 py-2">
