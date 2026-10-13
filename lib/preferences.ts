@@ -108,6 +108,16 @@ export interface NestPreferences {
    */
   autoProjectIcons: boolean;
   /**
+   * Whether one repository is drawn as one row.
+   *
+   * Off by default, because the merged row is the tree disagreeing with bb's own
+   * list: a user who filed two projects apart on purpose must be able to see
+   * bb's answer, and the merge is a claim about the disk that only the machine
+   * holding it can make. On, the worktrees of one repository stay together even
+   * when bb holds them as several projects.
+   */
+  groupByRepository: boolean;
+  /**
    * How many rows one page holds, everywhere the sidebar pages: what a list
    * draws at first, and what each **Load more** adds.
    */
@@ -278,6 +288,7 @@ export function resolveNestPreferences(
     showChildCount: readBoolean(values?.showChildCount, true),
     showThreadLocation: readBoolean(values?.showThreadLocation, true),
     autoProjectIcons: readBoolean(values?.autoProjectIcons, true),
+    groupByRepository: readBoolean(values?.groupByRepository, false),
     pageSize: resolvePageSize(values?.pageSize),
   };
 }

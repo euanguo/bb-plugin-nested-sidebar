@@ -120,6 +120,8 @@ import {
   PROJECT_ICON_CHANNEL,
   VIEW_PREFERENCE_CHANNEL,
 } from "./lib/realtime-channels.ts";
+import { createRepoFactsCache, type WorkspaceProbe } from "./lib/repo-facts.ts";
+import { inferRepos } from "./lib/repo-identity.ts";
 import {
   MAX_GROUP_ICON_BATCH,
   type GroupIconArtwork,
@@ -434,6 +436,37 @@ const worktreeRemovalPlanSchema = z.object({
 const removalBlockerSchema = z.enum(["unavailable", "acknowledgement"]);
 
 /**
+ * One disagreement between how bb filed a workspace and where it really is.
+ *
+ * Shape-only, like everything else on the wire: the code is what a client
+ * switches on, and the message is already written so both sides say the same
+ * sentence rather than each composing its own.
+ */
+const repoDiagnosticSchema = z.object({
+  code: z.enum([
+    "split-repo",
+    "multi-repo-project",
+    "orphan-workspace",
+    "dangling-path",
+    "duplicate-path",
+    "unseen-worktree",
+    "path-not-canonical",
+  ]),
+  repoKey: z.string(),
+  subjects: z.array(z.string()).readonly(),
+  message: z.string(),
+});
+
+/** A worktree the repository records, which bb may have no environment for. */
+const repoWorktreeSchema = z.object({
+  path: z.string(),
+  branch: z.string().nullable(),
+  head: z.string().nullable(),
+  detached: z.boolean(),
+  prunable: z.boolean(),
+});
+
+/**
  * The plan as the wire carries it. The one difference is the warnings array:
  * the plan hands it out read-only, and zod's inferred type is mutable.
  */
@@ -629,6 +662,56 @@ export const nestRpcContract = defineRpcContract({
           sourceHostId: z.string().nullable(),
         }),
       ),
+    }),
+  },
+  /**
+   * The physical axis: which repository each workspace really belongs to.
+   *
+   * Separate from `listWorkspacePaths` because it costs a round trip to every
+   * machine holding a workspace, and the path read does not. A client that only
+   * copies paths should not wait for a probe, and one that draws the tree can
+   * paint bb's own answer first and re-group when this lands.
+   *
+   * `unavailableHostIds` is what keeps a partial answer from looking complete:
+   * the workspaces on those machines are placed from their paths alone, which
+   * is why they carry a `dangling-path` diagnostic.
+   */
+  listRepoFacts: {
+    input: z.object({}),
+    output: z.object({
+      repos: z
+        .array(
+          z.object({
+            key: z.string(),
+            kind: z.enum(["git-remote", "git-local", "directory"]),
+            name: z.string(),
+            remoteUrl: z.string().nullable(),
+            rootPath: z.string().nullable(),
+            hostIds: z.array(z.string()).readonly(),
+            projectIds: z.array(z.string()).readonly(),
+            workspaces: z
+              .array(
+                z.object({
+                  key: z.string(),
+                  hostId: z.string(),
+                  path: z.string(),
+                  /** Every spelling bb used, so a mismatch can be shown. */
+                  rawPaths: z.array(z.string()).readonly(),
+                  environmentIds: z.array(z.string()).readonly(),
+                  projectIds: z.array(z.string()).readonly(),
+                  repoKey: z.string(),
+                }),
+              )
+              .readonly(),
+            unseenWorktrees: z.array(repoWorktreeSchema).readonly(),
+            diagnostics: z.array(repoDiagnosticSchema).readonly(),
+          }),
+        )
+        .readonly(),
+      diagnostics: z.array(repoDiagnosticSchema).readonly(),
+      /** projectId -> repoKey, for a caller that only wants the grouping. */
+      repoKeyByProject: z.record(z.string(), z.string()),
+      unavailableHostIds: z.array(z.string()).readonly(),
     }),
   },
   // Removing a worktree row. One operation, three things, and only the third is
@@ -1025,6 +1108,15 @@ const WORKTREE_REMOVAL_TIMEOUT_MS = 120_000;
 const PROJECT_ICON_DETECT_TIMEOUT_MS = 10_000;
 
 /**
+ * A `realpath` and a few small reads per directory, over a whole sidebar.
+ *
+ * Longer than the icon probe because it is one call for every workspace rather
+ * than one call for one checkout, and still short enough that a machine which is
+ * not going to answer does not hold the first frame.
+ */
+const WORKSPACE_FACTS_TIMEOUT_MS = 15_000;
+
+/**
  * How long a stored miss is believed.
  *
  * A miss is worth storing — it is what keeps every mount from re-walking the
@@ -1185,6 +1277,13 @@ export default function plugin(bb: BbPluginApi) {
         "Look for a favicon, logo, or app icon in a project's checkout and use it as the project's badge. Only conventional locations are read, on the machine that owns the checkout, and nothing is written there.",
       default: true,
     },
+    groupByRepository: {
+      type: "boolean",
+      label: "Projects · Group by repository",
+      description:
+        "Draw one repository as one row. Nest asks each machine for the `.git` its workspaces share, and groups by that instead of by bb's project records — so the worktrees of one repository stay together even when bb holds them as several projects. Off, the list is exactly bb's own.",
+      default: false,
+    },
   });
 
   const db = bb.storage.database();
@@ -1201,6 +1300,24 @@ export default function plugin(bb: BbPluginApi) {
   const worktreeHost = bb.hosts.experimental_client({
     contract: worktreeDirectoryContract,
   });
+
+  /**
+   * What each machine last said about the directories it holds.
+   *
+   * The probe is the only place this plugin asks a machine something bb cannot
+   * answer, and it is deliberately not fatal: a machine that does not reply
+   * leaves the workspaces on it placed by their paths alone, which the tree
+   * draws and the diagnostics say is unverified.
+   */
+  const probeWorkspaceFacts: WorkspaceProbe = async (hostId, paths) => {
+    const answer = await worktreeHost.call(
+      "resolveWorkspaceFacts",
+      { paths: [...paths] },
+      { hostId, timeoutMs: WORKSPACE_FACTS_TIMEOUT_MS },
+    );
+    return answer.facts.map((fact) => ({ ...fact, hostId }));
+  };
+  const repoFacts = createRepoFactsCache({ probe: probeWorkspaceFacts });
 
   /**
    * The group picker's artwork, parsed on first use and kept.
@@ -1792,6 +1909,70 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
     };
   };
 
+  /**
+   * The environment and project records both workspace-level reads describe.
+   *
+   * One mapper, because the two reads are about the same two tables: a second
+   * copy would be a second place for a field to be forgotten, and a workspace
+   * classified from a field that is always undefined is drawn wrong rather than
+   * not drawn.
+   */
+  const readWorkspaceDescriptors = async () => {
+    const [environments, projects] = await Promise.all([
+      bb.sdk.environments.list({ limit: WORKSPACE_PATH_LIMIT }),
+      bb.sdk.projects.list({}),
+    ]);
+    const environmentDescriptors: Record<string, {
+      id: string;
+      projectId: string;
+      hostId: string;
+      path: string | null;
+      isGitRepo: boolean;
+      isWorktree: boolean;
+      branchName: string | null;
+      name: string | null;
+      providerId: string | null;
+      workspaceDisplayKind: "managed-worktree" | "unmanaged-worktree" | "other" | null;
+    }> = {};
+    for (const environment of environments) {
+      environmentDescriptors[environment.id] = {
+        id: environment.id,
+        projectId: environment.projectId,
+        hostId: environment.hostId,
+        path: environment.path,
+        isGitRepo: environment.isGitRepo,
+        isWorktree: environment.isWorktree,
+        branchName: environment.branchName,
+        name: environment.name,
+        providerId: environment.environmentProviderId,
+        workspaceDisplayKind:
+          environment.workspaceProvisionType === "managed-worktree"
+            ? "managed-worktree"
+            : environment.workspaceProvisionType === "unmanaged"
+              ? "unmanaged-worktree"
+              : environment.isWorktree
+                ? "unmanaged-worktree"
+                : "other",
+      };
+    }
+    const projectDescriptors: Record<string, {
+      projectId: string;
+      sourcePath: string | null;
+      sourceHostId: string | null;
+    }> = {};
+    for (const project of projects) {
+      const source =
+        project.sources.find((candidate) => candidate.isDefault) ??
+        project.sources[0];
+      projectDescriptors[project.id] = {
+        projectId: project.id,
+        sourcePath: source?.path ?? null,
+        sourceHostId: source?.hostId ?? null,
+      };
+    }
+    return { environments: environmentDescriptors, projects: projectDescriptors };
+  };
+
   bb.rpc.register(nestRpcContract, {
     async listProjectColors() {
       return { colors: projectColors.list() };
@@ -1919,59 +2100,43 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
       return { ok };
     },
     async listWorkspacePaths() {
-      const [environments, projects] = await Promise.all([
-        bb.sdk.environments.list({ limit: WORKSPACE_PATH_LIMIT }),
-        bb.sdk.projects.list({}),
-      ]);
-      const environmentDescriptors: Record<string, {
-        id: string;
-        projectId: string;
-        hostId: string;
-        path: string | null;
-        isGitRepo: boolean;
-        isWorktree: boolean;
-        branchName: string | null;
-        name: string | null;
-        providerId: string | null;
-        workspaceDisplayKind: "managed-worktree" | "unmanaged-worktree" | "other" | null;
-      }> = {};
-      for (const environment of environments) {
-        environmentDescriptors[environment.id] = {
-          id: environment.id,
-          projectId: environment.projectId,
-          hostId: environment.hostId,
-          path: environment.path,
-          isGitRepo: environment.isGitRepo,
-          isWorktree: environment.isWorktree,
-          branchName: environment.branchName,
-          name: environment.name,
-          providerId: environment.environmentProviderId,
-          workspaceDisplayKind:
-            environment.workspaceProvisionType === "managed-worktree"
-              ? "managed-worktree"
-              : environment.workspaceProvisionType === "unmanaged"
-                ? "unmanaged-worktree"
-                : environment.isWorktree
-                  ? "unmanaged-worktree"
-                  : "other",
-        };
-      }
-      const projectDescriptors: Record<string, {
-        projectId: string;
-        sourcePath: string | null;
-        sourceHostId: string | null;
-      }> = {};
-      for (const project of projects) {
-        const source =
-          project.sources.find((candidate) => candidate.isDefault) ??
-          project.sources[0];
-        projectDescriptors[project.id] = {
-          projectId: project.id,
-          sourcePath: source?.path ?? null,
-          sourceHostId: source?.hostId ?? null,
-        };
-      }
-      return { environments: environmentDescriptors, projects: projectDescriptors };
+      return readWorkspaceDescriptors();
+    },
+    /**
+     * The physical axis: which repository each workspace really belongs to.
+     *
+     * Every path bb knows about is probed on the machine that owns it, so a
+     * worktree another tool created is found rather than assumed absent. The
+     * project's own source is probed too, because "is this workspace in the
+     * repository this project points at" is the question that separates a
+     * worktree from a mistake.
+     */
+    async listRepoFacts() {
+      const { environments, projects } = await readWorkspaceDescriptors();
+      const targets = [
+        ...Object.values(environments).flatMap((environment) =>
+          environment.path === null
+            ? []
+            : [{ hostId: environment.hostId, path: environment.path }],
+        ),
+        ...Object.values(projects).flatMap((project) =>
+          project.sourcePath === null || project.sourceHostId === null
+            ? []
+            : [{ hostId: project.sourceHostId, path: project.sourcePath }],
+        ),
+      ];
+      const { facts, unavailableHostIds } = await repoFacts.read(targets);
+      const inferred = inferRepos({
+        environments: Object.values(environments),
+        projects: new Map(Object.entries(projects)),
+        facts,
+      });
+      return {
+        repos: inferred.repos,
+        diagnostics: inferred.diagnostics,
+        repoKeyByProject: Object.fromEntries(inferred.repoKeyByProject),
+        unavailableHostIds: [...unavailableHostIds],
+      };
     },
     async inspectWorktree({ environmentId }) {
       const survey = await surveyWorktree(environmentId);
@@ -2007,6 +2172,11 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
       try {
         await bb.sdk.environments.delete({ environmentId });
         environmentRemoved = true;
+        // The workspace list changed, and the repository's own record may have
+        // too. What is held about this machine is a picture of the state before
+        // the change, so it goes; the sidebar re-reads on its own, because the
+        // environments it is holding just changed shape.
+        repoFacts.invalidate();
       } catch (error) {
         return {
           ok: false,

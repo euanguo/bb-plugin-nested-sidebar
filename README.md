@@ -242,6 +242,66 @@ Whichever half a worktree does not have — an alias cleared, an environment bb
 never gave a branch — the row draws the one it does, so no row grows an empty
 line, and an alias that already reads as its branch is drawn once.
 
+### The repository axis
+
+A project is a **record**, and a record can be created wrong — by a person in a
+hurry, or by an agent asked to "set up a project" that makes one for a worktree
+instead of an environment in the project that already owns it. A repository is
+not a record: two checkouts of it share one `.git`, and no amount of bad
+bookkeeping changes that. So Nest reads the second axis off the disk.
+
+**Projects · Group by repository** (off by default) draws one repository as one
+row. When it is on, projects whose workspaces resolve to the same repository are
+merged into the single row the first of them already occupied: the first
+project's name, group, colour, icon and position, with the others' families and
+workspaces on it. Nothing is written back. The merged projects keep their own
+records, so turning the switch off restores bb's own answer exactly, and
+un-merging costs nothing.
+
+A repository is identified by its **remote** where it has one, because that is
+the only identity two machines agree on — the same repository cloned on a laptop
+and a server shares a remote and nothing else, and keying on the local `.git`
+path would draw one repository twice. Without a remote it falls back to the
+directory, which is honest: that names one place on one machine. Every spelling
+of one remote lands on one key — `https://`, the `git@host:owner/repo` form, a
+port, credentials, a trailing slash, the `.git` suffix — and two forks of one
+repository stay apart.
+
+Every workspace is resolved to the directory it *really* is, not the string bb
+recorded. `/var` and `/private/var` are one directory on macOS, a symlinked
+worktree is the directory it points at, and two environment records for one path
+are one row. Only the machine that owns a path can answer that, so the read is a
+single call per machine covering every workspace at once. It does not run `git`:
+the answers are already written in `.git`, which means a machine without git
+still gets an answer and one call covers a whole sidebar instead of one process
+per repository.
+
+Because the repository's own record is read, Nest can see **worktrees bb does
+not know about** — a worktree another tool created, or one whose environment was
+removed while the directory stayed. Those are reported, not drawn as rows: bb
+has no environment for them, so there is nothing to start a thread in yet.
+
+**Projects and workspaces** in Settings lists what each machine reported: every
+repository, how many workspaces it holds, and every worktree the repository
+records that bb does not. It also lists the disagreements it found, which are
+the two shapes an agent makes by accident:
+
+| What it found | What it means |
+| --- | --- |
+| One repository, several projects | bb filed one repository under more than one project. With the grouping on they are drawn together. |
+| One project, several repositories | One project has workspaces in two repositories — usually a thread started in a subdirectory of a checkout. |
+| Workspace in another repository | A workspace is not in the repository its project points at. |
+| Worktree bb does not know | The repository records a worktree no environment points at. |
+| Two records for one directory | Two environment records resolve to one path. They are drawn as one row. |
+| Path could not be read | The machine did not answer, or the directory is gone. The row is drawn from its path alone, unverified. |
+| Path spelled differently | bb's path and the filesystem's disagree. The resolved one is used. |
+
+This is a report, not a repair. `threads.update` cannot change a thread's
+project and bb offers no way to move a worktree between projects, so Nest says
+what it found and leaves the fixing where the data lives. A machine that never
+answers costs the repository grouping and nothing else: the tree falls back to
+bb's own projects, and the panel says which machine is missing.
+
 ### Status that bubbles up
 
 Every folded row -- group, project, or worktree -- reports what is underneath it

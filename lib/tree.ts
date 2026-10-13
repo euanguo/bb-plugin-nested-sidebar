@@ -28,6 +28,25 @@ export interface ProjectNode {
   /** False when the project's threads occupy a single workspace. */
   readonly showWorkspaces: boolean;
   readonly rollup: StatusRollup;
+  /**
+   * The repository this row's workspaces belong to, when it was resolved.
+   *
+   * Null means nobody asked, or the machine holding the paths did not answer.
+   * It is not "this project has no repository": a plain directory is a
+   * repository of one, and that has a key.
+   */
+  readonly repoKey: string | null;
+  /**
+   * Every bb project drawn under this row, in the order they arrived.
+   *
+   * More than one means bb filed one repository under several projects — the
+   * shape an agent makes when it creates a project for a worktree instead of an
+   * environment in the existing one. The first is the row's identity: its name,
+   * its group, its colour, its icon and its position. The rest keep their own
+   * records untouched, so nothing had to be migrated to merge them and nothing
+   * has to be migrated to un-merge them.
+   */
+  readonly mergedProjectIds: readonly string[];
 }
 
 export interface GroupNode {
@@ -73,25 +92,53 @@ export function buildTree(input: {
   ungroupedIcon: GroupIconName;
   environments?: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>;
   projects?: ReadonlyMap<string, WorkspaceProjectDescriptor>;
+  /**
+   * projectId -> repoKey, from the physical read. Absent means nobody asked, and
+   * the tree is then exactly what it was before the repository axis existed.
+   */
+  repoKeyByProject?: Readonly<Record<string, string>>;
+  /**
+   * Whether one repository is drawn as one row.
+   *
+   * Off by default, and deliberately a decision rather than a consequence of
+   * the read succeeding: merging two projects into one row is the tree
+   * disagreeing with bb's own list, and a user who filed them apart on purpose
+   * must be able to see bb's answer instead.
+   */
+  mergeRepos?: boolean;
 }): GroupNode[] {
   const { projectGroups, now, assignment, groupOrder, ungroupedIcon } = input;
   const { workspaceOrder } = input;
   const worktreeSort = input.worktreeSort ?? "manual";
   const environments = input.environments ?? new Map<string, WorkspaceEnvironmentDescriptor>();
   const projects = input.projects ?? new Map<string, WorkspaceProjectDescriptor>();
+  const repoKeyByProject = input.repoKeyByProject ?? {};
+
+  // The repository axis, when it was asked for and answered. Everything below
+  // this line is the same code either way: a merged row is a row with more than
+  // one project id on it.
+  const rows = input.mergeRepos === true
+    ? mergeProjectsByRepo(projectGroups, repoKeyByProject)
+    : projectGroups.map((group) => ({
+        ...group,
+        repoKey: repoKeyByProject[group.project.id] ?? null,
+        mergedProjectIds: [group.project.id],
+      }));
 
   const projectsByGroup = new Map<string, ProjectNode[]>();
-  for (const group of projectGroups) {
-    const node = buildProjectNode(
-      group.project,
-      group.families,
+  for (const row of rows) {
+    const node = buildProjectNode({
+      ...row,
       now,
-      workspaceOrder[group.project.id],
+      // One arrangement per repository, taken from the project that leads the
+      // row: two projects that share a repository have two stored arrangements
+      // and the leading one is the one the user sees named on the row.
+      storedWorkspaceKeys: workspaceOrder[row.project.id],
       worktreeSort,
       environments,
       projects,
-    );
-    const groupId = assignment[group.project.id] ?? "__ungrouped__";
+    });
+    const groupId = assignment[row.project.id] ?? "__ungrouped__";
     const bucket = projectsByGroup.get(groupId) ?? [];
     bucket.push(node);
     projectsByGroup.set(groupId, bucket);
@@ -150,15 +197,81 @@ function makeGroupNode(
   };
 }
 
-function buildProjectNode(
-  project: PluginSidebarProject,
-  families: readonly ThreadFamily[],
-  now: number,
-  storedWorkspaceKeys: readonly string[] | undefined,
-  worktreeSort: WorktreeSortMode,
-  environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>,
-  projects: ReadonlyMap<string, WorkspaceProjectDescriptor>,
-): ProjectNode {
+/**
+ * One row of the tree's project level, before its workspaces are worked out.
+ *
+ * A named type rather than a tuple because the two id-bearing fields are both
+ * strings: `project.id` and `mergedProjectIds` swapped by position would merge
+ * nothing and look like a project with a strange name.
+ */
+interface ProjectRow {
+  readonly project: PluginSidebarProject;
+  readonly mergedProjectIds: readonly string[];
+  readonly repoKey: string | null;
+  readonly families: ThreadFamily[];
+}
+
+/**
+ * Projects that are one repository, drawn as one row.
+ *
+ * The first project in the incoming order leads, because that order is already
+ * the user's arrangement — a manual order, or the chosen sort mode — and
+ * re-sorting here would silently discard it.
+ *
+ * A project whose repository was not resolved is left exactly as it was. An
+ * unobserved directory is not evidence that two projects are the same one, and
+ * merging on a guess would join two unrelated checkouts into a row the user
+ * cannot take apart.
+ */
+function mergeProjectsByRepo(
+  groups: readonly { project: PluginSidebarProject; families: ThreadFamily[] }[],
+  repoKeyByProject: Readonly<Record<string, string>>,
+): readonly ProjectRow[] {
+  const rowByRepo = new Map<string, number>();
+  const rows: ProjectRow[] = [];
+
+  for (const group of groups) {
+    const repoKey = repoKeyByProject[group.project.id] ?? null;
+    const at = repoKey === null ? undefined : rowByRepo.get(repoKey);
+    if (at === undefined) {
+      if (repoKey !== null) rowByRepo.set(repoKey, rows.length);
+      rows.push({
+        project: group.project,
+        families: group.families,
+        repoKey,
+        mergedProjectIds: [group.project.id],
+      });
+      continue;
+    }
+    const existing = rows[at];
+    rows[at] = {
+      ...existing,
+      families: [...existing.families, ...group.families],
+      mergedProjectIds: [...existing.mergedProjectIds, group.project.id],
+    };
+  }
+
+  return rows;
+}
+
+function buildProjectNode(input: ProjectRow & {
+  readonly now: number;
+  readonly storedWorkspaceKeys: readonly string[] | undefined;
+  readonly worktreeSort: WorktreeSortMode;
+  readonly environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>;
+  readonly projects: ReadonlyMap<string, WorkspaceProjectDescriptor>;
+}): ProjectNode {
+  const {
+    project,
+    mergedProjectIds,
+    repoKey,
+    families,
+    now,
+    storedWorkspaceKeys,
+    worktreeSort,
+    environments,
+    projects,
+  } = input;
   const allThreads = families.flatMap((family) => [
     family.root,
     ...family.children,
@@ -174,9 +287,24 @@ function buildProjectNode(
     familiesByKey.set(key, bucket);
   }
 
-  const refs = disambiguateWorkspaceLabels([
-    ...projectWorkspaceRefs(project.id, families, environments, projects).values(),
-  ]);
+  // Every project the row stands for, because a merged row has to list the
+  // workspaces of all of them: an environment with no thread in it belongs to
+  // the project that owns it, and asking only the leading project would drop
+  // the other's `+` rows off the sidebar.
+  const refsByKey = new Map<string, WorkspaceRef>();
+  for (const projectId of mergedProjectIds) {
+    for (const [key, ref] of projectWorkspaceRefs(
+      projectId,
+      families,
+      environments,
+      projects,
+    )) {
+      const existing = refsByKey.get(key);
+      refsByKey.set(key, existing === undefined ? ref : mergeWorkspaceRefs(existing, ref));
+    }
+  }
+
+  const refs = disambiguateWorkspaceLabels([...refsByKey.values()]);
   const workspaces: WorkspaceNode[] = orderWorkspaces(
     refs.map((ref) => {
       const inWorkspace = familiesByKey.get(ref.key) ?? [];
@@ -206,6 +334,8 @@ function buildProjectNode(
       allThreads.length,
     ),
     rollup: rollupThreads(allThreads, now),
+    repoKey,
+    mergedProjectIds,
   };
 }
 

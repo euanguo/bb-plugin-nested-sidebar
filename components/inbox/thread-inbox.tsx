@@ -138,6 +138,7 @@ import {
 } from "@/components/inbox/new-thread-dialog";
 import { useGroups } from "@/hooks/use-groups";
 import { useWorkspacePaths } from "@/hooks/use-workspace-paths";
+import { useRepoFacts } from "@/hooks/use-repo-facts";
 import {
   groupScopeKey,
   projectInScope,
@@ -232,6 +233,14 @@ export function ThreadInbox({
   });
   const groupsApi = useGroups();
   const paths = useWorkspacePaths();
+  /**
+   * Which repository each workspace is really in.
+   *
+   * Read whether or not the grouping is on, because the row's own badge and the
+   * diagnostics panel both want it — and because a preference the user just
+   * turned on should not have to wait for a probe to take effect.
+   */
+  const repoFacts = useRepoFacts();
   /**
    * The remembered view, read once at mount and written on every change.
    *
@@ -759,6 +768,10 @@ export function ThreadInbox({
     // The tree is built from the filtered projects, then flat-searched once
     // more so a hit three levels down keeps its ancestors and hides the
     // branches it does not touch.
+    //
+    // `mergeRepos` is the whole of "group by repository": the keying changes
+    // and nothing else, so a merged row is the row the leading project already
+    // occupied, with the others' families and workspaces on it.
     const treeNodes = searchTree(
       buildTree({
         projectGroups,
@@ -770,6 +783,8 @@ export function ThreadInbox({
         worktreeSort: viewPreferences.worktreeSort,
         environments: new Map(Object.entries(paths.environments)),
         projects: new Map(Object.entries(paths.projects)),
+        repoKeyByProject: repoFacts.repoKeyByProject,
+        mergeRepos: preferences.groupByRepository,
       }),
       searchQuery,
     );
@@ -804,7 +819,13 @@ export function ThreadInbox({
     order.projects,
     organization,
     organizationIds,
+    // Both reads feed `buildTree` above and neither was in this list: the tree
+    // was built from the paths of the frame before the read landed and stayed
+    // that way until something else moved.
+    paths,
+    preferences.groupByRepository,
     projects,
+    repoFacts,
     searchQuery,
     selectedRootIds,
     selectionMode,
