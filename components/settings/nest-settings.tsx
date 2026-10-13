@@ -22,6 +22,7 @@ import {
 } from "@/lib/preferences";
 import type { WorkspaceLabelMode } from "@/lib/workspace";
 import { useProjectColors } from "@/hooks/use-project-colors";
+import { RepoFactsPanel } from "@/components/settings/repo-facts-panel";
 import {
   automaticProjectColor,
   projectBadgeLetter,
@@ -125,7 +126,7 @@ export function NestSettingsSection() {
       <SettingsGroup
         id="projects"
         title="Projects and workspaces"
-        description="Project badge colors are stable by project ID, so renaming a project does not change its identity."
+        description="Project badge colors are stable by project ID, so renaming a project does not change its identity. What each machine reports about the workspaces themselves is below it."
       >
         <ProjectColorEditor
           projects={projects}
@@ -134,6 +135,7 @@ export function NestSettingsSection() {
           setProjectColor={projectColors.setProjectColor}
           resetProjectColor={projectColors.resetProjectColor}
         />
+        <RepoFactsPanel />
       </SettingsGroup>
 
       <SettingsGroup

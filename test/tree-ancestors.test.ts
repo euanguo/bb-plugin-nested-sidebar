@@ -53,6 +53,10 @@ const nodes: GroupNode[] = [
         families: [family("thr_root", ["thr_child"])],
         showWorkspaces: false,
         rollup: null as never,
+        // This fixture predates the repository axis, so it is the shape a row
+        // has when nobody asked: no key, and the one project it stands for.
+        repoKey: null,
+        mergedProjectIds: ["proj_1"],
         workspaces: [
           {
             ref: {

@@ -3,7 +3,39 @@ import { z } from "zod";
 import { PROJECT_ICON_SOURCES } from "../lib/project-icons.ts";
 
 /**
- * The two things this plugin needs a machine for.
+ * How many directories one probe may be asked about.
+ *
+ * The caller batches a whole sidebar's worth of paths into one call, and the
+ * number is the same cap its environment read uses: beyond it the answer would
+ * be a partial one the caller could not tell from a complete one.
+ */
+export const MAX_FACTS_PATHS = 500;
+
+const worktreeFactSchema = z
+  .object({
+    path: z.string().min(1),
+    branch: z.string().nullable(),
+    head: z.string().nullable(),
+    detached: z.boolean(),
+    prunable: z.boolean(),
+  })
+  .strict();
+
+const workspaceFactSchema = z
+  .object({
+    path: z.string().min(1),
+    realPath: z.string().min(1).nullable(),
+    isDirectory: z.boolean(),
+    isMainWorktree: z.boolean(),
+    isLinkedWorktree: z.boolean(),
+    commonDir: z.string().min(1).nullable(),
+    remoteUrl: z.string().min(1).nullable(),
+    worktrees: z.array(worktreeFactSchema).readonly(),
+  })
+  .strict();
+
+/**
+ * The three things this plugin needs a machine for.
  *
  * Removing a worktree's directory is not just deleting files: git keeps the
  * worktree's own record in the main repository, and a plain delete leaves that
@@ -14,9 +46,15 @@ import { PROJECT_ICON_SOURCES } from "../lib/project-icons.ts";
  * the checkout's bytes are on that machine, and the plugin server cannot open a
  * file at all. A method that cannot open one is a method that cannot answer.
  *
- * Both travel in one contract because bb gives a plugin exactly one host entry,
- * and both are shape-only: the reasons to refuse an answer are decisions, and
- * decisions live on the server with the rest of them.
+ * Reading what each workspace *is* — where it really lives, which repository it
+ * belongs to, which worktrees that repository records — is the third, and the
+ * only one whose answer the sidebar cannot compute from bb's data at all. bb
+ * knows the environments someone made; it does not know a worktree another tool
+ * made. Only the repository does, and the repository is on that machine.
+ *
+ * All three travel in one contract because bb gives a plugin exactly one host
+ * entry, and all are shape-only: the reasons to refuse an answer are decisions,
+ * and decisions live on the server with the rest of them.
  */
 export const worktreeDirectoryContract = defineRpcContract({
   removeWorktree: {
@@ -63,5 +101,20 @@ export const worktreeDirectoryContract = defineRpcContract({
         .object({ status: z.literal("failed"), message: z.string().min(1) })
         .strict(),
     ]),
+  },
+  /**
+   * Where a set of directories really are, and which repository each is in.
+   *
+   * One call per machine per sidebar load, deduplicated and bounded. The answer
+   * is per requested path and in the order asked, because the caller matches it
+   * back by path: a directory that could not be read answers with
+   * `realPath: null` rather than by being left out, so a short answer is never
+   * mistaken for a complete one.
+   */
+  resolveWorkspaceFacts: {
+    input: z
+      .object({ paths: z.array(z.string().min(1)).max(MAX_FACTS_PATHS) })
+      .strict(),
+    output: z.object({ facts: z.array(workspaceFactSchema).readonly() }).strict(),
   },
 });
