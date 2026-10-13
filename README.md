@@ -302,6 +302,75 @@ what it found and leaves the fixing where the data lives. A machine that never
 answers costs the repository grouping and nothing else: the tree falls back to
 bb's own projects, and the panel says which machine is missing.
 
+### What agents can see and do
+
+An agent creates most of what the sidebar organizes — projects, worktrees,
+threads — and until now it knew nothing about the layer that files them. Groups,
+a project's group, a workspace's alias: all of it lives in Nest's database and
+none of it was reachable from a thread. So an agent asked to "set up a project"
+made a second one for a worktree that already had one, and the filing was left
+for a person to do by hand.
+
+Two things fix that, and they are different kinds of thing.
+
+**Every thread is told the structure, without asking.** A short summary of the
+groups, the project the thread is running in, its repository, its workspaces
+with their branches and aliases, and any worktree the repository records that bb
+does not — appended to the thread's instructions. It costs no tool call, because
+the problem was never that an agent would not look; it is that it did not know
+there was anything to look at. The summary is capped at the host's 4096
+characters, and drops whole sections rather than half a list when it does not
+fit: the index of other projects goes first, then the unregistered worktrees,
+then the workspace list. The project the thread is running in is the last thing
+dropped.
+
+**A map tool answers the rest.** `nest_sidebar_map` returns the whole structure
+with the ids every write needs. Ids, not names: two projects can share a name and
+a repository's name is derived from its remote, so a name is not something to
+act on.
+
+Four writes exist, and every one of them is off until you turn it on. Reading is
+on by default — the failure mode of reading is that an agent knows less than it
+could, and the failure mode of *not* reading is the whole problem above.
+
+| Setting | Default | What it lets an agent do |
+| --- | --- | --- |
+| **Agents · Nest tools** | on | The master switch. Off contributes nothing to any thread. |
+| **Agents · Read the sidebar structure** | on | The summary, and `nest_sidebar_map`. |
+| **Agents · File projects into groups** | off | Move a project into a group, or out to Ungrouped. |
+| **Agents · Create and rename groups** | off | Add a group, rename one. |
+| **Agents · Rename workspaces** | off | Set or clear a worktree's display alias. |
+
+What is deliberately absent matters as much as what is there. An agent cannot
+create or remove a project, a thread or a worktree, cannot reorder anything, and
+cannot delete a group. Every tool that exists changes something reversible and
+nothing else — the operations that can lose work stay reachable only from the
+sidebar, by a person looking at what they are about to lose.
+
+Ordering within a group is not exposed, and that is why no tool needs a revision
+to check. The stored arrangement is guarded against two clients dragging one list
+at once; a single-row change like "file this project under that group" has
+nothing to lose, so it needs no guard. Exposing reordering would make a retry
+protocol mandatory on every call.
+
+Turning a tool off removes it from a session's tool list rather than leaving it
+visible and refusing. A visible-but-refused tool still costs a turn: the model
+calls it and is told it is off. A session that was already running when you
+turned something off keeps its old list until it restarts, so the tools also
+refuse at call time — both gates exist, and neither is redundant.
+
+`bb nest status` reports what is on and what the current index holds, which is
+the quickest way to see why an agent is or is not filing anything:
+
+```text
+read      on
+grouping  off
+groups    off
+aliases   off
+tools (1): nest_sidebar_map
+index: 11 projects, 2 groups, 9 repositories, 2 findings
+```
+
 ### Status that bubbles up
 
 Every folded row -- group, project, or worktree -- reports what is underneath it

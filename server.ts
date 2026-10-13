@@ -123,6 +123,18 @@ import {
 import { createRepoFactsCache, type WorkspaceProbe } from "./lib/repo-facts.ts";
 import { inferRepos } from "./lib/repo-identity.ts";
 import {
+  AGENT_TOOL_SETTING_DESCRIPTORS,
+  liveAgentToolFlags,
+} from "./lib/agent/settings.ts";
+import { AGENT_TOOL_FEATURES } from "./lib/agent/toolkit.ts";
+import {
+  SIDEBAR_INDEX_MIGRATION,
+  createSidebarIndexCache,
+  type SidebarIndex,
+} from "./lib/agent/index-cache.ts";
+import { wireAgentTools } from "./lib/agent/wire.ts";
+import type { AgentToolDeps, NestAgentActions } from "./lib/agent/actions.ts";
+import {
   MAX_GROUP_ICON_BATCH,
   type GroupIconArtwork,
 } from "./lib/group-icons.ts";
@@ -170,6 +182,7 @@ const migrations = [
   // added in the middle rewrites the history of every database that already
   // ran it.
   ORDER_REVISION_MIGRATION,
+  SIDEBAR_INDEX_MIGRATION,
 ];
 
 export interface StoredLifecycleRow {
@@ -1284,6 +1297,9 @@ export default function plugin(bb: BbPluginApi) {
         "Draw one repository as one row. Nest asks each machine for the `.git` its workspaces share, and groups by that instead of by bb's project records — so the worktrees of one repository stay together even when bb holds them as several projects. Off, the list is exactly bb's own.",
       default: false,
     },
+    // The agent switches, defined in `lib/agent/settings.ts` beside the tools
+    // they gate, so a tool cannot be added without a way to turn it off.
+    ...AGENT_TOOL_SETTING_DESCRIPTORS,
   });
 
   const db = bb.storage.database();
@@ -1318,6 +1334,84 @@ export default function plugin(bb: BbPluginApi) {
     return answer.facts.map((fact) => ({ ...fact, hostId }));
   };
   const repoFacts = createRepoFactsCache({ probe: probeWorkspaceFacts });
+
+  /**
+   * The sidebar's own state, written down where a synchronous callback can read it.
+   *
+   * `bb.agents.contributeInstructions` and `bb.agents.configure` both run on the
+   * thread-start path and both must be synchronous, and both need things that
+   * only come back from an await. This is the answer: refreshed by every read the
+   * server already performs, and by a prime at load so the first thread of a
+   * session is not told nothing.
+   */
+  const sidebarIndex = createSidebarIndexCache(db);
+
+  /**
+   * The four writes an agent and the sidebar's own menus share.
+   *
+   * One seam rather than two implementations of "file this project under that
+   * group". Two would be two places for the publish to be forgotten, and the
+   * symptom is the one thing a user will not forgive — a click that appears to do
+   * nothing, or a list that changes without being asked.
+   *
+   * `createGroup` answers null where the store throws, because a tool has to say
+   * what happened and the sidebar's own dialog already has a message for it.
+   */
+  const nestActions: NestAgentActions = {
+    async assignProjectToGroup(projectId, groupId) {
+      // Confirm the project exists before recording a membership for it, so a
+      // deleted project cannot leave a member row pointing at nothing.
+      await bb.sdk.projects.get({ projectId });
+      const ok = groups.assign(projectId, groupId);
+      if (ok) {
+        bb.realtime.publish(GROUP_CHANNEL, {});
+        void refreshSidebarIndex();
+      }
+      return ok;
+    },
+    async createGroup(name, icon) {
+      try {
+        const created = groups.create(`grp_${randomUUID()}`, name, icon);
+        bb.realtime.publish(GROUP_CHANNEL, {});
+        void refreshSidebarIndex();
+        return created;
+      } catch {
+        return null;
+      }
+    },
+    async renameGroup(groupId, name, icon) {
+      // Renaming an id that is gone is not an error worth surfacing: the tree the
+      // user was looking at is stale, and the publish refreshes it.
+      const ok = groups.rename(groupId, name, icon) !== null;
+      if (ok) {
+        bb.realtime.publish(GROUP_CHANNEL, {});
+        void refreshSidebarIndex();
+      }
+      return ok;
+    },
+    async setWorkspaceAlias(environmentId, alias) {
+      // Routed through the environment area, which is where bb keeps a worktree's
+      // display name. The publish is what makes every sidebar row for that
+      // worktree pick the new name up.
+      const environment = await bb.sdk.environments.update({
+        environmentId,
+        name: alias,
+      });
+      bb.realtime.publish(GROUP_CHANNEL, {});
+      void refreshSidebarIndex();
+      return environment.name;
+    },
+  };
+
+  // The settings-backed switches the tool gate reads. Live by construction: the
+  // gate is checked per call and the instruction provider per thread start, and
+  // `registerTool` has no disposer, so a mutation is the only mechanism there is.
+  const agentFlags = liveAgentToolFlags(settings);
+  const agentDeps: AgentToolDeps = {
+    index: () => sidebarIndex.read(),
+    refreshIndex: () => refreshSidebarIndex(),
+    actions: nestActions,
+  };
 
   /**
    * The group picker's artwork, parsed on first use and kept.
@@ -1973,6 +2067,79 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
     return { environments: environmentDescriptors, projects: projectDescriptors };
   };
 
+  /**
+   * Recompute everything the sidebar is drawn from, and write it down for the
+   * callbacks that cannot wait.
+   *
+   * This is the same read `listRepoFacts` serves, kept in one place so the
+   * materialized index cannot drift from what the tool returns: an agent reading
+   * the map and a thread being told about it must be looking at one answer, not
+   * two that were computed a second apart.
+   *
+   * A failure leaves the previous index standing. The tree has its own reads and
+   * does not depend on this; all that is lost is the summary an agent gets, and a
+   * stale summary is better than none — the tools still answer from the same
+   * store, and the version stamp is what stops a shape change being misread.
+   */
+  const refreshSidebarIndex = async (): Promise<SidebarIndex | null> => {
+    try {
+      const { environments, projects } = await readWorkspaceDescriptors();
+      const targets = [
+        ...Object.values(environments).flatMap((environment) =>
+          environment.path === null
+            ? []
+            : [{ hostId: environment.hostId, path: environment.path }],
+        ),
+        ...Object.values(projects).flatMap((project) =>
+          project.sourcePath === null || project.sourceHostId === null
+            ? []
+            : [{ hostId: project.sourceHostId, path: project.sourcePath }],
+        ),
+      ];
+      const { facts, unavailableHostIds } = await repoFacts.read(targets);
+      // A probe that answered nothing at all is a machine that is not connected
+      // yet, which is the ordinary state for the first second after a load. This
+      // was measured, not guessed: priming at load produced an index saying ten
+      // repositories and twelve findings, where the same read a moment later said
+      // nine and two, because every workspace had fallen back to being keyed by
+      // its own path.
+      //
+      // So it is not written down. "Not read yet" is an incomplete answer, and
+      // this would be a wrong one — an agent told that one repository is ten
+      // would act on it. A *partial* answer is kept, because a machine that is
+      // genuinely offline is a real state the panel reports and the caller can
+      // see in `unavailableHostIds`.
+      if (targets.length > 0 && facts.length === 0) return sidebarIndex.read();
+      const inferred = inferRepos({
+        environments: Object.values(environments),
+        projects: new Map(Object.entries(projects)),
+        facts,
+      });
+      const list = await bb.sdk.projects.list({});
+      const index: SidebarIndex = {
+        projects: list.map((project) => ({ id: project.id, name: project.name })),
+        groups: groups.list(),
+        assignment: groups.assignments(),
+        repoFacts: {
+          repos: inferred.repos,
+          diagnostics: inferred.diagnostics,
+          repoKeyByProject: Object.fromEntries(inferred.repoKeyByProject),
+          unavailableHostIds,
+        },
+        environments,
+        projectSources: projects,
+        updatedAt: Date.now(),
+      };
+      sidebarIndex.write(index);
+      return index;
+    } catch (error) {
+      bb.log.warn(
+        `could not refresh the sidebar index: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return sidebarIndex.read();
+    }
+  };
+
   bb.rpc.register(nestRpcContract, {
     async listProjectColors() {
       return { colors: projectColors.list() };
@@ -2112,30 +2279,19 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
      * worktree from a mistake.
      */
     async listRepoFacts() {
-      const { environments, projects } = await readWorkspaceDescriptors();
-      const targets = [
-        ...Object.values(environments).flatMap((environment) =>
-          environment.path === null
-            ? []
-            : [{ hostId: environment.hostId, path: environment.path }],
-        ),
-        ...Object.values(projects).flatMap((project) =>
-          project.sourcePath === null || project.sourceHostId === null
-            ? []
-            : [{ hostId: project.sourceHostId, path: project.sourcePath }],
-        ),
-      ];
-      const { facts, unavailableHostIds } = await repoFacts.read(targets);
-      const inferred = inferRepos({
-        environments: Object.values(environments),
-        projects: new Map(Object.entries(projects)),
-        facts,
-      });
+      // The same read that feeds the materialized index, so the map an agent
+      // reads and the summary a thread is told are one answer rather than two
+      // computed a second apart. It also means a sidebar load refreshes what the
+      // agent callbacks will see.
+      const index = await refreshSidebarIndex();
+      if (index === null) {
+        return { repos: [], diagnostics: [], repoKeyByProject: {}, unavailableHostIds: [] };
+      }
       return {
-        repos: inferred.repos,
-        diagnostics: inferred.diagnostics,
-        repoKeyByProject: Object.fromEntries(inferred.repoKeyByProject),
-        unavailableHostIds: [...unavailableHostIds],
+        repos: index.repoFacts.repos,
+        diagnostics: index.repoFacts.diagnostics,
+        repoKeyByProject: index.repoFacts.repoKeyByProject,
+        unavailableHostIds: [...index.repoFacts.unavailableHostIds],
       };
     },
     async inspectWorktree({ environmentId }) {
@@ -2214,16 +2370,15 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
       };
     },
     async createGroup({ name, icon }) {
-      const created = groups.create(`grp_${randomUUID()}`, name, icon);
-      bb.realtime.publish(GROUP_CHANNEL, {});
+      const created = await nestActions.createGroup(name, icon);
+      // The store's refusal, rethrown as the RPC's: the contract answers with a
+      // group rather than with null, and the dialog already has a message for a
+      // throw. The text is the store's own, kept in one place.
+      if (created === null) throw new Error("Invalid group name.");
       return created;
     },
     async renameGroup({ groupId, name, icon }) {
-      // Renaming an id that is gone is not an error worth surfacing: the tree
-      // the user was looking at is stale, and the publish below refreshes it.
-      const ok = groups.rename(groupId, name, icon) !== null;
-      if (ok) bb.realtime.publish(GROUP_CHANNEL, {});
-      return { ok };
+      return { ok: await nestActions.renameGroup(groupId, name, icon) };
     },
     async deleteGroup({ groupId }) {
       const ok = groups.remove(groupId);
@@ -2237,12 +2392,7 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
       return { ok };
     },
     async assignProjectToGroup({ projectId, groupId }) {
-      // Confirm the project exists before recording a membership for it, so a
-      // deleted project cannot leave a member row pointing at nothing.
-      await bb.sdk.projects.get({ projectId });
-      const ok = groups.assign(projectId, groupId);
-      if (ok) bb.realtime.publish(GROUP_CHANNEL, {});
-      return { ok };
+      return { ok: await nestActions.assignProjectToGroup(projectId, groupId) };
     },
     async reorderGroups({ groupIds }) {
       // Only ids that already exist are honoured; the store rewrites positions
@@ -2298,15 +2448,7 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
       return { name: project.name };
     },
     async renameEnvironment({ environmentId, name }) {
-      // Routed through the environment area, which is where bb keeps a
-      // worktree's display name. The publish is what makes every sidebar row
-      // for that worktree pick the new name up.
-      const environment = await bb.sdk.environments.update({
-        environmentId,
-        name,
-      });
-      bb.realtime.publish(GROUP_CHANNEL, {});
-      return { name: environment.name };
+      return { name: await nestActions.setWorkspaceAlias(environmentId, name) };
     },
     async removeProject({ projectId, expectedName }) {
       // Re-read before deleting: the dialog confirmed against a name, and a
@@ -2590,6 +2732,94 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
   bb.events.on("thread.active", republishIfSettled);
   bb.events.on("thread.idle", republishIfSettled);
   bb.events.on("thread.failed", republishIfSettled);
+
+  /**
+   * Nest in front of agents: the map they can read, the four writes they may
+   * make, and the summary every thread is told.
+   *
+   * Registered last because it is the one part of the plugin that is optional at
+   * runtime: everything above is the sidebar, and this is a surface on top of it.
+   */
+  const agentTools = wireAgentTools({ bb, flags: agentFlags, deps: agentDeps });
+
+  /**
+   * Prime the index so the first thread of a session is told about the sidebar
+   * rather than about the fact that nothing has been read yet.
+   *
+   * Deliberately not awaited: it is a round trip to every machine holding a
+   * workspace, and the plugin's own load should not wait on one. Until it lands,
+   * the instruction provider contributes a sentence saying so, and the map tool
+   * says the same thing — both true, neither wrong.
+   */
+  /**
+   * Prime the index, and keep trying until a machine answers.
+   *
+   * The retry is not belt-and-braces, it is the difference between the feature
+   * working and not. bb's own sidebar list stays the default, so a user who has
+   * not switched to Nest never opens it — and if the only thing that refreshed
+   * the index were a sidebar read, every agent in that install would be told
+   * nothing about the organization layer, for ever.
+   *
+   * Bounded and self-cancelling: it stops on the first answer, and a machine that
+   * is truly gone leaves the index unread rather than wrong.
+   */
+  const primeSidebarIndex = async (attempts: number): Promise<void> => {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if ((await refreshSidebarIndex()) !== null) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
+  };
+
+  void primeSidebarIndex(5);
+
+  /**
+   * `bb nest status` — what an agent can reach right now, and why.
+   *
+   * The human half of the switches. A user who has just turned a write off wants
+   * to see that it went off; a user wondering why an agent never files anything
+   * wants to see it was never on. The switches are also readable in Settings, but
+   * this is the one that answers "and what does that mean for the tools".
+   */
+  bb.cli.register({
+    name: "nest",
+    summary: "Inspect the Nest sidebar's agent tools and their switches",
+    commands: [
+      {
+        name: "status",
+        summary: "Show the agent tool switches and the tools they expose",
+        usage: "bb nest status [--json]",
+      },
+    ],
+    run(argv) {
+      const enabled = agentTools.enabledToolNames();
+      const features = AGENT_TOOL_FEATURES.map((feature) => ({
+        feature,
+        on: agentTools.isEnabled(feature),
+      }));
+      const index = sidebarIndex.read();
+      const describeIndex = (): string =>
+        index === null
+          ? "index: not read yet"
+          : `index: ${index.projects.length} projects, ${index.groups.length} groups, ` +
+            `${index.repoFacts.repos.length} repositories, ` +
+            `${index.repoFacts.diagnostics.length} findings`;
+      return {
+        exitCode: 0,
+        stdout: argv.includes("--json")
+          ? JSON.stringify({
+              enabled: agentFlags.enabled,
+              features: Object.fromEntries(features.map(({ feature, on }) => [feature, on])),
+              tools: enabled,
+            })
+          : [
+              ...features.map(({ feature, on }) => `${feature.padEnd(9)} ${on ? "on" : "off"}`),
+              `tools (${enabled.length}): ${enabled.join(", ") || "(none)"}`,
+              describeIndex(),
+            ].join("\n"),
+        stderr: "",
+      };
+    },
+  });
 }
 
 function colorSetting(label: string, defaultColor: string) {
