@@ -175,6 +175,9 @@ describe("the map an agent reads", () => {
     assert.match(text, /branch "bb\/thr_1"/);
     assert.match(text, /alias "the alias"/);
     assert.match(text, /repository: app {2}git-remote {2}github\.com\/x\/app/);
+    // The classified kind, not bb's provisioning kind: `unmanaged` is true of
+    // every checkout, so printing that raw called a plain directory a worktree.
+    assert.match(text, /kind git-worktree/);
     assert.match(text, /no environment in bb/);
     assert.match(text, /\/elsewhere\/despina/);
     assert.match(text, /\[unseen-worktree\]/);

@@ -17,6 +17,7 @@ import type { AgentToolRegistry } from "./toolkit.ts";
 import type { AgentToolDeps } from "./actions.ts";
 import type { SidebarIndex } from "./index-cache.ts";
 import { quoteName } from "./instructions.ts";
+import { classifyWorkspace } from "../workspace.ts";
 
 export function registerReadTools(registry: AgentToolRegistry, deps: AgentToolDeps): void {
   registry.register({
@@ -110,8 +111,11 @@ export function renderSidebarMap(index: SidebarIndex): string {
       if (environment?.branchName != null) details.push(`branch ${quoteName(environment.branchName)}`);
       if (environment?.name != null) details.push(`alias ${quoteName(environment.name)}`);
       if (environmentId !== undefined) details.push(`environment_id ${environmentId}`);
-      if (environment?.workspaceDisplayKind != null) {
-        details.push(`kind ${environment.workspaceDisplayKind}`);
+      // The classified kind, not bb's raw provisioning kind: this is what the row
+      // is labelled, and it is the difference between "the project lives here"
+      // and "someone made a worktree here".
+      if (environment !== undefined) {
+        details.push(`kind ${classifyWorkspace(environment, index.projectSources[project.id])}`);
       }
       if (details.length > 0) lines.push(`      ${details.join("  ")}`);
       if (workspace.environmentIds.length > 1) {

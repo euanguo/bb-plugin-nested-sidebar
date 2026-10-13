@@ -104,7 +104,45 @@ function labelFor(
   return "No workspace";
 }
 
-function classify(
+/**
+ * bb's provisioning kind, as the workspace level reads it.
+ *
+ * `workspaceProvisionType` answers two different questions at once and only one
+ * of them is about worktrees. `managed-worktree` means bb made the directory;
+ * `unmanaged` means bb did not, which is true of *every project checkout* and of
+ * every directory a person pointed bb at. Reading `unmanaged` as "a worktree bb
+ * does not manage" — which is what this did — labelled every plain directory a
+ * worktree, and made `classifyWorkspace`'s external-checkout and
+ * external-directory branches unreachable: any environment outside its project's
+ * source came back as `git-worktree`, so a directory nobody had made a worktree
+ * of was drawn with a worktree's label and offered a worktree's menu.
+ *
+ * `isWorktree` is the field that answers the worktree question, and it is the
+ * only one consulted here.
+ */
+export function workspaceDisplayKindOf(environment: {
+  readonly workspaceProvisionType: string | null;
+  readonly isWorktree: boolean;
+}): NonNullable<WorkspaceEnvironmentDescriptor["workspaceDisplayKind"]> {
+  if (environment.workspaceProvisionType === "managed-worktree") {
+    return "managed-worktree";
+  }
+  return environment.isWorktree ? "unmanaged-worktree" : "other";
+}
+
+/**
+ * What a workspace is, from bb's records and the project it claims.
+ *
+ * Exported because the agent map and the tree have to agree about this. They
+ * were separate once, and they disagreed: the map printed bb's raw provisioning
+ * kind, where `unmanaged` means "bb did not create this directory" — true of
+ * every project checkout — and so labelled a plain directory a worktree.
+ *
+ * The project-checkout test comes first, so the `unmanaged` kind cannot reach
+ * the worktree branch for a project's own checkout; everything after it is a
+ * directory that is *not* where the project lives.
+ */
+export function classifyWorkspace(
   environment: WorkspaceEnvironmentDescriptor,
   project: WorkspaceProjectDescriptor | undefined,
 ): WorkspaceKind {
@@ -119,7 +157,11 @@ function classify(
     project.sourceHostId !== null &&
     environment.hostId === project.sourceHostId
   ) return "project-checkout";
-  if (environment.isWorktree || environment.workspaceDisplayKind === "managed-worktree" || environment.workspaceDisplayKind === "unmanaged-worktree") return "git-worktree";
+  if (
+    environment.isWorktree ||
+    environment.workspaceDisplayKind === "managed-worktree" ||
+    environment.workspaceDisplayKind === "unmanaged-worktree"
+  ) return "git-worktree";
   if (environment.isGitRepo) return "external-checkout";
   return "external-directory";
 }
@@ -184,7 +226,7 @@ export function workspaceRefOfEnvironment(
 ): WorkspaceRef | null {
   if (descriptor.providerId === PERSONAL_WORKSPACE_PROVIDER) return null;
   const project = projects.get(descriptor.projectId);
-  const kind = classify(descriptor, project);
+  const kind = classifyWorkspace(descriptor, project);
   const path = normalizeWorkspacePath(descriptor.path);
   const alias = clean(descriptor.name);
   const branch = clean(descriptor.branchName);

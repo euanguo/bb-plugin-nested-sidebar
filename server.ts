@@ -122,6 +122,7 @@ import {
 } from "./lib/realtime-channels.ts";
 import { createRepoFactsCache, type WorkspaceProbe } from "./lib/repo-facts.ts";
 import { inferRepos } from "./lib/repo-identity.ts";
+import { workspaceDisplayKindOf } from "./lib/workspace.ts";
 import {
   AGENT_TOOL_SETTING_DESCRIPTORS,
   liveAgentToolFlags,
@@ -2039,14 +2040,7 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
         branchName: environment.branchName,
         name: environment.name,
         providerId: environment.environmentProviderId,
-        workspaceDisplayKind:
-          environment.workspaceProvisionType === "managed-worktree"
-            ? "managed-worktree"
-            : environment.workspaceProvisionType === "unmanaged"
-              ? "unmanaged-worktree"
-              : environment.isWorktree
-                ? "unmanaged-worktree"
-                : "other",
+        workspaceDisplayKind: workspaceDisplayKindOf(environment),
       };
     }
     const projectDescriptors: Record<string, {
