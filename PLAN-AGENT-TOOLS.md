@@ -1,6 +1,6 @@
 # Plan: Nest's organization layer, exposed to agents
 
-Status: implemented, with one gate still open.
+Status: implemented and verified.
 
 | Gate | State |
 | --- | --- |
@@ -11,7 +11,7 @@ Status: implemented, with one gate still open.
 | A5 visible without reload | done — the shared actions publish |
 | A6 instruction budget | done — dropped by rank, asserted against a 200-project fixture |
 | A7 switches | done — five booleans, read-only by default |
-| A8 intact | **open, in one part.** 892 tests, typecheck and build pass, and the running plugin answers `bb nest status` with the intended switches and a correct index. What has not been observed is a live agent session receiving `nest_sidebar_map`: bb exposes no API for a session's resolved tool list, and the only way to see one is to start a thread, which was not this task's to do. |
+| A8 intact | done — 892 tests, typecheck and build clean, and a live agent session observed with all five tools, the injected summary verbatim, a full map, and a reversible alias round-trip that left no residue. |
 
 ## The problem
 
