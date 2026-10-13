@@ -101,12 +101,35 @@ describe("order revision wiring", () => {
    * Appended, never inserted. bb checks the migration journal by index, so a
    * statement added in the middle rewrites the history of every database that
    * already ran it.
+   *
+   * Expressed as an order rather than as "the array ends with this one", which
+   * is what this used to assert: that check fails the first time a migration is
+   * legitimately appended, which is the one thing the rule asks for. What has to
+   * hold is that every statement appears once, and that the ones added later
+   * come after the ones that shipped before them.
    */
-  it("appends the revision migration rather than inserting it", () => {
+  it("appends the migration journal rather than inserting into it", () => {
     const migrations = server.slice(
       server.indexOf("const migrations"),
       server.indexOf("export interface StoredLifecycleRow"),
     );
-    assert.match(migrations, /ORDER_REVISION_MIGRATION,\n\];/);
+    const order = [
+      "PROJECT_COLOR_MIGRATION",
+      "GROUP_MIGRATION",
+      "GROUP_ASSIGNMENT_MIGRATION",
+      "MANUAL_ORDER_MIGRATION",
+      "VIEW_PREFERENCE_MIGRATION",
+      "SCOPE_ICON_MIGRATION",
+      "PROJECT_ICON_MIGRATION",
+      "ORDER_REVISION_MIGRATION",
+      "SIDEBAR_INDEX_MIGRATION",
+    ];
+    let cursor = -1;
+    for (const name of order) {
+      const at = migrations.indexOf(name);
+      assert.ok(at > cursor, `${name} comes after the statement before it`);
+      cursor = at;
+    }
+    assert.match(migrations, /ORDER_REVISION_MIGRATION,\n\s*SIDEBAR_INDEX_MIGRATION,\n\];/);
   });
 });
