@@ -113,6 +113,17 @@ Two things are worth knowing before you tune it:
   status, pull-request and provider tooltips are bounded by the row they hang
   off instead.
 
+### Attention in the title bar
+
+Threads that are failed, waiting on you, working, or unread appear as chips in
+the empty middle of the desktop window's title bar. The set is live: a family
+enters when one of those states appears and leaves when only the quiet states
+remain; snoozed and settled threads stay out. Each chip rolls the family up to
+one dominant state, keeps its project colour, and opens the thread that raised
+that state. This uses bb's experimental app overlay and the desktop title-bar
+selector, so it is a desktop-only surface and should be rechecked after a bb
+upgrade.
+
 ## Install
 
 The plugin is **not published to a marketplace** — it is installed from this

@@ -10,6 +10,7 @@ import { nestActions } from "@/lib/palette-bridge";
 import { UNARCHIVE_RETRY_RENDERER_ID } from "@/lib/unarchive-retry";
 import { UnarchiveRetryPrompt } from "@/components/inbox/unarchive-retry-prompt";
 import { mountNestRowStatus } from "@/lib/row-status-mount";
+import { TitleAttention } from "@/components/title-attention";
 
 export default definePluginApp((app) => {
   /**
@@ -25,6 +26,13 @@ export default definePluginApp((app) => {
   app.contentScripts.register({
     id: "nest-row-status",
     mount: mountNestRowStatus,
+  });
+
+  // The desktop title bar has an empty middle. The threads that are working or
+  // need the user fit there without being buried in the sidebar's tree.
+  app.slots.experimental_appOverlay({
+    id: "title-attention",
+    component: TitleAttention,
   });
 
   app.slots.settingsSection({
