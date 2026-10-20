@@ -21,6 +21,10 @@ const layout = await readFile(
   new URL("../hooks/use-title-bar-band.ts", import.meta.url),
   "utf8",
 );
+const styles = await readFile(
+  new URL("../components/title-attention.css", import.meta.url),
+  "utf8",
+);
 
 const NOW = 1_000_000;
 
@@ -192,5 +196,13 @@ describe("the title-bar attention surface", () => {
     // must not move the chips away from the title bar's centre.
     assert.match(layout, /top: Math\.round\(rect\.top\)/);
     assert.doesNotMatch(layout, /middle = box\.top/);
+  });
+
+  it("uses the sidebar's selected surface and radius", () => {
+    assert.match(
+      styles,
+      /\.nest-title-attention\[data-active="true"\]\s*\{[^}]*background:\s*var\(--sidebar-accent\)/s,
+    );
+    assert.match(styles, /border-radius:\s*var\(--radius-md/);
   });
 });
