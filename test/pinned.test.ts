@@ -428,6 +428,30 @@ describe("the row's pin control", () => {
     assert.doesNotMatch(pinButton, /-ml-\[/);
   });
 
+  it("labels all three row controls with the same drawn tooltip", () => {
+    const parkButton = card.slice(
+      card.indexOf("function ParkButton"),
+      card.indexOf("/**\n * The pin, as a control"),
+    );
+    assert.match(pinButton, /<ControlTooltip label=\{label\} scope="pin" \/>/);
+    assert.match(
+      parkButton,
+      /<ControlTooltip label=\{label\} scope=\{scope\} \/>/,
+    );
+    assert.match(
+      card,
+      /scope === "pin" &&[\s\S]*group-hover\/pin:opacity-100/,
+    );
+    assert.match(
+      card,
+      /scope === "snooze" &&[\s\S]*group-hover\/snooze:opacity-100/,
+    );
+    assert.match(
+      card,
+      /scope === "settle" &&[\s\S]*group-hover\/settle:opacity-100/,
+    );
+  });
+
   it("makes the solid glyph from the outlined one rather than importing a second", () => {
     // Hugeicons' free set has no solid pin. Filling by rule — every closed
     // outline takes the fill, every open one stays a stroke — is what keeps the

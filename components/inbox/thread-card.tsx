@@ -1138,11 +1138,11 @@ function ParkButton({
   onActivate: () => void;
 }) {
   const { button, ground, icon: iconMotion } = PARK_TONES[tone];
+  const scope = tone === "settle" ? "settle" : "snooze";
   return (
     <button
       type="button"
       aria-label={label}
-      title={label}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1187,6 +1187,7 @@ function ParkButton({
               </span>
             ))}
       </span>
+      <ControlTooltip label={label} scope={scope} />
     </button>
   );
 }
@@ -1250,7 +1251,6 @@ function PinButton({
       aria-label={label}
       // A toggle, not a one-way action: the button reports the state it holds.
       aria-pressed={pinned}
-      title={label}
       onClick={(event) => {
         // The row's full-bleed anchor sits underneath, so both of these are
         // load-bearing: without them a pin also opens the thread.
@@ -1305,6 +1305,40 @@ function PinButton({
               </span>
             ))}
       </span>
+      <ControlTooltip label={label} scope="pin" />
     </button>
+  );
+}
+
+/**
+ * One hover/focus label for the row's controls.
+ *
+ * Native `title` tooltips arrive on the platform's timer and cannot be styled,
+ * so the pin, snooze and settle buttons use the same drawn bubble as the
+ * provider glyph. Each control owns its group name, so a label never depends on
+ * whichever ancestor happened to be hovered.
+ */
+function ControlTooltip({
+  label,
+  scope,
+}: {
+  label: string;
+  scope: "pin" | "snooze" | "settle";
+}) {
+  return (
+    <span
+      role="tooltip"
+      className={cn(
+        "pointer-events-none absolute bottom-full right-0 z-40 mb-1 w-max max-w-[min(12rem,calc(100cqw-1rem))] translate-y-0.5 rounded-md border border-border bg-popover px-2 py-1 text-2xs text-popover-foreground opacity-0 shadow-md transition-all duration-150 ease-out motion-reduce:transition-none",
+        scope === "pin" &&
+          "group-hover/pin:translate-y-0 group-hover/pin:opacity-100 group-focus/pin:translate-y-0 group-focus/pin:opacity-100",
+        scope === "snooze" &&
+          "group-hover/snooze:translate-y-0 group-hover/snooze:opacity-100 group-focus/snooze:translate-y-0 group-focus/snooze:opacity-100",
+        scope === "settle" &&
+          "group-hover/settle:translate-y-0 group-hover/settle:opacity-100 group-focus/settle:translate-y-0 group-focus/settle:opacity-100",
+      )}
+    >
+      {label}
+    </span>
   );
 }
