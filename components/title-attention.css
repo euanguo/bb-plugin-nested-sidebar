@@ -16,7 +16,7 @@
   min-width: 72px;
   max-width: 220px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius-md, 6px);
   pointer-events: auto;
   -webkit-app-region: no-drag;
   app-region: no-drag;
@@ -24,11 +24,11 @@
 
 .nest-title-attention:hover,
 .nest-title-attention:focus-within {
-  background: var(--state-hover, rgba(128, 128, 128, 0.12));
+  background: color-mix(in srgb, var(--sidebar-accent) 60%, transparent);
 }
 
 .nest-title-attention[data-active="true"] {
-  background: var(--state-active, rgba(128, 128, 128, 0.18));
+  background: var(--sidebar-accent);
 }
 
 .nest-title-attention-link {
@@ -95,7 +95,7 @@
   align-items: center;
   height: 28px;
   padding: 0 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-md, 6px);
   color: var(--muted-foreground, currentColor);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
