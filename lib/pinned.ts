@@ -37,9 +37,9 @@ export interface PinnedFamily {
 /**
  * Take every project's pinned families out of the tree.
  *
- * A project left with nothing is dropped: an empty group would draw a header
- * with no rows under it, and the project is still reachable from the section's
- * own row and from bb's project list.
+ * Only a pinned thread moves; its project stays where it has always been. That
+ * includes a project with no threads at all, whose empty row is where the next
+ * thread starts.
  */
 export function splitPinnedFamilies(
   groups: readonly ProjectThreadGroup[],
@@ -59,7 +59,7 @@ export function splitPinnedFamilies(
         families.push(family);
       }
     }
-    if (families.length > 0) rest.push({ ...group, families });
+    rest.push({ ...group, families });
   }
   return { pinned, rest };
 }

@@ -109,17 +109,23 @@ describe("splitPinnedFamilies", () => {
     assert.equal(pinned[0]?.projectName, "p2");
   });
 
-  // An empty group would draw a header with no rows under it, and the project is
-  // still reachable from the section's own row and from bb's project list.
-  it("drops a project left with nothing", () => {
+  // A pinned row moves to its own section, but its project stays where it has
+  // always been: an empty project row is where its next thread starts.
+  it("keeps a project whose only thread was pinned", () => {
     const { rest } = splitPinnedFamilies([
       group("p1", [family("a", 1, true)]),
       group("p2", [family("b", 2)]),
     ]);
     assert.deepEqual(
       rest.map((entry) => entry.project.id),
-      ["p2"],
+      ["p1", "p2"],
     );
+    assert.deepEqual(rest[0]?.families, []);
+  });
+
+  it("keeps a project that never had a thread", () => {
+    const { rest } = splitPinnedFamilies([group("p1", [])]);
+    assert.deepEqual(rest.map((entry) => entry.project.id), ["p1"]);
   });
 
   it("keeps a child with its pinned parent", () => {
@@ -254,14 +260,15 @@ describe("the pinned drag payload", () => {
 });
 
 /**
- * The wiring: the section draws above the tree, the tree no longer holds the
- * pinned rows, and both reorders write where they should.
+ * The wiring: the section draws above the scope strip, the tree no longer holds
+ * the pinned rows, and both reorders write where they should.
  */
 describe("pinned section wiring", () => {
-  it("draws above the tree", () => {
+  it("draws above the grouped scope strip and outside the scrolling tree", () => {
     const pinned = inbox.indexOf("<PinnedSection");
-    const tree = inbox.indexOf("{treeNodes.map((node) => (");
-    assert.ok(pinned >= 0 && tree > pinned);
+    const tabs = inbox.indexOf("<GroupTabs");
+    const scroll = inbox.indexOf("data-nest-scroll=\"\"");
+    assert.ok(pinned >= 0 && tabs > pinned && scroll > tabs);
   });
 
   it("removes the pinned rows from the tree it feeds", () => {

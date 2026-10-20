@@ -754,7 +754,11 @@ export function ThreadInbox({
     const ungroupedCount = countFor(ungroupedScope);
     if (
       viewPreferences.organizationMode === "project" &&
-      shouldShowUngroupedTab(groupsApi.groups.length, ungroupedCount)
+      shouldShowUngroupedTab(
+        groupsApi.groups.length,
+        ungroupedCount,
+        projects.length,
+      )
     ) {
       groupTabs.push({
         scope: ungroupedScope,
@@ -1840,6 +1844,22 @@ export function ThreadInbox({
       <output className="sr-only" aria-live="polite" aria-atomic="true">
         {sidebarAnnouncement}
       </output>
+      {/*
+        Pinned rows are the first band in the sidebar, above the scope strip.
+
+        They sit outside `data-nest-scroll`, so scrolling the project tree does
+        not carry them away, and above the strip so they apply across every
+        scope rather than looking like a child of the selected one.
+      */}
+      <div className="shrink-0 pl-1.5 pr-0.5">
+        <PinnedSection
+          pinned={orderedPinnedFamilies}
+          handlers={treeHandlers}
+          reorderEnabled={pinnedReorderEnabled}
+          reorderDisabledReason={pinnedReorderDisabledReason}
+          onReorder={pinnedOrder.move}
+        />
+      </div>
       <div className="shrink-0">
         <GroupTabs
           tabs={groupTabs}
@@ -2023,7 +2043,7 @@ export function ThreadInbox({
           <p role="status" className={EMPTY_STATE_CLASS}>
             {searching
               ? "No threads found"
-              : filterPreset === "all"
+              : filterPreset === "all" && projects.length === 0
                 ? "No projects yet"
                 : "No threads match this filter"}
           </p>
@@ -2034,18 +2054,6 @@ export function ThreadInbox({
           // they would add up instead, so the tree would gain a step between
           // every pair of rows.
           <div ref={attachTreeAutoAnimateRef}>
-            {/*
-              The pinned section sits inside this block rather than beside it,
-              so it takes the same margin collapsing as everything else in the
-              tree.
-            */}
-            <PinnedSection
-              pinned={orderedPinnedFamilies}
-              handlers={treeHandlers}
-              reorderEnabled={pinnedReorderEnabled}
-              reorderDisabledReason={pinnedReorderDisabledReason}
-              onReorder={pinnedOrder.move}
-            />
             {treeNodes.map((node) => (
               <GroupSection
                 key={node.groupId ?? "__ungrouped__"}

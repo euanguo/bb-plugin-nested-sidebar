@@ -118,14 +118,20 @@ export function groupScopeKey(scope: GroupScope): string {
  * Whether the strip draws its Ungrouped tab.
  *
  * Ungrouped is a real destination, but only once groups exist — with none it
- * would duplicate All — and only while it holds a project, because a tab whose
- * tree can only ever be empty is a destination to nowhere.
+ * would duplicate All — and only while it holds a project. A project record is
+ * enough: it may have no thread or workspace yet, but the row is still where a
+ * new thread starts, and hiding it would make that project unreachable from
+ * its own scope.
  */
 export function shouldShowUngroupedTab(
   projectGroupCount: number,
   ungroupedProjectCount: number,
+  projectCount: number,
 ): boolean {
-  return projectGroupCount > 0 && ungroupedProjectCount > 0;
+  // A snapshot from a previous mount can outlive the projects it described.
+  // Until this view has at least one project, there is nothing for a scope to
+  // contain, so no scope tab should imply otherwise.
+  return projectCount > 0 && projectGroupCount > 0 && ungroupedProjectCount > 0;
 }
 
 /**
