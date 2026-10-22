@@ -1,9 +1,9 @@
 import { useId, useRef, useState, type ReactNode } from "react";
 import {
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
   useBbNavigate,
   useRpc,
 } from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import type { nestRpcContract } from "@/server";
 import { Modal } from "@/components/ui/modal";
 import { ArchivedShelf } from "@/components/inbox/archived-shelf";
@@ -88,7 +88,7 @@ export function ProjectNode({
     ) => void;
   };
 }) {
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
   const viewState = useNestViewState();
   const expanded = !viewState.isProjectCollapsed(node.project.id);
   const setExpanded = (open: boolean) =>
@@ -163,6 +163,11 @@ export function ProjectNode({
       currentGroupId={currentGroupId}
       expanded={expanded}
       archivedShelfOn={viewState.isArchivedShelfOn(node.project.id)}
+      removeBlockedReason={
+        node.foreignClaimProjectIds.length === 0
+          ? null
+          : `This row contains work claimed by ${node.foreignClaimProjectIds.join(", ")}.`
+      }
       onToggleExpanded={() => setExpanded(!expanded)}
       onToggleArchivedShelf={() =>
         viewState.setArchivedShelf(
@@ -490,6 +495,7 @@ function ProjectRowMenu({
   currentGroupId,
   expanded,
   archivedShelfOn,
+  removeBlockedReason,
   onToggleExpanded,
   onToggleArchivedShelf,
   onNewThread,
@@ -506,6 +512,8 @@ function ProjectRowMenu({
   expanded: boolean;
   /** Whether this project's archived shelf is drawn. */
   archivedShelfOn: boolean;
+  /** Why recursive project removal is unsafe from this display row. */
+  removeBlockedReason: string | null;
   onToggleExpanded: () => void;
   onToggleArchivedShelf: () => void;
   onNewThread: () => void;
@@ -614,6 +622,8 @@ function ProjectRowMenu({
       label: "Remove project…",
       separatorBefore: true,
       destructive: true,
+      disabled: removeBlockedReason !== null,
+      hint: removeBlockedReason ?? undefined,
       onSelect: () => setDialog("remove"),
     },
   );
@@ -632,7 +642,7 @@ function ProjectRowMenu({
               onRenamed={() => setDialog(null)}
             />
           ) : null}
-          {dialog === "remove" ? (
+          {dialog === "remove" && removeBlockedReason === null ? (
             <RemoveProjectDialog
               projectId={projectId}
               projectName={projectName}

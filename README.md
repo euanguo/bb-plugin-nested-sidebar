@@ -9,7 +9,7 @@
 
 **Stable projects, clear attention, inline agents.**
 
-![bb ≥ 0.36](https://img.shields.io/badge/bb-%E2%89%A5%200.36-88C0D0?style=flat-square)
+![bb ≥ 0.6.65](https://img.shields.io/badge/bb-%E2%89%A5%200.6.65-88C0D0?style=flat-square)
 ![any platform](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![experimental slot](https://img.shields.io/badge/uses-experimental%20SDK%20slot-F1B467?style=flat-square)
 
@@ -146,7 +146,7 @@ vendored SDK declarations under `types/`. It now depends on the
 
 ## Requirements
 
-- bb ≥ 0.36
+- bb ≥ 0.6.65
 - Nothing else. No accounts, keys, or external services.
 
 ## Usage
@@ -190,17 +190,30 @@ shows; the Ungrouped icon also titles the Ungrouped section in the tree.
 
 The workspace level appears **only when a project's threads occupy more than one
 physical workspace**. A project whose threads all sit in one checkout stays flat,
-exactly like bb's own sidebar. Nest identifies a workspace by host, project, and
-normalized physical path. Environment IDs are records that point at a workspace;
-they are not the workspace's identity, so duplicate BB records for one directory
-are folded into one row.
+exactly like bb's own sidebar. Nest identifies a workspace by host, physical
+owner, and normalized real path. Environment IDs are records that point at a
+workspace; they are not the workspace's identity, so duplicate bb records for
+one directory are folded into one row.
+
+**Projects · Workspace ownership** defaults to **Filesystem**. Each project's
+configured source path is its anchor: the exact source is the project checkout,
+same-repository worktrees stay under that project, and a directory inside the
+anchor belongs to the nearest project source. A repository without a remote
+falls back to its shared `.git` directory; a plain directory falls back to its
+physical path. When several projects claim one repository, Nest keeps the
+claiming project unless one source is the repository's main checkout, and
+reports the ambiguity instead of guessing.
+
+`bb claims` restores bb's stored `environment.projectId` ownership exactly.
+This is the escape hatch for records deliberately filed across projects.
 
 Rows explain what they represent: **Project checkout**, **Git worktree**,
-**External checkout**, **External directory**, or **Unresolved workspace**. The
-project checkout label is used only when both the path and host match the
-project's configured source. A directory from another checkout, a stale record,
-or incomplete metadata cannot silently become an unqualified main row; it is
-shown with its path and a diagnostic instead.
+**Nested checkout**, **External checkout**, **External directory**, or
+**Unresolved workspace**. The project checkout label is used only when both the
+path and host match the project's configured source. A submodule or repository
+inside the project anchor is a nested checkout. A directory from another
+checkout, a stale record, or incomplete metadata cannot silently become an
+unqualified main row; it is shown with its path and a diagnostic instead.
 Worktree rows carry the environment's display name — the alias you set from the
 row's own rename action — beside or under the branch it was typed against, and
 are collapsed by default, because with many worktrees the point is to make them
@@ -289,8 +302,11 @@ per repository.
 
 Because the repository's own record is read, Nest can see **worktrees bb does
 not know about** — a worktree another tool created, or one whose environment was
-removed while the directory stayed. Those are reported, not drawn as rows: bb
-has no environment for them, so there is nothing to start a thread in yet.
+removed while the directory stayed. They remain visible in **Projects and
+workspaces** diagnostics, but the tree hides them by default. Turn on
+**Projects · Show unregistered worktrees** to draw them under their owning
+project with a `+`. Starting a thread there creates bb's environment at the real
+path under the owning project; it does not require a second project.
 
 **Projects and workspaces** in Settings lists what each machine reported: every
 repository, how many workspaces it holds, and every worktree the repository
@@ -307,11 +323,12 @@ the two shapes an agent makes by accident:
 | Path could not be read | The machine did not answer, or the directory is gone. The row is drawn from its path alone, unverified. |
 | Path spelled differently | bb's path and the filesystem's disagree. The resolved one is used. |
 
-This is a report, not a repair. `threads.update` cannot change a thread's
-project and bb offers no way to move a worktree between projects, so Nest says
-what it found and leaves the fixing where the data lives. A machine that never
-answers costs the repository grouping and nothing else: the tree falls back to
-bb's own projects, and the panel says which machine is missing.
+This is a **virtual repair**, not a database rewrite. Current bb offers no public
+operation that changes an environment's or thread's project, so Nest preserves
+the original ids and claims while drawing each workspace under its derived
+owner. The conflict remains visible in the panel. A machine that never answers
+costs derived ownership for its rows and nothing else: those rows fall back to
+bb's claimed project and are marked unverified.
 
 ### What agents can see and do
 
@@ -828,6 +845,13 @@ renaming a project does not change its automatic color. You can override a
 project's badge color from Settings. **Detect project icons** is on by default;
 the owning machine checks conventional icon locations and caches the result per
 project. A missing icon keeps the muted letter badge.
+
+**Workspace ownership** defaults to Filesystem and can be returned to `bb
+claims` without touching stored data. The repository panel reports every
+workspace whose two owners disagree, including the environment and project ids
+needed to inspect the record. **Show unregistered worktrees** is off by default
+and controls only whether repository worktrees without a bb environment appear
+in the tree.
 
 ### Advanced behavior
 

@@ -107,7 +107,10 @@ describe("the archived shelf's read", () => {
     assert.match(server, /listProjectArchivedThreads: \{/);
     assert.match(server, /limit: z\.number\(\)\.int\(\)\.positive\(\)\.max\(MAX_ARCHIVED_SHELF_ROWS\)/);
     assert.match(hook, /rpc\.call\("listProjectArchivedThreads", \{/);
-    assert.match(server, /async listProjectArchivedThreads\(\{ projectId, limit \}\)/);
+    assert.match(
+      server,
+      /async listProjectArchivedThreads\(\{[\s\S]*?projectId,[\s\S]*?projectIds,[\s\S]*?environmentIds,[\s\S]*?limit,[\s\S]*?\}\) \{/,
+    );
   });
 
   // Newest archive first, which is the order a person looks for them in.
@@ -124,7 +127,7 @@ describe("the archived shelf's read", () => {
       server.indexOf("async listProjectArchivedThreads"),
     );
     assert.match(
-      handler.slice(0, 600),
+      handler.slice(0, 1_600),
       /row\.visibility === "visible"/,
     );
   });

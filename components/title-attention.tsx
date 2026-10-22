@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
   useBbContext,
   useSettings,
 } from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import { Icon } from "@/components/ui/icon";
 import { familyStatusColor } from "@/components/inbox/family-status";
 import { useThreadShelves } from "@/hooks/use-lifecycle";
 import { useThreadView } from "@/hooks/use-thread-view";
 import { useProjectColors } from "@/hooks/use-project-colors";
+import { useRepoFacts } from "@/hooks/use-repo-facts";
 import {
   useTitleBarBand,
   type TitleBarBand,
@@ -41,9 +42,10 @@ function TitleAttentionChips({ band }: { band: TitleBarBand }) {
   const { view } = useThreadView();
   const shelves = useThreadShelves();
   const { threadId: activeThreadId } = useBbContext();
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
   const { overrides: projectColors } = useProjectColors();
   const settings = useSettings();
+  const repoFacts = useRepoFacts();
   const preferences = useMemo(
     () => resolveNestPreferences(settings.values),
     [settings.values],
@@ -65,12 +67,18 @@ function TitleAttentionChips({ band }: { band: TitleBarBand }) {
         threads: view.threads,
         projects: view.projects,
         projectColors,
+        workspaceOwnership:
+          preferences.workspaceOwnership === "filesystem"
+            ? repoFacts.workspaceOwnership
+            : undefined,
         now: nowMinute * 60_000,
         isActive: (thread) => shelves.shelfFor(thread) === "active",
       }),
     [
       nowMinute,
       projectColors,
+      preferences.workspaceOwnership,
+      repoFacts.workspaceOwnership,
       shelves.shelfFor,
       view.projects,
       view.threads,

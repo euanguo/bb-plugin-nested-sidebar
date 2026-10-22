@@ -1,8 +1,8 @@
 import {
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import { cn } from "@/lib/utils";
 import { Disc, DiscCluster } from "@/components/inbox/disc";
 import { familyStatusColor } from "@/components/inbox/family-status";
@@ -38,7 +38,7 @@ export function ChildrenChip({
   isCompactViewport,
 }: PluginThreadHeaderActionProps) {
   const { threads } = useSidebarThreads();
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
 
   const children = childrenOf(threads, threadId);
   if (children.length === 0) return null;

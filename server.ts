@@ -122,6 +122,7 @@ import {
 } from "./lib/realtime-channels.ts";
 import { createRepoFactsCache, type WorkspaceProbe } from "./lib/repo-facts.ts";
 import { inferRepos } from "./lib/repo-identity.ts";
+import { inferWorkspaceOwnership } from "./lib/workspace-ownership.ts";
 import { workspaceDisplayKindOf } from "./lib/workspace.ts";
 import {
   AGENT_TOOL_SETTING_DESCRIPTORS,
@@ -461,6 +462,8 @@ const repoDiagnosticSchema = z.object({
     "split-repo",
     "multi-repo-project",
     "orphan-workspace",
+    "ownership-conflict",
+    "ambiguous-owner",
     "dangling-path",
     "duplicate-path",
     "unseen-worktree",
@@ -473,6 +476,7 @@ const repoDiagnosticSchema = z.object({
 
 /** A worktree the repository records, which bb may have no environment for. */
 const repoWorktreeSchema = z.object({
+  hostId: z.string().nullable().optional(),
   path: z.string(),
   branch: z.string().nullable(),
   head: z.string().nullable(),
@@ -714,6 +718,10 @@ export const nestRpcContract = defineRpcContract({
                   environmentIds: z.array(z.string()).readonly(),
                   projectIds: z.array(z.string()).readonly(),
                   repoKey: z.string(),
+                  isMainWorktree: z.boolean(),
+                  isLinkedWorktree: z.boolean(),
+                  isNestedRepository: z.boolean(),
+                  repositoryRoot: z.string().nullable(),
                 }),
               )
               .readonly(),
@@ -725,6 +733,49 @@ export const nestRpcContract = defineRpcContract({
       diagnostics: z.array(repoDiagnosticSchema).readonly(),
       /** projectId -> repoKey, for a caller that only wants the grouping. */
       repoKeyByProject: z.record(z.string(), z.string()),
+      /** projectId -> the repository named by its configured source. */
+      sourceRepoKeyByProject: z.record(z.string(), z.string()),
+      workspaceOwnership: z.record(
+        z.string(),
+        z.object({
+          environmentId: z.string(),
+          claimedProjectId: z.string(),
+          ownerProjectId: z.string().nullable(),
+          workspaceKey: z.string(),
+          repoKey: z.string().nullable(),
+          kind: z.enum([
+            "project-checkout",
+            "git-worktree",
+            "nested-checkout",
+            "external-checkout",
+            "external-directory",
+            "personal",
+            "unresolved",
+          ]),
+          confidence: z.enum([
+            "exact-source",
+            "local-repository",
+            "shared-remote",
+            "contained",
+            "claimed",
+            "unresolved",
+          ]),
+          conflict: z.boolean(),
+        }),
+      ),
+      unseenWorkspaces: z.record(
+        z.string(),
+        z.array(
+          z.object({
+            projectId: z.string(),
+            repoKey: z.string(),
+            hostId: z.string(),
+            path: z.string(),
+            branch: z.string().nullable(),
+            detached: z.boolean(),
+          }),
+        ).readonly(),
+      ),
       unavailableHostIds: z.array(z.string()).readonly(),
     }),
   },
@@ -1018,6 +1069,11 @@ export const nestRpcContract = defineRpcContract({
   listProjectArchivedThreads: {
     input: z.object({
       projectId: z.string().trim().min(1),
+      ownershipMode: z.enum(["claimed", "filesystem"]).default("claimed"),
+      /** Real bb projects whose claimed archives may contribute owned rows. */
+      projectIds: z.array(z.string().trim().min(1)).max(32).optional(),
+      /** Environment ids physically owned by the display project. */
+      environmentIds: z.array(z.string().trim().min(1)).max(500).optional(),
       limit: z.number().int().positive().max(MAX_ARCHIVED_SHELF_ROWS),
     }),
     output: z.object({ threads: z.array(recoveryThreadRowSchema) }),
@@ -1290,6 +1346,21 @@ export default function plugin(bb: BbPluginApi) {
       description:
         "Look for a favicon, logo, or app icon in a project's checkout and use it as the project's badge. Only conventional locations are read, on the machine that owns the checkout, and nothing is written there.",
       default: true,
+    },
+    workspaceOwnership: {
+      type: "select",
+      label: "Projects · Workspace ownership",
+      description:
+        "Filesystem follows each project's source path and Git facts: the checkout and its worktrees stay together even when an environment record claims another project. bb claims preserves bb's stored project assignment.",
+      default: "Filesystem",
+      options: ["Filesystem", "bb claims"],
+    },
+    showUnregisteredWorktrees: {
+      type: "boolean",
+      label: "Projects · Show unregistered worktrees",
+      description:
+        "Draw worktrees that exist in a repository but have no bb environment yet. Off by default; turning it on makes those rows available to adopt with +.",
+      default: false,
     },
     groupByRepository: {
       type: "boolean",
@@ -2109,6 +2180,25 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
         projects: new Map(Object.entries(projects)),
         facts,
       });
+      const ownership = inferWorkspaceOwnership({
+        environments: Object.values(environments),
+        repos: inferred.repos,
+        sourceByProject: inferred.sourceByProject,
+        sourceRepoKeyByProject: inferred.sourceRepoKeyByProject,
+      });
+      const ownershipDiagnostics = ownership.diagnostics.map((diagnostic) => {
+        const environmentId = diagnostic.environments[0];
+        const ownershipRow =
+          environmentId === undefined
+            ? undefined
+            : ownership.byEnvironmentId[environmentId];
+        return {
+          code: diagnostic.code,
+          repoKey: ownershipRow?.repoKey ?? "",
+          subjects: [...diagnostic.environments, ...diagnostic.projects],
+          message: diagnostic.message,
+        };
+      });
       const list = await bb.sdk.projects.list({});
       const index: SidebarIndex = {
         projects: list.map((project) => ({ id: project.id, name: project.name })),
@@ -2116,8 +2206,13 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
         assignment: groups.assignments(),
         repoFacts: {
           repos: inferred.repos,
-          diagnostics: inferred.diagnostics,
+          diagnostics: [...inferred.diagnostics, ...ownershipDiagnostics],
           repoKeyByProject: Object.fromEntries(inferred.repoKeyByProject),
+          sourceRepoKeyByProject: Object.fromEntries(
+            inferred.sourceRepoKeyByProject,
+          ),
+          workspaceOwnership: ownership.byEnvironmentId,
+          unseenWorkspaces: ownership.unseenByProject,
           unavailableHostIds,
         },
         environments,
@@ -2279,12 +2374,23 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
       // agent callbacks will see.
       const index = await refreshSidebarIndex();
       if (index === null) {
-        return { repos: [], diagnostics: [], repoKeyByProject: {}, unavailableHostIds: [] };
+        return {
+          repos: [],
+          diagnostics: [],
+          repoKeyByProject: {},
+          sourceRepoKeyByProject: {},
+          workspaceOwnership: {},
+          unseenWorkspaces: {},
+          unavailableHostIds: [],
+        };
       }
       return {
         repos: index.repoFacts.repos,
         diagnostics: index.repoFacts.diagnostics,
         repoKeyByProject: index.repoFacts.repoKeyByProject,
+        sourceRepoKeyByProject: index.repoFacts.sourceRepoKeyByProject,
+        workspaceOwnership: index.repoFacts.workspaceOwnership,
+        unseenWorkspaces: index.repoFacts.unseenWorkspaces,
         unavailableHostIds: [...index.repoFacts.unavailableHostIds],
       };
     },
@@ -2461,6 +2567,26 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
       if (typeof projectId !== "string" || projectId.trim().length === 0) {
         throw new Error("A project is required to create a thread.");
       }
+      const environment = request.environment;
+      if (
+        typeof environment === "object" &&
+        environment !== null &&
+        "type" in environment &&
+        environment.type === "reuse" &&
+        "environmentId" in environment &&
+        typeof environment.environmentId === "string"
+      ) {
+        const index = await refreshSidebarIndex();
+        const ownerProjectId =
+          index?.repoFacts.workspaceOwnership[environment.environmentId]
+            ?.ownerProjectId ?? null;
+        if (ownerProjectId !== null && ownerProjectId !== projectId) {
+          throw new Error(
+            `This workspace belongs to ${ownerProjectId}, not ${projectId}. ` +
+              "Choose the owning project or another workspace.",
+          );
+        }
+      }
       // SAFETY: `request` is the composer's own new-thread request, forwarded
       // verbatim. The contract declares it as an open record on purpose — the
       // composer owns that shape and this plugin does not restate it — so the
@@ -2589,11 +2715,33 @@ const hostNamesById = async (): Promise<Map<string, string>> => {
      * Hidden rows are left out for the same reason the recovery read leaves them
      * out: the host's own sidebar does not draw them.
      */
-    async listProjectArchivedThreads({ projectId, limit }) {
-      const [rows, hostNameById] = await Promise.all([
-        listThreadRows({ archived: true, projectId }),
+    async listProjectArchivedThreads({
+      projectId,
+      ownershipMode,
+      projectIds,
+      environmentIds,
+      limit,
+    }) {
+      const actualProjectIds = [...new Set(projectIds ?? [projectId])];
+      const ownedEnvironmentIds = new Set(environmentIds ?? []);
+      const [projectRows, hostNameById] = await Promise.all([
+        Promise.all(
+          actualProjectIds.map((actualProjectId) =>
+            listThreadRows({ archived: true, projectId: actualProjectId }),
+          ),
+        ),
         hostNamesById(),
       ]);
+      const rows = projectRows.flat().filter((row) => {
+        if (ownershipMode === "claimed") return row.projectId === projectId;
+        if (
+          row.environmentId !== null &&
+          ownedEnvironmentIds.has(row.environmentId)
+        ) {
+          return true;
+        }
+        return row.projectId === projectId && row.environmentId === null;
+      });
       const newest = rows
         .filter((row) => row.visibility === "visible")
         .sort((left, right) => (right.archivedAt ?? 0) - (left.archivedAt ?? 0))

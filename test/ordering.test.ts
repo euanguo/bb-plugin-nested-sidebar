@@ -25,11 +25,17 @@ function thread(
     projectId,
     title: id,
     titleFallback: null,
+    displayTitle: id,
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: {
       workflows: 0,
@@ -42,7 +48,12 @@ function thread(
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
+    archivedAt: null,
+    href: `/projects/${projectId}/threads/${id}`,
+    isHidden: false,
     environment: null,
     host: null,
     createdAt,
@@ -67,7 +78,16 @@ function group(
   name: string,
   families: ThreadFamily[],
 ): ProjectThreadGroup {
-  return { project: { id, name, isPersonal: false }, families };
+  return {
+    project: {
+      id,
+      name,
+      isPersonal: false,
+      href: `/projects/${id}`,
+      settingsHref: `/projects/${id}/settings`,
+    },
+    families,
+  };
 }
 
 const ASSIGNMENT = { p1: "g1", p2: "g1", p3: "g2" };
@@ -215,8 +235,26 @@ describe("the tree keeps the order it is given", () => {
   it("does not re-sort projects by name", () => {
     const nodes = buildTree({
       projectGroups: [
-        { project: { id: "z", name: "Zebra", isPersonal: false }, families: [] },
-        { project: { id: "a", name: "Apple", isPersonal: false }, families: [] },
+        {
+          project: {
+            id: "z",
+            name: "Zebra",
+            isPersonal: false,
+            href: "/projects/z",
+            settingsHref: "/projects/z/settings",
+          },
+          families: [],
+        },
+        {
+          project: {
+            id: "a",
+            name: "Apple",
+            isPersonal: false,
+            href: "/projects/a",
+            settingsHref: "/projects/a/settings",
+          },
+          families: [],
+        },
       ],
       now: NOW,
       assignment: {},

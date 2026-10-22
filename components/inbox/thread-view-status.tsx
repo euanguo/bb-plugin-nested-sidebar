@@ -96,10 +96,9 @@ export function OrderChangedNotice({ onReload }: { onReload: () => void }) {
  * offered only here, because a retry while rows are on screen would be a button
  * that appears to do nothing: the rows are already as current as they can be.
  *
- * `onUseOriginal` hands the scroll area to bb's own list. A retry can fail, and
- * a user looking at a sidebar that is not working should not have to go into
- * Settings to get a working one — which is exactly what the host's `Original`
- * is for.
+ * `onUseOriginal` hands the scroll area to Nest's flat recovery view. A retry
+ * can fail, and a user looking at a sidebar that is not working should still
+ * have a way to see and open the rows the recovery read returned.
  */
 export function ThreadLoadFailure({
   recovering,
@@ -150,7 +149,7 @@ export function ThreadLoadFailure({
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           )}
         >
-          Use bb&rsquo;s list
+          Show flat list
         </button>
       </div>
       {error === null ? null : (

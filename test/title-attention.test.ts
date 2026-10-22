@@ -11,6 +11,7 @@ import {
   type TitleAttentionEntry,
 } from "../lib/title-attention.ts";
 import { automaticProjectColor } from "../lib/project-colors.ts";
+import type { WorkspaceOwnershipMap } from "../lib/workspace-ownership.ts";
 
 const app = await readFile(new URL("../app.tsx", import.meta.url), "utf8");
 const component = await readFile(
@@ -37,11 +38,17 @@ function thread(
     projectId: "p1",
     title: id,
     titleFallback: null,
+    displayTitle: id,
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: {
       workflows: 0,
@@ -54,7 +61,12 @@ function thread(
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
+    archivedAt: null,
+    href: "/projects/p1/threads/" + id,
+    isHidden: false,
     environment: null,
     host: null,
     createdAt: 1,
@@ -66,19 +78,33 @@ function thread(
 }
 
 const projects: readonly PluginSidebarProject[] = [
-  { id: "p1", name: "One", isPersonal: false },
-  { id: "p2", name: "Two", isPersonal: false },
+  {
+    id: "p1",
+    name: "One",
+    isPersonal: false,
+    href: "/projects/p1",
+    settingsHref: "/projects/p1/settings",
+  },
+  {
+    id: "p2",
+    name: "Two",
+    isPersonal: false,
+    href: "/projects/p2",
+    settingsHref: "/projects/p2/settings",
+  },
 ];
 
 function entries(
   threads: readonly PluginSidebarThread[],
   isActive: (thread: PluginSidebarThread) => boolean = () => true,
   projectColors: ReadonlyMap<string, string> = new Map(),
+  workspaceOwnership: WorkspaceOwnershipMap | undefined = undefined,
 ): TitleAttentionEntry[] {
   return titleAttentionEntries({
     threads,
     projects,
     projectColors,
+    workspaceOwnership,
     now: NOW,
     isActive,
   });
@@ -155,6 +181,43 @@ describe("titleAttentionEntries", () => {
       result.map((entry) => entry.color),
       ["#123456", automaticProjectColor("p2")],
     );
+  });
+
+  it("uses the filesystem owner's project identity", () => {
+    const result = entries(
+      [
+        thread("moved", {
+          isUnread: true,
+          environment: {
+            id: "env_moved",
+            name: null,
+            branchName: "main",
+            path: "/work/warren",
+            isWorktree: false,
+            providerId: "project-checkout",
+            workspaceDisplayKind: "other",
+          },
+        }),
+      ],
+      () => true,
+      new Map([["p2", "#654321"]]),
+      {
+        env_moved: {
+          environmentId: "env_moved",
+          claimedProjectId: "p1",
+          ownerProjectId: "p2",
+          workspaceKey: "ws:host:/repo",
+          repoKey: "repo:remote:example/repo",
+          kind: "project-checkout",
+          confidence: "exact-source",
+          conflict: true,
+        },
+      },
+    );
+
+    assert.equal(result[0]?.projectId, "p2");
+    assert.equal(result[0]?.projectName, "Two");
+    assert.equal(result[0]?.color, "#654321");
   });
 
   it("keeps the most urgent prefix when the title bar is short", () => {

@@ -41,6 +41,10 @@ export interface HostWorkspaceFact {
   readonly isDirectory: boolean;
   readonly isMainWorktree: boolean;
   readonly isLinkedWorktree: boolean;
+  /** A `.git` file whose gitdir is its own repository, such as a submodule. */
+  readonly isNestedRepository: boolean;
+  /** The working-tree root that supplied this repository's metadata. */
+  readonly repositoryRoot: string | null;
   readonly commonDir: string | null;
   readonly remoteUrl: string | null;
   readonly worktrees: readonly HostWorktreeFact[];
@@ -168,10 +172,16 @@ async function isDirectory(target: string): Promise<boolean> {
  * from `commonDir` is what makes the list complete, and it is also what lets
  * the caller recognise a checkout it already knows.
  */
-async function listWorktrees(commonDir: string): Promise<HostWorktreeFact[]> {
+async function listWorktrees(
+  commonDir: string,
+  repositoryRoot: string,
+): Promise<HostWorktreeFact[]> {
   const worktrees: HostWorktreeFact[] = [];
 
-  const mainPath = path.basename(commonDir) === ".git" ? path.dirname(commonDir) : null;
+  const mainPath =
+    path.basename(commonDir) === ".git"
+      ? path.dirname(commonDir)
+      : repositoryRoot;
   if (mainPath !== null) {
     const head = await readTextIfPresent(path.join(commonDir, "HEAD"));
     const parsed = head === null ? { branch: null, head: null } : parseHead(head);
@@ -222,10 +232,85 @@ function unobservedFact(path_: string): HostWorkspaceFact {
     isDirectory: false,
     isMainWorktree: false,
     isLinkedWorktree: false,
+    isNestedRepository: false,
+    repositoryRoot: null,
     commonDir: null,
     remoteUrl: null,
     worktrees: [],
   };
+}
+
+interface RepositoryLayout {
+  readonly repositoryRoot: string;
+  readonly commonDir: string;
+  readonly isMainWorktree: boolean;
+  readonly isLinkedWorktree: boolean;
+  readonly isNestedRepository: boolean;
+}
+
+/**
+ * Read one working tree's Git layout.
+ *
+ * A `.git` directory is the main working tree. A `.git` file with a
+ * `commondir` is a linked worktree. A `.git` file without one is an embedded
+ * repository, which is what a submodule normally looks like from inside the
+ * submodule; its gitdir owns the config and is not the parent repository.
+ */
+async function repositoryLayout(root: string): Promise<RepositoryLayout | null> {
+  const dotGit = path.join(root, ".git");
+  if (await isDirectory(dotGit)) {
+    return {
+      repositoryRoot: root,
+      commonDir: (await realPathOrNull(dotGit)) ?? dotGit,
+      isMainWorktree: true,
+      isLinkedWorktree: false,
+      isNestedRepository: false,
+    };
+  }
+
+  const gitFileText = await readTextIfPresent(dotGit);
+  const gitDir = gitFileText === null ? null : parseGitDirFile(gitFileText);
+  if (gitDir === null) return null;
+
+  const resolvedGitDir = path.resolve(root, gitDir);
+  const commonText = await readTextIfPresent(path.join(resolvedGitDir, "commondir"));
+  if (commonText === null) {
+    return {
+      repositoryRoot: root,
+      commonDir: (await realPathOrNull(resolvedGitDir)) ?? resolvedGitDir,
+      isMainWorktree: false,
+      isLinkedWorktree: false,
+      isNestedRepository: true,
+    };
+  }
+
+  const resolvedCommon = parseCommonDir(commonText, resolvedGitDir);
+  return {
+    repositoryRoot: root,
+    commonDir: (await realPathOrNull(resolvedCommon)) ?? resolvedCommon,
+    isMainWorktree: false,
+    isLinkedWorktree: true,
+    isNestedRepository: false,
+  };
+}
+
+/**
+ * Find the nearest checkout containing a directory.
+ *
+ * An environment path can name a package directory rather than the checkout
+ * root. Walking ancestors in the host, rather than on the server, keeps the
+ * answer truthful for remote machines and symlinked paths.
+ */
+async function containingRepository(start: string): Promise<RepositoryLayout | null> {
+  let current = path.dirname(start);
+  for (let depth = 0; depth < 64; depth += 1) {
+    const layout = await repositoryLayout(current);
+    if (layout !== null) return layout;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+  return null;
 }
 
 /**
@@ -256,42 +341,24 @@ async function observeOneWorkspaceFact(path_: string): Promise<HostWorkspaceFact
   const real = await realPathOrNull(path_);
   if (real === null || !(await isDirectory(real))) return unobserved;
 
-  const dotGit = path.join(real, ".git");
-  let commonDir: string | null = null;
-  let isMainWorktree = false;
-  let isLinkedWorktree = false;
-
-  if (await isDirectory(dotGit)) {
-    isMainWorktree = true;
-    commonDir = (await realPathOrNull(dotGit)) ?? dotGit;
-  } else {
-    const gitFileText = await readTextIfPresent(dotGit);
-    const gitDir = gitFileText === null ? null : parseGitDirFile(gitFileText);
-    if (gitDir !== null) {
-      isLinkedWorktree = true;
-      const resolvedGitDir = path.resolve(real, gitDir);
-      const commonText = await readTextIfPresent(path.join(resolvedGitDir, "commondir"));
-      const resolvedCommon = commonText === null
-        ? path.resolve(resolvedGitDir, "..", "..")
-        : parseCommonDir(commonText, resolvedGitDir);
-      commonDir = (await realPathOrNull(resolvedCommon)) ?? resolvedCommon;
-    }
-  }
-
-  if (commonDir === null) {
+  const exactLayout = await repositoryLayout(real);
+  const layout = exactLayout ?? (await containingRepository(real));
+  if (layout === null) {
     return { ...unobserved, realPath: real, isDirectory: true };
   }
 
-  const config = await readTextIfPresent(path.join(commonDir, "config"));
+  const config = await readTextIfPresent(path.join(layout.commonDir, "config"));
   return {
     path: path_,
     realPath: real,
     isDirectory: true,
-    isMainWorktree,
-    isLinkedWorktree,
-    commonDir,
+    isMainWorktree: exactLayout?.isMainWorktree ?? false,
+    isLinkedWorktree: exactLayout?.isLinkedWorktree ?? false,
+    isNestedRepository: exactLayout?.isNestedRepository ?? false,
+    repositoryRoot: layout.repositoryRoot,
+    commonDir: layout.commonDir,
     remoteUrl: config === null ? null : parseRemoteUrl(config),
-    worktrees: await listWorktrees(commonDir),
+    worktrees: await listWorktrees(layout.commonDir, layout.repositoryRoot),
   };
 }
 

@@ -24,11 +24,17 @@ function thread(
     projectId: "proj_1",
     title: "A thread",
     titleFallback: null,
+    displayTitle: "A thread",
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: {
       workflows: 0,
@@ -41,7 +47,12 @@ function thread(
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
+    archivedAt: null,
+    href: "/projects/proj_1/threads/thr_1",
+    isHidden: false,
     environment: null,
     host: null,
     createdAt: 100,
@@ -57,7 +68,13 @@ function project(
   name: string,
   isPersonal = false,
 ): PluginSidebarProject {
-  return { id, name, isPersonal };
+  return {
+    id,
+    name,
+    isPersonal,
+    href: `/projects/${id}`,
+    settingsHref: `/projects/${id}/settings`,
+  };
 }
 
 describe("sortByCreatedAtDescending", () => {
@@ -252,6 +269,45 @@ describe("project thread groups", () => {
     assert.deepEqual(
       groups[1]?.families[1]?.children.map((child) => child.id),
       ["child", "grandchild"],
+    );
+  });
+
+  it("buckets a thread by its workspace owner, not its claimed project", () => {
+    const groups = buildProjectGroups(
+      [
+        thread({
+          id: "moved",
+          projectId: "p1",
+          environment: {
+            id: "env_moved",
+            name: null,
+            branchName: "main",
+            path: "/work/warren",
+            isWorktree: false,
+            providerId: "project-checkout",
+            workspaceDisplayKind: "other",
+          },
+        }),
+      ],
+      [project("p1", "Claimed"), project("p2", "Owner")],
+      {
+        env_moved: {
+          environmentId: "env_moved",
+          claimedProjectId: "p1",
+          ownerProjectId: "p2",
+          workspaceKey: "ws:host:/work/warren",
+          repoKey: "repo:remote:example/warren",
+          kind: "project-checkout",
+          confidence: "exact-source",
+          conflict: true,
+        },
+      },
+    );
+
+    assert.deepEqual(groups[0]?.families, []);
+    assert.deepEqual(
+      groups[1]?.families.map((family) => family.root.id),
+      ["moved"],
     );
   });
 

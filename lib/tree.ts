@@ -13,6 +13,10 @@ import { orderWorkspaces, workspaceSortFacts } from "./workspace-order.ts";
 import type { WorktreeSortMode } from "./sort-modes.ts";
 import type { ManualOrderMap } from "./manual-order.ts";
 import type { GroupIconName } from "./groups.ts";
+import type {
+  UnseenOwnedWorkspace,
+  WorkspaceOwnershipMap,
+} from "./workspace-ownership.ts";
 
 /** One workspace inside a project — a worktree, the checkout, or nothing. */
 export interface WorkspaceNode {
@@ -47,6 +51,13 @@ export interface ProjectNode {
    * has to be migrated to un-merge them.
    */
   readonly mergedProjectIds: readonly string[];
+  /**
+   * Projects that claim an environment drawn under this row's owner.
+   *
+   * These are safe to diagnose but not safe to delete through the display
+   * project's recursive project action.
+   */
+  readonly foreignClaimProjectIds: readonly string[];
 }
 
 export interface GroupNode {
@@ -97,6 +108,10 @@ export function buildTree(input: {
    * the tree is then exactly what it was before the repository axis existed.
    */
   repoKeyByProject?: Readonly<Record<string, string>>;
+  /** Derived physical owner for every environment id. */
+  workspaceOwnership?: WorkspaceOwnershipMap;
+  /** Worktrees the repository records, grouped under their derived project. */
+  unseenWorkspaces?: Readonly<Record<string, readonly UnseenOwnedWorkspace[]>>;
   /**
    * Whether one repository is drawn as one row.
    *
@@ -113,6 +128,8 @@ export function buildTree(input: {
   const environments = input.environments ?? new Map<string, WorkspaceEnvironmentDescriptor>();
   const projects = input.projects ?? new Map<string, WorkspaceProjectDescriptor>();
   const repoKeyByProject = input.repoKeyByProject ?? {};
+  const workspaceOwnership = input.workspaceOwnership ?? {};
+  const unseenWorkspaces = input.unseenWorkspaces ?? {};
 
   // The repository axis, when it was asked for and answered. Everything below
   // this line is the same code either way: a merged row is a row with more than
@@ -137,6 +154,8 @@ export function buildTree(input: {
       worktreeSort,
       environments,
       projects,
+      workspaceOwnership,
+      unseenWorkspaces,
     });
     const groupId = assignment[row.project.id] ?? "__ungrouped__";
     const bucket = projectsByGroup.get(groupId) ?? [];
@@ -260,6 +279,8 @@ function buildProjectNode(input: ProjectRow & {
   readonly worktreeSort: WorktreeSortMode;
   readonly environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>;
   readonly projects: ReadonlyMap<string, WorkspaceProjectDescriptor>;
+  readonly workspaceOwnership: WorkspaceOwnershipMap;
+  readonly unseenWorkspaces: Readonly<Record<string, readonly UnseenOwnedWorkspace[]>>;
 }): ProjectNode {
   const {
     project,
@@ -271,6 +292,8 @@ function buildProjectNode(input: ProjectRow & {
     worktreeSort,
     environments,
     projects,
+    workspaceOwnership,
+    unseenWorkspaces,
   } = input;
   const allThreads = families.flatMap((family) => [
     family.root,
@@ -281,7 +304,12 @@ function buildProjectNode(input: ProjectRow & {
   // its parent does, and splitting a family across nodes would break it apart.
   const familiesByKey = new Map<string, ThreadFamily[]>();
   for (const family of families) {
-    const key = workspaceRefOf(family.root, environments, projects).key;
+    const key = workspaceRefOf(
+      family.root,
+      environments,
+      projects,
+      workspaceOwnership,
+    ).key;
     const bucket = familiesByKey.get(key) ?? [];
     bucket.push(family);
     familiesByKey.set(key, bucket);
@@ -298,6 +326,8 @@ function buildProjectNode(input: ProjectRow & {
       families,
       environments,
       projects,
+      workspaceOwnership,
+      unseenWorkspaces[projectId] ?? [],
     )) {
       const existing = refsByKey.get(key);
       refsByKey.set(key, existing === undefined ? ref : mergeWorkspaceRefs(existing, ref));
@@ -336,6 +366,12 @@ function buildProjectNode(input: ProjectRow & {
     rollup: rollupThreads(allThreads, now),
     repoKey,
     mergedProjectIds,
+    foreignClaimProjectIds: foreignClaimsForProject(
+      project,
+      mergedProjectIds,
+      environments,
+      workspaceOwnership,
+    ),
   };
 }
 
@@ -359,6 +395,8 @@ export function projectWorkspaceRefs(
   families: readonly ThreadFamily[],
   environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>,
   projects: ReadonlyMap<string, WorkspaceProjectDescriptor>,
+  workspaceOwnership: WorkspaceOwnershipMap = {},
+  unseenWorkspaces: readonly UnseenOwnedWorkspace[] = [],
 ): Map<string, WorkspaceRef> {
   const refs = new Map<string, WorkspaceRef>();
   const remember = (ref: WorkspaceRef) => {
@@ -367,14 +405,77 @@ export function projectWorkspaceRefs(
   };
 
   for (const family of families) {
-    remember(workspaceRefOf(family.root, environments, projects));
+    const environmentId = family.root.environment?.id ?? null;
+    const ownerProjectId =
+      environmentId === null
+        ? family.root.projectId
+        : workspaceOwnership[environmentId]?.ownerProjectId ??
+          family.root.projectId;
+    if (ownerProjectId !== projectId) continue;
+    remember(
+      workspaceRefOf(
+        family.root,
+        environments,
+        projects,
+        workspaceOwnership,
+      ),
+    );
   }
   for (const descriptor of environments.values()) {
-    if (descriptor.projectId !== projectId) continue;
-    const ref = workspaceRefOfEnvironment(descriptor, projects);
+    const ownerProjectId =
+      workspaceOwnership[descriptor.id]?.ownerProjectId ??
+      descriptor.projectId;
+    if (ownerProjectId !== projectId) continue;
+    const ref = workspaceRefOfEnvironment(
+      descriptor,
+      projects,
+      workspaceOwnership,
+    );
     if (ref !== null) remember(ref);
   }
+  for (const workspace of unseenWorkspaces) {
+    if (workspace.projectId !== projectId) continue;
+    remember(unseenWorkspaceRef(workspace, projectId));
+  }
   return refs;
+}
+
+function unseenWorkspaceRef(
+  workspace: UnseenOwnedWorkspace,
+  projectId: string,
+): WorkspaceRef {
+  const path = workspace.path.replaceAll("\\", "/").replace(/\/+$/, "");
+  const name = path.split("/").filter(Boolean).at(-1) ?? "Git worktree";
+  return {
+    kind: "git-worktree",
+    key: `unseen:${projectId}:${workspace.hostId}:${path}`,
+    label: workspace.branch ?? (workspace.detached ? "Detached HEAD" : name),
+    alias: null,
+    branch: workspace.branch,
+    environmentId: null,
+    environmentIds: [],
+    path: workspace.path,
+    hostId: workspace.hostId,
+    diagnostic:
+      "This worktree exists on disk but has no bb environment yet. Starting a thread here adopts it.",
+  };
+}
+
+function foreignClaimsForProject(
+  project: PluginSidebarProject,
+  mergedProjectIds: readonly string[],
+  environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor>,
+  ownership: WorkspaceOwnershipMap,
+): string[] {
+  if (mergedProjectIds.length > 1) {
+    return mergedProjectIds.filter((id) => id !== project.id);
+  }
+  const claims = new Set<string>();
+  for (const environment of environments.values()) {
+    if (ownership[environment.id]?.ownerProjectId !== project.id) continue;
+    if (environment.projectId !== project.id) claims.add(environment.projectId);
+  }
+  return [...claims].sort();
 }
 
 /**

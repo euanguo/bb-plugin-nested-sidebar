@@ -49,11 +49,17 @@ function thread(
     projectId: "p1",
     title: id,
     titleFallback: null,
+    displayTitle: id,
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: {
       workflows: 0,
@@ -66,7 +72,12 @@ function thread(
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
+    archivedAt: null,
+    href: `/projects/p1/threads/${id}`,
+    isHidden: false,
     environment: null,
     host: null,
     createdAt,
@@ -82,7 +93,16 @@ function family(id: string, createdAt: number, pinned = false): ThreadFamily {
 }
 
 function group(id: string, families: ThreadFamily[]): ProjectThreadGroup {
-  return { project: { id, name: id, isPersonal: false }, families };
+  return {
+    project: {
+      id,
+      name: id,
+      isPersonal: false,
+      href: `/projects/${id}`,
+      settingsHref: `/projects/${id}/settings`,
+    },
+    families,
+  };
 }
 
 describe("splitPinnedFamilies", () => {

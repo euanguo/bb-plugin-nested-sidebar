@@ -18,6 +18,7 @@ import type { AgentToolDeps } from "./actions.ts";
 import type { SidebarIndex } from "./index-cache.ts";
 import { quoteName } from "./instructions.ts";
 import { classifyWorkspace } from "../workspace.ts";
+import { ownedWorkspaces } from "../workspace-ownership.ts";
 
 export function registerReadTools(registry: AgentToolRegistry, deps: AgentToolDeps): void {
   registry.register({
@@ -98,16 +99,21 @@ export function renderSidebarMap(index: SidebarIndex): string {
       );
     }
 
-    const workspaces = (repo?.workspaces ?? []).filter((workspace) =>
-      workspace.projectIds.includes(project.id),
+    const workspaces = ownedWorkspaces(
+      index.repoFacts.repos,
+      index.repoFacts.workspaceOwnership,
+      project.id,
     );
     for (const workspace of workspaces) {
-      const environmentId = workspace.environmentIds[0];
+      const environmentId = workspace.environmentId ?? undefined;
       const environment = environmentId === undefined
         ? undefined
         : index.environments[environmentId];
-      lines.push(`    workspace ${workspace.path}`);
+      lines.push(`    workspace ${workspace.workspace.path}`);
       const details: string[] = [];
+      if (workspace.repo.key !== repo?.key) {
+        details.push(`repository ${quoteName(workspace.repo.name)}`);
+      }
       if (environment?.branchName != null) details.push(`branch ${quoteName(environment.branchName)}`);
       if (environment?.name != null) details.push(`alias ${quoteName(environment.name)}`);
       if (environmentId !== undefined) details.push(`environment_id ${environmentId}`);
@@ -118,8 +124,8 @@ export function renderSidebarMap(index: SidebarIndex): string {
         details.push(`kind ${classifyWorkspace(environment, index.projectSources[project.id])}`);
       }
       if (details.length > 0) lines.push(`      ${details.join("  ")}`);
-      if (workspace.environmentIds.length > 1) {
-        lines.push(`      (${workspace.environmentIds.length} environment records for this directory)`);
+      if (workspace.workspace.environmentIds.length > 1) {
+        lines.push(`      (${workspace.workspace.environmentIds.length} environment records for this directory)`);
       }
     }
 

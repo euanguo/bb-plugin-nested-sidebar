@@ -1,8 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import { Modal } from "@/components/ui/modal";
-import {
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
-} from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import { GroupIcon } from "@/components/ui/group-icon";
 import { cn } from "@/lib/utils";
 import { copyWithAnnouncement } from "@/lib/clipboard";
@@ -80,7 +78,7 @@ export function GroupSection({
     ) => void;
   };
 }) {
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
   const viewState = useNestViewState();
   /** Ungrouped is a real bucket, so it needs a key of its own to collapse under. */
   const groupKey = node.groupId ?? UNGROUPED_SCOPE_KEY;

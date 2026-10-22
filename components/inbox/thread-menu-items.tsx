@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from "react";
 import {
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
+  experimental_useThreadActions,
   type PluginSidebarThread,
+  type PluginThreadActionTarget,
 } from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import { copyWithAnnouncement } from "@/lib/clipboard";
 import { threadLinkUrl } from "@/lib/thread-link";
 import { threadDisplayTitle } from "@/lib/inbox";
@@ -65,7 +67,29 @@ export function useThreadMenuActions({
    */
   splitAvailable: boolean;
 }): ThreadMenuActions {
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
+  const actionTarget: PluginThreadActionTarget = {
+    id: thread.id,
+    projectId: thread.projectId,
+    parentThreadId: thread.parentThreadId,
+    archivedAt: thread.archivedAt,
+    pinnedAt: thread.pinnedAt,
+    sectionId: thread.sectionId,
+    isUnread: thread.isUnread,
+    status: thread.status,
+    environment:
+      thread.environment?.id === null || thread.environment?.id === undefined
+        ? null
+        : {
+            id: thread.environment.id,
+            path: thread.environment.path,
+          },
+  };
+  const deleteAction = experimental_useThreadActions(actionTarget).find(
+    (entry) =>
+      entry.pluginId === "bb--core" &&
+      /delete/i.test(entry.action.label),
+  );
   const [renaming, setRenaming] = useState(false);
   const tomorrow = () => {
     const preset = resolveTomorrow();
@@ -170,7 +194,10 @@ export function useThreadMenuActions({
       icon: "Trash",
       label: "Delete…",
       destructive: true,
-      onSelect: () => actions.requestDelete(thread.id),
+      disabled: deleteAction === undefined,
+      onSelect: () => {
+        if (deleteAction !== undefined) void deleteAction.action.run();
+      },
     },
   );
 

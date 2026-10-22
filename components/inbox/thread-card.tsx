@@ -9,9 +9,9 @@ import {
 import {
   experimental_useSidebarThreadPullRequest as useSidebarThreadPullRequest,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { ThreadRowMenu } from "@/components/inbox/thread-menu-items";
@@ -104,7 +104,7 @@ export function ThreadCard({
   onReorderDrop: (event: DragEvent<HTMLLIElement>) => void;
   preferences: NestPreferences;
 }) {
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
   const reveal = useRowReveal();
   /**
    * Two different questions, and neither answers the other.
@@ -643,7 +643,7 @@ function ChildThreadRow({
   now: number;
   preferences: NestPreferences;
 }) {
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
   // `isAvailable` gates the affordance; `layout` only paints the pane tint.
   const { splitProps, isAvailable, layout } = useSidebarThreadSplit(thread.id);
   const viewState = useNestViewState();

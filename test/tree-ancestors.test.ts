@@ -10,11 +10,17 @@ function thread(id: string): PluginSidebarThread {
     projectId: "proj_1",
     title: id,
     titleFallback: null,
+    displayTitle: id,
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "openai",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: {
       workflows: 0,
@@ -27,7 +33,12 @@ function thread(id: string): PluginSidebarThread {
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
+    archivedAt: null,
+    href: `/projects/proj_1/threads/${id}`,
+    isHidden: false,
     environment: null,
     host: null,
     createdAt: 0,
@@ -49,7 +60,13 @@ const nodes: GroupNode[] = [
     rollup: null as never,
     projects: [
       {
-        project: { id: "proj_1", name: "One", isPersonal: false },
+        project: {
+          id: "proj_1",
+          name: "One",
+          isPersonal: false,
+          href: "/projects/proj_1",
+          settingsHref: "/projects/proj_1/settings",
+        },
         families: [family("thr_root", ["thr_child"])],
         showWorkspaces: false,
         rollup: null as never,
@@ -57,6 +74,7 @@ const nodes: GroupNode[] = [
         // has when nobody asked: no key, and the one project it stands for.
         repoKey: null,
         mergedProjectIds: ["proj_1"],
+        foreignClaimProjectIds: [],
         workspaces: [
           {
             ref: {

@@ -7,9 +7,9 @@ import {
   type RefObject,
 } from "react";
 import {
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import { Icon } from "@/components/ui/icon";
 import { PageControls } from "@/components/inbox/page-controls";
 import {
@@ -56,6 +56,7 @@ function workspaceKindLabel(kind: WorkspaceKind): string {
   switch (kind) {
     case "project-checkout": return "Project checkout";
     case "git-worktree": return "Git worktree";
+    case "nested-checkout": return "Nested checkout";
     case "external-checkout": return "External checkout";
     case "external-directory": return "External directory";
     case "unresolved": return "Unresolved workspace";
@@ -200,7 +201,7 @@ export function WorkspaceGroup({
   projectName: string;
   handlers: TreeRowHandlers;
 }) {
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
   const viewState = useNestViewState();
   // A workspace is collapsed by default — the level only earns its space when
   // a project has several — so the store keeps the expanded ones instead.
@@ -266,7 +267,7 @@ export function WorkspaceGroup({
   const stacked = rowLabel.detail !== null && rowLabel.stacked;
   const path =
     node.ref.environmentId === null
-      ? null
+      ? node.ref.path
       : (handlers.paths.environments[node.ref.environmentId]?.path ?? node.ref.path);
 
   const rows: InfoCardRow[] = [
@@ -417,7 +418,7 @@ export function WorkspaceGroup({
             setExpanded(!expanded);
           }}
           onDragStart={(event) => {
-            if (!canReorder || node.ref.environmentId === null) {
+            if (!canReorder) {
               event.preventDefault();
               return;
             }

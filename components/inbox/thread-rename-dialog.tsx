@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { experimental_useSidebarThreadActions as useSidebarThreadActions } from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import { Modal } from "@/components/ui/modal";
 
 /**
@@ -20,7 +20,7 @@ export function ThreadRenameDialog({
   currentTitle: string;
   onClose: () => void;
 }) {
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
   const [value, setValue] = useState(currentTitle);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

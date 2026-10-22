@@ -69,6 +69,8 @@ describe("toRecoveryThread", () => {
       id: "env_1",
       name: "release",
       branchName: "bb/release",
+      path: null,
+      isWorktree: true,
       providerId: "managed-worktree",
       workspaceDisplayKind: "managed-worktree",
     });

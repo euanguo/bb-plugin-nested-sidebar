@@ -27,7 +27,13 @@ const viewMenu = await readFile(
 );
 
 function project(id: string): PluginSidebarProject {
-  return { id, name: id, isPersonal: false };
+  return {
+    id,
+    name: id,
+    isPersonal: false,
+    href: `/projects/${id}`,
+    settingsHref: `/projects/${id}/settings`,
+  };
 }
 
 function pathsFor(

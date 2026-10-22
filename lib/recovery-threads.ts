@@ -53,25 +53,39 @@ export interface RecoveryThreadRow extends SidebarThreadRowBase {
 
 export function toRecoveryThread(row: RecoveryThreadRow): PluginSidebarThread {
   const { indicator, indicatorLabel } = deriveIndicator(row);
+  const status = sidebarStatus(row.status);
+  const displayTitle =
+    row.title?.trim() || row.titleFallback?.trim() || row.id;
   return {
     id: row.id,
     projectId: row.projectId,
     title: row.title,
     titleFallback: row.titleFallback,
+    displayTitle,
     parentThreadId: row.parentThreadId,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: row.sectionId,
     originKind: originKindFor(row.originKind),
     originPluginId: row.originPluginId,
     providerId: row.providerId,
+    status,
+    runtimeStatus: status,
+    queuedWork: "none",
     hasPendingInteraction: row.hasPendingInteraction,
     activity: row.activity,
     indicator,
     indicatorLabel,
     isUnread: isUnread(row),
     isPinned: row.isPinned,
+    pinnedAt: null,
+    pinSortKey: null,
     // The one field that makes this read different from the settled shelf's:
     // these rows are live, so nothing here was archived to be found.
     isArchived: false,
+    archivedAt: null,
+    href: `/projects/${row.projectId}/threads/${row.id}`,
+    isHidden: false,
     environment:
       row.environment === null
         ? null
@@ -79,6 +93,10 @@ export function toRecoveryThread(row: RecoveryThreadRow): PluginSidebarThread {
             id: row.environment.id,
             name: row.environment.name,
             branchName: row.environment.branchName,
+            path: null,
+            isWorktree:
+              row.environment.workspaceDisplayKind === "managed-worktree" ||
+              row.environment.workspaceDisplayKind === "unmanaged-worktree",
             providerId: row.environment.providerId,
             workspaceDisplayKind: workspaceDisplayKindFor(
               row.environment.workspaceDisplayKind,
@@ -92,6 +110,17 @@ export function toRecoveryThread(row: RecoveryThreadRow): PluginSidebarThread {
   };
 }
 
+function sidebarStatus(value: string): PluginSidebarThread["status"] {
+  return value === "active" ||
+    value === "error" ||
+    value === "idle" ||
+    value === "pending" ||
+    value === "starting" ||
+    value === "stopping"
+    ? value
+    : "idle";
+}
+
 /**
  * One archived row as a sidebar thread.
  *
@@ -102,7 +131,11 @@ export function toRecoveryThread(row: RecoveryThreadRow): PluginSidebarThread {
  * disagree about what a row holds.
  */
 export function toArchivedThread(row: RecoveryThreadRow): PluginSidebarThread {
-  return { ...toRecoveryThread(row), isArchived: true };
+  return {
+    ...toRecoveryThread(row),
+    isArchived: true,
+    archivedAt: row.updatedAt,
+  };
 }
 
 /**

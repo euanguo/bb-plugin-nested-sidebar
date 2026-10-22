@@ -26,11 +26,17 @@ function thread(
     projectId: "proj_1",
     title: "A thread",
     titleFallback: null,
+    displayTitle: "A thread",
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: {
       workflows: 0,
@@ -43,7 +49,12 @@ function thread(
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
+    archivedAt: null,
+    href: "/projects/proj_1/threads/thr_1",
+    isHidden: false,
     environment: null,
     host: null,
     createdAt: 100,
@@ -55,8 +66,20 @@ function thread(
 }
 
 const projects: PluginSidebarProject[] = [
-  { id: "proj_1", name: "One", isPersonal: false },
-  { id: "proj_2", name: "Two", isPersonal: false },
+  {
+    id: "proj_1",
+    name: "One",
+    isPersonal: false,
+    href: "/projects/proj_1",
+    settingsHref: "/projects/proj_1/settings",
+  },
+  {
+    id: "proj_2",
+    name: "Two",
+    isPersonal: false,
+    href: "/projects/proj_2",
+    settingsHref: "/projects/proj_2/settings",
+  },
 ];
 
 describe("family status", () => {

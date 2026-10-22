@@ -26,6 +26,7 @@
 
 import type { AgentToolFeature, AgentToolFlags } from "./toolkit.ts";
 import type { SidebarIndex } from "./index-cache.ts";
+import { ownedWorkspaces } from "../workspace-ownership.ts";
 
 /** The host's cap. Past this the contribution is truncated by the host. */
 export const MAX_INSTRUCTION_CHARS = 4096;
@@ -85,6 +86,8 @@ export interface InstructionInput {
   readonly toolNames: readonly string[];
   /** projectId of the thread this is being built for, when there is one. */
   readonly projectId: string | null;
+  /** environmentId of the thread, used to resolve its physical owner. */
+  readonly environmentId?: string | null;
 }
 
 /**
@@ -116,7 +119,13 @@ export function agentInstructions(input: InstructionInput): string | null {
         text: "The current structure has not been read yet; use the map tool.",
       });
     } else {
-      sections.push(...describeSidebar(input.index, input.projectId));
+      sections.push(
+        ...describeSidebar(
+          input.index,
+          input.projectId,
+          input.environmentId ?? null,
+        ),
+      );
     }
   }
 
@@ -156,7 +165,16 @@ function availabilitySentence(flags: AgentToolFlags, toolNames: readonly string[
 }
 
 /** The map, as prose, in reading order and with each part's drop rank. */
-function describeSidebar(index: SidebarIndex, projectId: string | null): Section[] {
+function describeSidebar(
+  index: SidebarIndex,
+  claimedProjectId: string | null,
+  environmentId: string | null,
+): Section[] {
+  const projectId =
+    claimedProjectId === null || environmentId === null
+      ? claimedProjectId
+      : index.repoFacts.workspaceOwnership[environmentId]?.ownerProjectId ??
+        claimedProjectId;
   const groupName = (id: string | null): string => {
     if (id === null) return "Ungrouped";
     return index.groups.find((group) => group.id === id)?.name ?? "Ungrouped";
@@ -196,19 +214,22 @@ function describeSidebar(index: SidebarIndex, projectId: string | null): Section
       // The project's identity is never dropped: it is the one being worked in.
       sections.push({ rank: KEEP, text: lines.join("\n") });
 
-      const workspaces = (repo?.workspaces ?? []).filter((workspace) =>
-        workspace.projectIds.includes(projectId),
+      const workspaces = ownedWorkspaces(
+        index.repoFacts.repos,
+        index.repoFacts.workspaceOwnership,
+        projectId,
       );
       if (workspaces.length > 0) {
         const rows = workspaces.map((workspace) => {
-          const environmentId = workspace.environmentIds[0];
+          const environmentId = workspace.environmentId ?? undefined;
           const environment = environmentId === undefined
             ? undefined
             : index.environments[environmentId];
           const branch = environment?.branchName ?? null;
           const alias = environment?.name ?? null;
           return (
-            `    ${workspace.path}` +
+            `    ${workspace.workspace.path}` +
+            `${workspace.repo.key === repo?.key ? "" : ` — repository ${quoteName(workspace.repo.name)}`}` +
             `${branch === null ? "" : ` — branch ${quoteName(branch)}`}` +
             `${alias === null ? "" : ` — alias ${quoteName(alias)}`}` +
             `${environmentId === undefined ? "" : ` — env ${environmentId}`}`

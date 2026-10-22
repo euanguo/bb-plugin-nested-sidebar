@@ -21,21 +21,20 @@ const status = await readFile(
  * sidebar that is not working is the worst possible moment to send someone into
  * Settings to fix it.
  */
-describe("bb's own thread list", () => {
+describe("the flat recovery list", () => {
   it("is drawn when the user asks for it", () => {
-    assert.match(inbox, /Original,\n\}: PluginThreadListProps\)/);
-    assert.match(inbox, /if \(showOriginal\) \{/);
-    assert.match(inbox, /<Original \/>/);
+    assert.match(inbox, /<FlatThreadFallback/);
+    assert.match(inbox, /if \(showFlatFallback\) \{/);
   });
 
   it("is offered from the failure, beside the retry", () => {
     assert.match(status, /onUseOriginal: \(\) => void/);
-    assert.match(status, /Use bb&rsquo;s list/);
-    assert.match(inbox, /onUseOriginal=\{\(\) => setShowOriginal\(true\)\}/);
+    assert.match(status, /Show flat list/);
+    assert.match(inbox, /onUseOriginal=\{\(\) => setShowFlatFallback\(true\)\}/);
   });
 
   /**
-   * Both occupants of the scroll box, so bb's own list cannot arrive without the
+   * Both occupants of the scroll box, so the fallback cannot arrive without the
    * reserved scrollbar lane and the horizontal clip the tree is documented to
    * have. Found by the scroll-geometry test when the fallback had its own literal
    * — which is how it lost the gutter in the first place.

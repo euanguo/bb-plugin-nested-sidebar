@@ -2,6 +2,10 @@ import type {
   PluginSidebarProject,
   PluginSidebarThread,
 } from "@get-bb/plugin-sdk";
+import {
+  ownerProjectIdForThread,
+  type WorkspaceOwnershipMap,
+} from "./workspace-ownership.ts";
 
 export interface ThreadFamily {
   root: PluginSidebarThread;
@@ -83,17 +87,22 @@ export function searchThreadsByTitle(
 export function buildProjectGroups(
   threads: readonly PluginSidebarThread[],
   projects: readonly PluginSidebarProject[],
+  ownership: WorkspaceOwnershipMap | undefined = undefined,
 ): ProjectThreadGroup[] {
   const threadsByProject = new Map<string, PluginSidebarThread[]>();
   for (const thread of threads) {
-    const bucket = threadsByProject.get(thread.projectId) ?? [];
+    const projectId = ownerProjectIdForThread(thread, ownership);
+    const bucket = threadsByProject.get(projectId) ?? [];
     bucket.push(thread);
-    threadsByProject.set(thread.projectId, bucket);
+    threadsByProject.set(projectId, bucket);
   }
 
   const groups: ProjectThreadGroup[] = projects.map((project) => ({
     project,
-    families: threadFamilies(threadsByProject.get(project.id) ?? []),
+    families: threadFamilies(
+      threadsByProject.get(project.id) ?? [],
+      (thread) => ownerProjectIdForThread(thread, ownership),
+    ),
   }));
 
   const known = new Set(projects.map((project) => project.id));
@@ -106,8 +115,13 @@ export function buildProjectGroups(
         id: projectId,
         name: "Other project",
         isPersonal: false,
+        href: `/projects/${projectId}`,
+        settingsHref: `/projects/${projectId}/settings`,
       } satisfies PluginSidebarProject,
-      families: threadFamilies(threadsByProject.get(projectId) ?? []),
+      families: threadFamilies(
+        threadsByProject.get(projectId) ?? [],
+        (thread) => ownerProjectIdForThread(thread, ownership),
+      ),
     });
   }
 
@@ -121,6 +135,8 @@ export function buildProjectGroups(
  */
 function threadFamilies(
   projectThreads: readonly PluginSidebarThread[],
+  projectIdOf: (thread: PluginSidebarThread) => string = (thread) =>
+    thread.projectId,
 ): ThreadFamily[] {
   const threadById = new Map(
     projectThreads.map((thread) => [thread.id, thread]),
@@ -128,7 +144,7 @@ function threadFamilies(
   const familyByRootId = new Map<string, ThreadFamily>();
 
   for (const thread of projectThreads) {
-    const root = visibleRootOf(thread, threadById);
+    const root = visibleRootOf(thread, threadById, projectIdOf);
     let family = familyByRootId.get(root.id);
     if (family === undefined) {
       family = { root, children: [] };
@@ -185,6 +201,8 @@ export function searchProjectThreadGroups(
 export function visibleRootOf(
   thread: PluginSidebarThread,
   threadById: ReadonlyMap<string, PluginSidebarThread>,
+  projectIdOf: (thread: PluginSidebarThread) => string = (candidate) =>
+    candidate.projectId,
 ): PluginSidebarThread {
   let current = thread;
   const visited = new Set([thread.id]);
@@ -192,7 +210,7 @@ export function visibleRootOf(
     const parent = threadById.get(current.parentThreadId);
     if (
       parent === undefined ||
-      parent.projectId !== thread.projectId ||
+      projectIdOf(parent) !== projectIdOf(thread) ||
       visited.has(parent.id)
     ) {
       break;
@@ -322,4 +340,3 @@ export function branchHoldsThread(
   if (branch.thread.id === threadId) return true;
   return branch.children.some((child) => branchHoldsThread(child, threadId));
 }
-

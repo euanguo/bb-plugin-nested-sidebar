@@ -159,6 +159,61 @@ describe("observing a directory on disk", () => {
     assert.deepEqual(fact.worktrees, []);
   });
 
+  it("observes a submodule as its own repository, not a linked worktree", async () => {
+    const root = await fixture();
+    const parent = path.join(root, "parent");
+    const submodule = path.join(parent, "src", "child");
+    const gitdir = path.join(parent, ".git", "modules", "src", "child");
+
+    await write(path.join(parent, ".git", "HEAD"), "ref: refs/heads/main\n");
+    await write(
+      path.join(parent, ".git", "config"),
+      '[remote "origin"]\n\turl = git@example.com:parent.git\n',
+    );
+    await write(path.join(submodule, ".git"), `gitdir: ${gitdir}\n`);
+    await write(path.join(gitdir, "HEAD"), "ref: refs/heads/child-main\n");
+    await write(
+      path.join(gitdir, "config"),
+      '[remote "origin"]\n\turl = git@example.com:child.git\n',
+    );
+
+    const [fact] = await resolveWorkspaceFacts([submodule]);
+
+    assert.equal(fact.isMainWorktree, false);
+    assert.equal(fact.isLinkedWorktree, false);
+    assert.equal(fact.isNestedRepository, true);
+    assert.equal(fact.repositoryRoot, submodule);
+    assert.equal(fact.commonDir, gitdir);
+    assert.equal(fact.remoteUrl, "git@example.com:child.git");
+    assert.deepEqual(
+      fact.worktrees.map((worktree) => [worktree.path, worktree.branch]),
+      [[submodule, "child-main"]],
+    );
+  });
+
+  it("finds the checkout containing an ordinary subdirectory", async () => {
+    const root = await fixture();
+    const checkout = path.join(root, "app");
+    const packageDir = path.join(checkout, "packages", "web");
+
+    await write(path.join(checkout, ".git", "HEAD"), "ref: refs/heads/main\n");
+    await write(
+      path.join(checkout, ".git", "config"),
+      '[remote "origin"]\n\turl = git@example.com:app.git\n',
+    );
+    await mkdir(packageDir, { recursive: true });
+
+    const [fact] = await resolveWorkspaceFacts([packageDir]);
+
+    assert.equal(fact.path, packageDir);
+    assert.equal(fact.realPath, packageDir);
+    assert.equal(fact.repositoryRoot, checkout);
+    assert.equal(fact.commonDir, path.join(checkout, ".git"));
+    assert.equal(fact.remoteUrl, "git@example.com:app.git");
+    assert.equal(fact.isMainWorktree, false);
+    assert.equal(fact.isLinkedWorktree, false);
+  });
+
   it("answers a missing path as unobserved rather than as a directory", async () => {
     const root = await fixture();
     const [fact] = await resolveWorkspaceFacts([path.join(root, "nope")]);

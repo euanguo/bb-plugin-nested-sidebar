@@ -8,12 +8,12 @@ import {
 } from "react";
 import {
   experimental_useProviders as useProviders,
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
   useRpc,
   useSettings,
   type PluginSidebarThread,
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import type { nestRpcContract } from "@/server";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
@@ -78,6 +78,7 @@ import {
   searchProjectThreadGroups,
   searchThreadsByTitle,
   sortByCreatedAtDescending,
+  threadDisplayTitle,
   visibleInboxThreads,
 } from "@/lib/inbox";
 import { familyStatus } from "@/lib/family-status";
@@ -199,7 +200,6 @@ export function ThreadInbox({
   activeThreadId,
   onNavigate,
   searchQuery,
-  Original,
 }: PluginThreadListProps) {
   /**
    * The rows to draw, which is not the same thing as the host's state.
@@ -241,6 +241,15 @@ export function ThreadInbox({
    * turned on should not have to wait for a probe to take effect.
    */
   const repoFacts = useRepoFacts();
+  const workspaceOwnership =
+    preferences.workspaceOwnership === "filesystem"
+      ? repoFacts.workspaceOwnership
+      : undefined;
+  const unseenWorkspaces =
+    workspaceOwnership === undefined ||
+    !preferences.showUnregisteredWorktrees
+      ? undefined
+      : repoFacts.unseenWorkspaces;
   /**
    * The remembered view, read once at mount and written on every change.
    *
@@ -253,7 +262,7 @@ export function ThreadInbox({
   const [viewState, setViewState] = useState<NestViewState>(readViewState);
   const [groupManagerOpen, setGroupManagerOpen] = useState(false);
   /** The group a tab's pencil asked to rename, when the strip is the entry. */
-  const sidebarActions = useSidebarThreadActions();
+  const sidebarActions = useThreadActions();
   /** The workspace row a `+` asked to start a thread in, when there is one. */
   const [newThreadSeed, setNewThreadSeed] = useState<NewThreadSeed | null>(null);
   const inboxRef = useRef<HTMLDivElement>(null);
@@ -643,7 +652,7 @@ export function ThreadInbox({
     // project sorts inside its machine rather than inside a group the tree is
     // not drawing.
     const unfilteredProjectGroups = orderProjectGroups(
-      buildProjectGroups(active, projects),
+      buildProjectGroups(active, projects, workspaceOwnership),
       {
         assignment: organization.assignment,
         groupOrder: organization.sections.map((section) => section.id),
@@ -788,6 +797,8 @@ export function ThreadInbox({
         environments: new Map(Object.entries(paths.environments)),
         projects: new Map(Object.entries(paths.projects)),
         repoKeyByProject: repoFacts.repoKeyByProject,
+        workspaceOwnership,
+        unseenWorkspaces,
         mergeRepos: preferences.groupByRepository,
       }),
       searchQuery,
@@ -837,6 +848,8 @@ export function ThreadInbox({
     viewPreferences.projectSort,
     viewPreferences.threadSort,
     viewPreferences.worktreeSort,
+    unseenWorkspaces,
+    workspaceOwnership,
     threads,
   ]);
 
@@ -867,6 +880,8 @@ export function ThreadInbox({
    */
   const archived = useProjectArchivedThreads({
     projectIds: viewState.archivedProjects,
+    environments: paths.environments,
+    ownership: workspaceOwnership,
     limit: ARCHIVED_SHELF_LIMIT,
   });
 
@@ -1189,6 +1204,8 @@ export function ThreadInbox({
       group.families,
       new Map(Object.entries(paths.environments)),
       new Map(Object.entries(paths.projects)),
+      workspaceOwnership,
+      unseenWorkspaces?.[projectId] ?? [],
     );
     return {
       keys: orderWorkspaces(
@@ -1664,10 +1681,22 @@ export function ThreadInbox({
    * the dialog owns both the seed and the environment it finally submits.
    */
   function seedFromWorkspace({ node, projectId, projectName }: WorkspaceLaunch) {
-    const environment =
+    const environment: NewThreadSeed["environment"] =
       node.ref.environmentId === null
-        ? undefined
-        : ({ type: "reuse", environmentId: node.ref.environmentId } as const);
+        ? node.ref.path !== null && node.ref.hostId !== null
+          ? ({
+              type: "host",
+              hostId: node.ref.hostId,
+              workspace: {
+                type: "unmanaged",
+                path: node.ref.path,
+                branch: node.ref.branch === null
+                  ? undefined
+                  : { kind: "existing", name: node.ref.branch },
+              },
+            } satisfies NonNullable<NewThreadSeed["environment"]>)
+          : undefined
+        : { type: "reuse", environmentId: node.ref.environmentId };
     setNewThreadSeed({
       projectId,
       projectName,
@@ -1819,12 +1848,18 @@ export function ThreadInbox({
    * is — the cold-failure state below — rather than behind a setting nobody would
    * find while looking at a sidebar that is not working.
    */
-  const [showOriginal, setShowOriginal] = useState(false);
+  const [showFlatFallback, setShowFlatFallback] = useState(false);
 
-  if (showOriginal) {
+  if (showFlatFallback) {
     return (
       <div className={TREE_SCROLL_CLASS}>
-        <Original />
+        <FlatThreadFallback
+          threads={view.threads}
+          onOpen={(id) => {
+            sidebarActions.open(id);
+            onNavigate();
+          }}
+        />
       </div>
     );
   }
@@ -2035,7 +2070,7 @@ export function ThreadInbox({
               recovering={recovering}
               error={recoveryError}
               onRetry={recover}
-              onUseOriginal={() => setShowOriginal(true)}
+              onUseOriginal={() => setShowFlatFallback(true)}
             />
           ) : null
         ) : !lifecycle.shelvesReady ? null : nothingToShow ? (
@@ -2141,6 +2176,42 @@ export function ThreadInbox({
     </div>
     </NestViewStateProvider>
     </WorkingSinceContext.Provider>
+  );
+}
+
+/**
+ * A minimal flat list for a cold host failure.
+ *
+ * Current bb no longer hands the built-in list to a sidebar replacement. The
+ * recovery read still gives Nest the rows, so this keeps the escape hatch
+ * useful without pretending the plugin can mount the host's own component.
+ */
+function FlatThreadFallback({
+  threads,
+  onOpen,
+}: {
+  threads: readonly PluginSidebarThread[];
+  onOpen: (id: string) => void;
+}) {
+  const rows = sortByCreatedAtDescending(
+    threads.filter((thread) => !thread.isArchived && !thread.isHidden),
+  );
+  return (
+    <ul className="flex flex-col gap-px p-1.5" aria-label="Threads">
+      {rows.map((thread) => (
+        <li key={thread.id}>
+          <button
+            type="button"
+            onClick={() => onOpen(thread.id)}
+            className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-foreground/90 hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <span className="min-w-0 flex-1 truncate">
+              {threadDisplayTitle(thread)}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

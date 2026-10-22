@@ -70,6 +70,33 @@ function index(overrides: Partial<SidebarIndex> = {}): SidebarIndex {
     },
     repoFacts: {
       repoKeyByProject: { proj_main: "repo:remote:github.com/x/app", proj_other: "repo:dir:h:/repos/plugins" },
+      sourceRepoKeyByProject: {
+        proj_main: "repo:remote:github.com/x/app",
+        proj_other: "repo:dir:h:/repos/plugins",
+      },
+      workspaceOwnership: {
+        env_main: {
+          environmentId: "env_main",
+          claimedProjectId: "proj_main",
+          ownerProjectId: "proj_main",
+          workspaceKey: "ws:host_1:/repos/app",
+          repoKey: "repo:remote:github.com/x/app",
+          kind: "project-checkout",
+          confidence: "exact-source",
+          conflict: false,
+        },
+        env_wt: {
+          environmentId: "env_wt",
+          claimedProjectId: "proj_main",
+          ownerProjectId: "proj_main",
+          workspaceKey: "ws:host_1:/worktrees/app-wt",
+          repoKey: "repo:remote:github.com/x/app",
+          kind: "git-worktree",
+          confidence: "local-repository",
+          conflict: false,
+        },
+      },
+      unseenWorkspaces: {},
       repos: [
         {
           key: "repo:remote:github.com/x/app",
@@ -88,6 +115,10 @@ function index(overrides: Partial<SidebarIndex> = {}): SidebarIndex {
               environmentIds: ["env_main"],
               projectIds: ["proj_main"],
               repoKey: "repo:remote:github.com/x/app",
+              isMainWorktree: true,
+              isLinkedWorktree: false,
+              isNestedRepository: false,
+              repositoryRoot: "/repos/app",
             },
             {
               key: "ws:host_1:/worktrees/app-wt",
@@ -97,6 +128,10 @@ function index(overrides: Partial<SidebarIndex> = {}): SidebarIndex {
               environmentIds: ["env_wt"],
               projectIds: ["proj_main"],
               repoKey: "repo:remote:github.com/x/app",
+              isMainWorktree: false,
+              isLinkedWorktree: true,
+              isNestedRepository: false,
+              repositoryRoot: "/worktrees/app-wt",
             },
           ],
           unseenWorktrees: [
@@ -294,6 +329,10 @@ describe("fitting the summary into the host's budget", () => {
                   environmentIds: [],
                   projectIds: ["proj_main"],
                   repoKey: repo.key,
+                  isMainWorktree: false,
+                  isLinkedWorktree: true,
+                  isNestedRepository: false,
+                  repositoryRoot: `/very/long/worktree/path/number/${at}/inside/the/repository`,
                 })),
               }
             : repo,

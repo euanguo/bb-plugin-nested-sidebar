@@ -10,6 +10,7 @@ import {
 import { buildProjectGroups, type ThreadFamily } from "./inbox.ts";
 import { projectBadgePresentation } from "./project-colors.ts";
 import { rollupThreads, statusKindRank } from "./rollup.ts";
+import type { WorkspaceOwnershipMap } from "./workspace-ownership.ts";
 
 const ATTENTION_KINDS: ReadonlySet<FamilyStatusKind> = new Set([
   "failed",
@@ -70,6 +71,7 @@ export function titleAttentionEntries(input: {
   threads: readonly PluginSidebarThread[];
   projects: readonly PluginSidebarProject[];
   projectColors: ReadonlyMap<string, string>;
+  workspaceOwnership?: WorkspaceOwnershipMap;
   now: number;
   isActive: (thread: PluginSidebarThread) => boolean;
 }): TitleAttentionEntry[] {
@@ -77,7 +79,11 @@ export function titleAttentionEntries(input: {
     (thread) => !thread.isArchived && input.isActive(thread),
   );
   const entries: TitleAttentionEntry[] = [];
-  for (const group of buildProjectGroups(visible, input.projects)) {
+  for (const group of buildProjectGroups(
+    visible,
+    input.projects,
+    input.workspaceOwnership,
+  )) {
     for (const family of group.families) {
       const members = [family.root, ...family.children];
       const status = familyStatus(members, input.now);

@@ -1,8 +1,10 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import type { WorkspaceOwnershipMap } from "./workspace-ownership.ts";
 
 export type WorkspaceKind =
   | "project-checkout"
   | "git-worktree"
+  | "nested-checkout"
   | "external-checkout"
   | "external-directory"
   | "personal"
@@ -98,6 +100,7 @@ function labelFor(
   if (alias !== null) return alias;
   if (kind === "project-checkout") return branch ?? "Project checkout";
   if (kind === "git-worktree") return branch ?? basename(path) ?? "Git worktree";
+  if (kind === "nested-checkout") return basename(path) ?? "Nested checkout";
   if (kind === "external-checkout") return basename(path) ?? "External checkout";
   if (kind === "external-directory") return basename(path) ?? "External directory";
   if (kind === "unresolved") return environmentId === null ? "Unresolved workspace" : "Unresolved · " + environmentId.slice(-8);
@@ -180,6 +183,7 @@ export function workspaceRefOf(
   thread: PluginSidebarThread,
   environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor> = new Map(),
   projects: ReadonlyMap<string, WorkspaceProjectDescriptor> = new Map(),
+  ownership: WorkspaceOwnershipMap | undefined = undefined,
 ): WorkspaceRef {
   const environment = thread.environment;
   if (environment === null || environment.providerId === PERSONAL_WORKSPACE_PROVIDER) return NO_WORKSPACE;
@@ -202,7 +206,7 @@ export function workspaceRefOf(
     };
   }
 
-  return workspaceRefOfEnvironment(descriptor, projects) ?? NO_WORKSPACE;
+  return workspaceRefOfEnvironment(descriptor, projects, ownership) ?? NO_WORKSPACE;
 }
 
 /**
@@ -223,16 +227,19 @@ export function workspaceRefOf(
 export function workspaceRefOfEnvironment(
   descriptor: WorkspaceEnvironmentDescriptor,
   projects: ReadonlyMap<string, WorkspaceProjectDescriptor> = new Map(),
+  ownership: WorkspaceOwnershipMap | undefined = undefined,
 ): WorkspaceRef | null {
   if (descriptor.providerId === PERSONAL_WORKSPACE_PROVIDER) return null;
-  const project = projects.get(descriptor.projectId);
-  const kind = classifyWorkspace(descriptor, project);
+  const ownershipRow = ownership?.[descriptor.id];
+  const ownerProjectId = ownershipRow?.ownerProjectId ?? descriptor.projectId;
+  const project = projects.get(ownerProjectId);
+  const kind = ownershipRow?.kind ?? classifyWorkspace(descriptor, project);
   const path = normalizeWorkspacePath(descriptor.path);
   const alias = clean(descriptor.name);
   const branch = clean(descriptor.branchName);
   const key = path === null
     ? "environment:" + descriptor.id
-    : workspaceIdentityKey({ hostId: descriptor.hostId, projectId: descriptor.projectId, path });
+    : workspaceIdentityKey({ hostId: descriptor.hostId, projectId: ownerProjectId, path });
   return {
     kind,
     key,
@@ -243,7 +250,9 @@ export function workspaceRefOfEnvironment(
     environmentIds: [descriptor.id],
     path,
     hostId: descriptor.hostId,
-    diagnostic: kind === "external-checkout" || kind === "external-directory"
+    diagnostic: ownershipRow?.conflict === true
+      ? `bb files this workspace under ${descriptor.projectId}; filesystem ownership places it under ${ownerProjectId}.`
+      : kind === "external-checkout" || kind === "external-directory"
       ? "This environment is outside the project's configured source."
       : kind === "unresolved"
         ? "The workspace could not be classified from current metadata."
@@ -321,10 +330,11 @@ export function shouldShowWorkspaces(
 export function workspaceSortOrder(kind: WorkspaceKind): number {
   if (kind === "project-checkout") return 0;
   if (kind === "git-worktree") return 1;
-  if (kind === "external-checkout") return 2;
-  if (kind === "external-directory") return 3;
-  if (kind === "unresolved") return 4;
-  return 5;
+  if (kind === "nested-checkout") return 2;
+  if (kind === "external-checkout") return 3;
+  if (kind === "external-directory") return 4;
+  if (kind === "unresolved") return 5;
+  return 6;
 }
 
 export type WorkspaceLabelMode = "alias-over-branch" | "alias-and-branch" | "alias-only" | "branch-only";

@@ -19,7 +19,16 @@ class MemoryStorage implements ProjectOrderStorage {
 }
 
 function group(id: string): ProjectThreadGroup {
-  return { project: { id, name: id, isPersonal: false }, families: [] };
+  return {
+    project: {
+      id,
+      name: id,
+      isPersonal: false,
+      href: `/projects/${id}`,
+      settingsHref: `/projects/${id}/settings`,
+    },
+    families: [],
+  };
 }
 
 describe("project order", () => {

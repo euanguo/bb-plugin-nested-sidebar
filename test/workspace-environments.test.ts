@@ -24,6 +24,8 @@ function environmentRef(
     id,
     name,
     branchName,
+    path: null,
+    isWorktree: null,
     providerId: "project-checkout",
     workspaceDisplayKind: null,
   };
@@ -40,11 +42,17 @@ function thread(
     projectId,
     title: id,
     titleFallback: null,
+    displayTitle: id,
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: {
       workflows: 0,
@@ -57,7 +65,12 @@ function thread(
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
+    archivedAt: null,
+    href: `/projects/${projectId}/threads/${id}`,
+    isHidden: false,
     environment,
     host: null,
     createdAt: NOW - 1_000,
@@ -80,7 +93,16 @@ function group(
   id: string,
   families: ThreadFamily[],
 ): ProjectThreadGroup {
-  return { project: { id, name: id, isPersonal: false }, families };
+  return {
+    project: {
+      id,
+      name: id,
+      isPersonal: false,
+      href: `/projects/${id}`,
+      settingsHref: `/projects/${id}/settings`,
+    },
+    families,
+  };
 }
 
 function descriptor(
@@ -121,6 +143,7 @@ function tree(
   environments: ReadonlyMap<string, WorkspaceEnvironmentDescriptor> = new Map(),
   projects: ReadonlyMap<string, WorkspaceProjectDescriptor> = new Map(),
   worktreeSort: WorktreeSortMode = "manual",
+  workspaceOwnership = {},
 ) {
   return buildTree({
     projectGroups,
@@ -132,6 +155,7 @@ function tree(
     ungroupedIcon: "FolderTreeIcon",
     environments,
     projects,
+    workspaceOwnership,
   });
 }
 
@@ -244,6 +268,48 @@ describe("a workspace outlives the conversations in it", () => {
     assert.deepEqual(ids, ["env_mine"]);
   });
 
+  it("draws a workspace under its derived owner even when bb claimed another project", () => {
+    const wrong = descriptor("env_wrong", "p1", "/work/warren", {
+      isWorktree: false,
+      branchName: "main",
+    });
+    const ownership = {
+      env_wrong: {
+        environmentId: "env_wrong",
+        claimedProjectId: "p1",
+        ownerProjectId: "p2",
+        workspaceKey: "ws:host_1:/work/warren",
+        repoKey: "repo:remote:example/warren",
+        kind: "project-checkout" as const,
+        confidence: "exact-source" as const,
+        conflict: true,
+      },
+    };
+
+    const nodes = tree(
+      [group("p1", []), group("p2", [])],
+      descriptorMap(wrong),
+      projectMap(
+        { projectId: "p1", sourcePath: "/work/repo", sourceHostId: "host_1" },
+        { projectId: "p2", sourcePath: "/work/warren", sourceHostId: "host_1" },
+      ),
+      "manual",
+      ownership,
+    );
+
+    assert.deepEqual(
+      nodes[0]?.projects.map((project) => [
+        project.project.id,
+        project.workspaces.map((workspace) => workspace.ref.environmentId),
+        project.foreignClaimProjectIds,
+      ]),
+      [
+        ["p1", [], []],
+        ["p2", ["env_wrong"], ["p1"]],
+      ],
+    );
+  });
+
   /**
    * A personal workspace is not a place on disk, so it is not a row: it is what
    * `workspaceRefOf` reports as the no-workspace bucket.
@@ -310,6 +376,36 @@ describe("projectWorkspaceRefs", () => {
       projectWorkspaceRefs("p1", [], new Map(), projectMap()).size,
       0,
     );
+  });
+
+  it("includes a repository worktree that has no bb environment yet", () => {
+    const refs = projectWorkspaceRefs(
+      "p1",
+      [],
+      new Map(),
+      projectMap({
+        projectId: "p1",
+        sourcePath: "/work/repo",
+        sourceHostId: "host_1",
+      }),
+      {},
+      [
+        {
+          projectId: "p1",
+          repoKey: "repo:remote:example/app",
+          hostId: "host_1",
+          path: "/work/unseen",
+          branch: "feat/unseen",
+          detached: false,
+        },
+      ],
+    );
+
+    const ref = [...refs.values()][0];
+    assert.equal(ref?.environmentId, null);
+    assert.equal(ref?.kind, "git-worktree");
+    assert.equal(ref?.branch, "feat/unseen");
+    assert.equal(ref?.path, "/work/unseen");
   });
 });
 

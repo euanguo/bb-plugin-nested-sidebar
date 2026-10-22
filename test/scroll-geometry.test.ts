@@ -75,11 +75,11 @@ describe("sidebar scroll geometry", () => {
     assert.match(threadCard, /group\/child @container relative flex/);
   });
 
-  // Both occupants of the box, so bb's own list cannot arrive without the lane
+  // Both occupants of the box, so the flat fallback cannot arrive without the lane
   // and the clip the tree is documented to have.
-  it("gives bb's own list the same box as the tree", () => {
+  it("gives the flat recovery list the same box as the tree", () => {
     const uses = inbox.match(/className=\{TREE_SCROLL_CLASS\}/g) ?? [];
     assert.equal(uses.length, 2);
-    assert.match(inbox, /<Original \/>/);
+    assert.match(inbox, /<FlatThreadFallback/);
   });
 });

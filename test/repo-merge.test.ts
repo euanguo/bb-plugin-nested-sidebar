@@ -21,11 +21,17 @@ function thread(
     projectId,
     title: id,
     titleFallback: null,
+    displayTitle: id,
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: {
       workflows: 0,
@@ -38,7 +44,12 @@ function thread(
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
+    archivedAt: null,
+    href: `/projects/${projectId}/threads/${id}`,
+    isHidden: false,
     environment:
       environmentId === null
         ? null
@@ -46,6 +57,8 @@ function thread(
             id: environmentId,
             name: null,
             branchName: "main",
+            path: null,
+            isWorktree: false,
             providerId: "project-checkout",
             workspaceDisplayKind: null,
           },
@@ -62,7 +75,16 @@ function family(id: string, projectId: string, environmentId: string | null): Th
 }
 
 function group(id: string, families: ThreadFamily[]): ProjectThreadGroup {
-  return { project: { id, name: id, isPersonal: false }, families };
+  return {
+    project: {
+      id,
+      name: id,
+      isPersonal: false,
+      href: `/projects/${id}`,
+      settingsHref: `/projects/${id}/settings`,
+    },
+    families,
+  };
 }
 
 function environment(

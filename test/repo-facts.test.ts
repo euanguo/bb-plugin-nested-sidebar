@@ -11,6 +11,8 @@ function fact(hostId: string, path: string): WorkspaceFacts {
     isDirectory: true,
     isMainWorktree: false,
     isLinkedWorktree: false,
+    isNestedRepository: false,
+    repositoryRoot: path,
     commonDir: null,
     remoteUrl: null,
     worktrees: [],

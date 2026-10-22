@@ -51,6 +51,22 @@ function index(): SidebarIndex {
     },
     repoFacts: {
       repoKeyByProject: { proj_main: "repo:remote:github.com/x/app" },
+      sourceRepoKeyByProject: {
+        proj_main: "repo:remote:github.com/x/app",
+      },
+      workspaceOwnership: {
+        env_wt: {
+          environmentId: "env_wt",
+          claimedProjectId: "proj_main",
+          ownerProjectId: "proj_main",
+          workspaceKey: "ws:1",
+          repoKey: "repo:remote:github.com/x/app",
+          kind: "git-worktree",
+          confidence: "local-repository",
+          conflict: false,
+        },
+      },
+      unseenWorkspaces: {},
       repos: [
         {
           key: "repo:remote:github.com/x/app",
@@ -69,6 +85,10 @@ function index(): SidebarIndex {
               environmentIds: ["env_wt"],
               projectIds: ["proj_main"],
               repoKey: "repo:remote:github.com/x/app",
+              isMainWorktree: false,
+              isLinkedWorktree: true,
+              isNestedRepository: false,
+              repositoryRoot: "/worktrees/app-wt",
             },
           ],
           unseenWorktrees: [

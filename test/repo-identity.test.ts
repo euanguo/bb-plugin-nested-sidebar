@@ -43,6 +43,8 @@ function facts(
     isDirectory: true,
     isMainWorktree: true,
     isLinkedWorktree: false,
+    isNestedRepository: false,
+    repositoryRoot: overrides.realPath,
     commonDir: `${overrides.realPath}/.git`,
     remoteUrl: null,
     worktrees: [],
@@ -170,6 +172,43 @@ describe("keying a repository", () => {
 });
 
 describe("grouping workspaces into repositories", () => {
+  it("keys a project by its source, not by the first environment that claims it", () => {
+    const root = "/repos/app";
+    const result = inferRepos({
+      environments: [
+        environment({ id: "env_a", projectId: "proj", path: "/repos/wrong" }),
+      ],
+      projects: new Map([["proj", project("proj", root)]]),
+      facts: [
+        facts({
+          path: root,
+          realPath: root,
+          commonDir: `${root}/.git`,
+          remoteUrl: "https://github.com/example/app.git",
+        }),
+        facts({
+          path: "/repos/wrong",
+          realPath: "/repos/wrong",
+          commonDir: "/repos/wrong/.git",
+          remoteUrl: "https://github.com/example/wrong.git",
+        }),
+      ],
+    });
+
+    assert.equal(
+      result.repoKeyByProject.get("proj"),
+      "repo:remote:github.com/example/app",
+    );
+    assert.equal(
+      result.sourceRepoKeyByProject.get("proj"),
+      "repo:remote:github.com/example/app",
+    );
+    assert.equal(
+      result.sourceByProject.get("proj")?.repositoryRoot,
+      root,
+    );
+  });
+
   it("draws one repository under one node when bb filed it as two projects", () => {
     const root = "/repos/app";
     const worktree = "/repos/app-wt";

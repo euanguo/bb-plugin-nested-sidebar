@@ -14,25 +14,51 @@ import {
   type WorkspaceRef,
 } from "../lib/workspace.ts";
 
-function thread(environment: PluginSidebarThread["environment"]): PluginSidebarThread {
+type FixtureEnvironment = Omit<
+  NonNullable<PluginSidebarThread["environment"]>,
+  "path" | "isWorktree"
+> & {
+  readonly path?: string | null;
+  readonly isWorktree?: boolean | null;
+};
+
+function thread(environment: FixtureEnvironment | null): PluginSidebarThread {
   return {
     id: "thr_fixture",
     projectId: "proj_fixture",
     title: "Fixture",
     titleFallback: null,
+    displayTitle: "Fixture",
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 0 },
     indicator: "none",
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
-    environment,
+    archivedAt: null,
+    href: "/projects/proj_fixture/threads/thr_fixture",
+    isHidden: false,
+    environment:
+      environment === null
+        ? null
+        : {
+            path: null,
+            isWorktree: null,
+            ...environment,
+          },
     host: { id: "host_fixture", name: "Fixture host" },
     createdAt: 0,
     updatedAt: 0,
@@ -65,7 +91,15 @@ const project: WorkspaceProjectDescriptor = {
 
 function resolve(env: WorkspaceEnvironmentDescriptor): WorkspaceRef {
   return workspaceRefOf(
-    thread({ id: env.id, name: env.name, branchName: env.branchName, providerId: env.providerId, workspaceDisplayKind: env.workspaceDisplayKind }),
+    thread({
+      id: env.id,
+      name: env.name,
+      branchName: env.branchName,
+      path: env.path,
+      isWorktree: env.isWorktree,
+      providerId: env.providerId,
+      workspaceDisplayKind: env.workspaceDisplayKind,
+    }),
     new Map([[env.id, env]]),
     new Map([[project.projectId, project]]),
   );
@@ -169,7 +203,7 @@ describe("workspace labels and order", () => {
   });
 
   it("orders project checkout before worktrees and diagnostics", () => {
-    const kinds = ["unresolved", "git-worktree", "project-checkout", "external-checkout"] as const;
-    assert.deepEqual([...kinds].sort((a, b) => workspaceSortOrder(a) - workspaceSortOrder(b)), ["project-checkout", "git-worktree", "external-checkout", "unresolved"]);
+    const kinds = ["unresolved", "external-checkout", "nested-checkout", "git-worktree", "project-checkout"] as const;
+    assert.deepEqual([...kinds].sort((a, b) => workspaceSortOrder(a) - workspaceSortOrder(b)), ["project-checkout", "git-worktree", "nested-checkout", "external-checkout", "unresolved"]);
   });
 });

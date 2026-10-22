@@ -68,25 +68,45 @@ export interface SettledThreadRow extends SidebarThreadRowBase {
  */
 export function toSidebarThread(row: SettledThreadRow): PluginSidebarThread {
   const { indicator, indicatorLabel } = deriveIndicator(row);
+  const status =
+    row.status === "active" ||
+    row.status === "error" ||
+    row.status === "idle" ||
+    row.status === "pending" ||
+    row.status === "starting" ||
+    row.status === "stopping"
+      ? row.status
+      : "idle";
   return {
     id: row.id,
     projectId: row.projectId,
     title: row.title,
     titleFallback: row.titleFallback,
+    displayTitle: row.title?.trim() || row.titleFallback?.trim() || row.id,
     parentThreadId: row.parentThreadId,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: row.sectionId,
     originKind: originKindFor(row.originKind),
     originPluginId: row.originPluginId,
     providerId: row.providerId,
+    status,
+    runtimeStatus: status,
+    queuedWork: "none",
     hasPendingInteraction: row.hasPendingInteraction,
     activity: row.activity,
     indicator,
     indicatorLabel,
     isUnread: isUnread(row),
     isPinned: row.isPinned,
+    pinnedAt: null,
+    pinSortKey: null,
     // The one field the host would never report as true, and the reason this
     // whole path exists.
     isArchived: true,
+    archivedAt: row.updatedAt,
+    href: `/projects/${row.projectId}/threads/${row.id}`,
+    isHidden: false,
     environment: null,
     host: null,
     createdAt: row.createdAt,

@@ -31,6 +31,8 @@ import type {
  * absent from bb's environment table.
  */
 export interface RepoWorktree {
+  /** The machine that supplied this record, when inference added the context. */
+  readonly hostId?: string | null;
   /** Absolute path as the repository records it. */
   readonly path: string;
   readonly branch: string | null;
@@ -59,6 +61,10 @@ export interface WorkspaceFacts {
   readonly isMainWorktree: boolean;
   /** `.git` is a file here: a linked worktree of some other checkout. */
   readonly isLinkedWorktree: boolean;
+  /** A `.git` file points at its own repository, as inside a submodule. */
+  readonly isNestedRepository: boolean;
+  /** The working-tree root whose `.git` supplied the facts below. */
+  readonly repositoryRoot: string | null;
   /** The `.git` directory every worktree of this repository shares. */
   readonly commonDir: string | null;
   /** `remote.<name>.url` from the repository's config. */
@@ -81,6 +87,10 @@ export interface PhysicalWorkspace {
   /** The bb projects those records claim. */
   readonly projectIds: readonly string[];
   readonly repoKey: string;
+  readonly isMainWorktree: boolean;
+  readonly isLinkedWorktree: boolean;
+  readonly isNestedRepository: boolean;
+  readonly repositoryRoot: string | null;
 }
 
 export type RepoKind = "git-remote" | "git-local" | "directory";
@@ -105,6 +115,8 @@ export type RepoDiagnosticCode =
   | "split-repo"
   | "multi-repo-project"
   | "orphan-workspace"
+  | "ownership-conflict"
+  | "ambiguous-owner"
   | "dangling-path"
   | "duplicate-path"
   | "unseen-worktree"
@@ -288,11 +300,33 @@ export interface RepoInferenceInput {
   readonly facts: Iterable<WorkspaceFacts>;
 }
 
+/** The physical answer for one project's configured source. */
+export interface ProjectSourceFacts {
+  readonly projectId: string;
+  readonly hostId: string;
+  readonly path: string;
+  readonly repoKey: string;
+  readonly isGitRepository: boolean;
+  readonly repositoryRoot: string | null;
+  /** The raw host observation, retained so a source-only repo can still be shown. */
+  readonly facts: WorkspaceFacts | null;
+}
+
 export interface RepoInference {
   readonly repos: readonly RepoIdentity[];
   readonly diagnostics: readonly RepoDiagnostic[];
   /** projectId -> repoKey, for a caller that only wants the grouping. */
   readonly repoKeyByProject: ReadonlyMap<string, string>;
+  /** projectId -> the physical source every ownership decision starts from. */
+  readonly sourceByProject: ReadonlyMap<string, ProjectSourceFacts>;
+  /**
+   * The repository named by the source path itself.
+   *
+   * This is deliberately different from `repoKeyByProject`: that compatibility
+   * map follows environments when a project has no readable source, while this
+   * one answers the ownership question and never follows a claimed workspace.
+   */
+  readonly sourceRepoKeyByProject: ReadonlyMap<string, string>;
 }
 
 /**
@@ -307,6 +341,11 @@ export interface RepoFacts {
   readonly repos: readonly RepoIdentity[];
   readonly diagnostics: readonly RepoDiagnostic[];
   readonly repoKeyByProject: Readonly<Record<string, string>>;
+  readonly sourceRepoKeyByProject: Readonly<Record<string, string>>;
+  readonly workspaceOwnership: Readonly<Record<string, import("./workspace-ownership.ts").WorkspaceOwnership>>;
+  readonly unseenWorkspaces: Readonly<
+    Record<string, readonly import("./workspace-ownership.ts").UnseenOwnedWorkspace[]>
+  >;
   /** Machines that did not answer; their workspaces are drawn unverified. */
   readonly unavailableHostIds: readonly string[];
 }
@@ -316,6 +355,9 @@ export const NO_REPO_FACTS: RepoFacts = {
   repos: [],
   diagnostics: [],
   repoKeyByProject: {},
+  sourceRepoKeyByProject: {},
+  workspaceOwnership: {},
+  unseenWorkspaces: {},
   unavailableHostIds: [],
 };
 
@@ -337,6 +379,10 @@ export const NO_REPO_FACTS: RepoFacts = {
     environmentIds: string[];
     projectIds: string[];
     repoKey: string;
+    isMainWorktree: boolean;
+    isLinkedWorktree: boolean;
+    isNestedRepository: boolean;
+    repositoryRoot: string | null;
   }>();
   const diagnostics: RepoDiagnostic[] = [];
   const unverified = new Map<string, string[]>();
@@ -371,6 +417,10 @@ export const NO_REPO_FACTS: RepoFacts = {
         environmentIds: [environment.id],
         projectIds: [environment.projectId],
         repoKey,
+        isMainWorktree: facts?.isMainWorktree ?? false,
+        isLinkedWorktree: facts?.isLinkedWorktree ?? false,
+        isNestedRepository: facts?.isNestedRepository ?? false,
+        repositoryRoot: facts?.repositoryRoot ?? null,
       });
     } else {
       if (!existing.rawPaths.includes(rawPath)) existing.rawPaths.push(rawPath);
@@ -416,16 +466,32 @@ export const NO_REPO_FACTS: RepoFacts = {
   // matters is whether the workspace is in a *different repository* from the
   // one its project points at, which is the mistake worth reporting.
   const sourceRepoKeyByProject = new Map<string, string>();
+  const sourceByProject = new Map<string, ProjectSourceFacts>();
   for (const [projectId, project] of input.projects) {
     const { sourcePath, sourceHostId } = project;
     if (sourcePath === null || sourceHostId === null) continue;
     const sourceFacts = factsFor(factsIndex, sourceHostId, sourcePath);
-    sourceRepoKeyByProject.set(
+    const sourcePathCanonical =
+      normalizeRepoPath(sourceFacts?.realPath ?? null) ??
+      normalizeRepoPath(sourcePath) ??
+      sourcePath;
+    const repoKey = sourceFacts === undefined
+      ? `repo:dir:${sourceHostId}:${sourcePathCanonical}`
+      : repoKeyOf(sourceFacts);
+    sourceRepoKeyByProject.set(projectId, repoKey);
+    sourceByProject.set(projectId, {
       projectId,
-      sourceFacts === undefined
-        ? `repo:dir:${sourceHostId}:${normalizeRepoPath(sourcePath) ?? sourcePath}`
-        : repoKeyOf(sourceFacts),
-    );
+      hostId: sourceHostId,
+      path: sourcePathCanonical,
+      repoKey,
+      isGitRepository:
+        sourceFacts !== undefined &&
+        sourceFacts.commonDir !== null,
+      repositoryRoot:
+        sourceFacts?.repositoryRoot ??
+        (sourceFacts?.isMainWorktree === true ? sourceFacts.realPath : null),
+      facts: sourceFacts ?? null,
+    });
   }
 
   const repos = new Map<string, {
@@ -437,7 +503,7 @@ export const NO_REPO_FACTS: RepoFacts = {
     hostIds: string[];
     projectIds: string[];
     workspaces: PhysicalWorkspace[];
-    facts: WorkspaceFacts | null;
+    factsByHost: Map<string, WorkspaceFacts>;
   }>();
 
   for (const workspace of workspaces.values()) {
@@ -448,14 +514,22 @@ export const NO_REPO_FACTS: RepoFacts = {
       name: repoName(facts?.remoteUrl ?? null, facts?.realPath ?? workspace.path),
       remoteUrl: normalizeRemoteUrl(facts?.remoteUrl ?? null),
       rootPath: null,
-      hostIds: [],
-      projectIds: [],
-      workspaces: [],
-      facts: null,
+      hostIds: [] as string[],
+      projectIds: [] as string[],
+      workspaces: [] as PhysicalWorkspace[],
+      factsByHost: new Map<string, WorkspaceFacts>(),
     };
 
     if (facts !== undefined && facts.isMainWorktree) bucket.rootPath = facts.realPath;
-    if (bucket.facts === null) bucket.facts = facts ?? null;
+    if (bucket.rootPath === null) {
+      const source = [...sourceByProject.values()].find(
+        (candidate) =>
+          candidate.repoKey === workspace.repoKey &&
+          sourceRepoKeyByProject.get(candidate.projectId) === workspace.repoKey,
+      );
+      bucket.rootPath = source?.repositoryRoot ?? null;
+    }
+    if (facts !== undefined) bucket.factsByHost.set(workspace.hostId, facts);
     if (!bucket.hostIds.includes(workspace.hostId)) bucket.hostIds.push(workspace.hostId);
     for (const projectId of workspace.projectIds) {
       if (!bucket.projectIds.includes(projectId)) bucket.projectIds.push(projectId);
@@ -468,23 +542,66 @@ export const NO_REPO_FACTS: RepoFacts = {
       environmentIds: workspace.environmentIds,
       projectIds: workspace.projectIds,
       repoKey: workspace.repoKey,
+      isMainWorktree: workspace.isMainWorktree,
+      isLinkedWorktree: workspace.isLinkedWorktree,
+      isNestedRepository: workspace.isNestedRepository,
+      repositoryRoot: workspace.repositoryRoot,
     });
     repos.set(workspace.repoKey, bucket);
+  }
+
+  for (const source of sourceByProject.values()) {
+    const bucket = repos.get(source.repoKey) ?? {
+      key: source.repoKey,
+      kind:
+        source.facts === null
+          ? ("directory" as RepoKind)
+          : repoKindOf(source.facts),
+      name: repoName(source.facts?.remoteUrl ?? null, source.path),
+      remoteUrl: normalizeRemoteUrl(source.facts?.remoteUrl ?? null),
+      rootPath: source.repositoryRoot,
+      hostIds: [] as string[],
+      projectIds: [] as string[],
+      workspaces: [] as PhysicalWorkspace[],
+      factsByHost: new Map<string, WorkspaceFacts>(),
+    };
+    if (!bucket.hostIds.includes(source.hostId)) bucket.hostIds.push(source.hostId);
+    if (!bucket.projectIds.includes(source.projectId)) {
+      bucket.projectIds.push(source.projectId);
+    }
+    if (source.facts !== null) {
+      bucket.factsByHost.set(source.hostId, source.facts);
+      bucket.rootPath ??= source.repositoryRoot;
+    }
+    repos.set(source.repoKey, bucket);
   }
 
   const result: RepoIdentity[] = [];
   for (const bucket of repos.values()) {
     const localDiagnostics: RepoDiagnostic[] = [];
-    const known = new Set(bucket.workspaces.map((workspace) => workspace.path));
+    const knownByHost = new Map<string, Set<string>>();
+    for (const workspace of bucket.workspaces) {
+      const known = knownByHost.get(workspace.hostId) ?? new Set<string>();
+      known.add(workspace.path);
+      knownByHost.set(workspace.hostId, known);
+    }
 
     // A repository the user cannot see all of. The repository's own record is
     // the only place a worktree made by another tool shows up.
     const unseen: RepoWorktree[] = [];
-    for (const worktree of bucket.facts?.worktrees ?? []) {
-      const real = normalizeRepoPath(worktree.path);
-      if (real !== null && known.has(real)) continue;
-      unseen.push(worktree);
+    for (const [hostId, facts] of bucket.factsByHost) {
+      const known = knownByHost.get(hostId) ?? new Set<string>();
+      for (const worktree of facts.worktrees) {
+        const real = normalizeRepoPath(worktree.path);
+        if (real !== null && known.has(real)) continue;
+        unseen.push({ ...worktree, hostId });
+      }
     }
+    unseen.sort(
+      (left, right) =>
+        (left.hostId ?? "").localeCompare(right.hostId ?? "") ||
+        left.path.localeCompare(right.path),
+    );
     if (unseen.length > 0) {
       localDiagnostics.push({
         code: "unseen-worktree",
@@ -495,6 +612,9 @@ export const NO_REPO_FACTS: RepoFacts = {
           `${unseen.length === 1 ? "" : "s"} that bb has no environment for.`,
       });
     }
+    const known = new Set(
+      [...knownByHost.values()].flatMap((paths) => [...paths]),
+    );
 
     if (bucket.projectIds.length > 1) {
       localDiagnostics.push({
@@ -577,13 +697,22 @@ export const NO_REPO_FACTS: RepoFacts = {
   result.sort((left, right) => left.name.localeCompare(right.name) || left.key.localeCompare(right.key));
 
   const repoKeyByProject = new Map<string, string>();
+  for (const [projectId, repoKey] of sourceRepoKeyByProject) {
+    repoKeyByProject.set(projectId, repoKey);
+  }
   for (const repo of result) {
     for (const projectId of repo.projectIds) {
       if (!repoKeyByProject.has(projectId)) repoKeyByProject.set(projectId, repo.key);
     }
   }
 
-  return { repos: result, diagnostics, repoKeyByProject };
+  return {
+    repos: result,
+    diagnostics,
+    repoKeyByProject,
+    sourceByProject,
+    sourceRepoKeyByProject,
+  };
 }
 
 /** Whether `path` is `root` or lives under it. Path segments, not prefixes. */

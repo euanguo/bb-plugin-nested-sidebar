@@ -29,6 +29,10 @@ export const WORKTREE_LABEL_OPTIONS = [
   "Alias only",
   "Branch only",
 ] as const;
+export const WORKSPACE_OWNERSHIP_OPTIONS = [
+  "Filesystem",
+  "bb claims",
+] as const;
 
 export type PalettePreset = (typeof PALETTE_PRESET_OPTIONS)[number];
 export type RowLayout = "two-line" | "one-line";
@@ -37,6 +41,7 @@ export type StatusDisplay = "dot" | "icon";
 export type RowDetailPlacement = "row" | "row-no-branch" | "hover";
 export type WorktreeLabelOption = (typeof WORKTREE_LABEL_OPTIONS)[number];
 export type RowDetailOption = (typeof ROW_DETAIL_OPTIONS)[number];
+export type WorkspaceOwnershipMode = "filesystem" | "claimed";
 
 /** The declared option labels, mapped onto the row's own vocabulary. */
 const ROW_DETAIL_MODES: Readonly<Record<RowDetailOption, RowDetailPlacement>> = {
@@ -107,6 +112,19 @@ export interface NestPreferences {
    * sidebar asks for it and whether the answer is drawn.
    */
   autoProjectIcons: boolean;
+  /**
+   * Whether the tree follows each project's source and repository facts or
+   * preserves bb's claimed environment project.
+   */
+  workspaceOwnership: WorkspaceOwnershipMode;
+  /**
+   * Whether repository-recorded worktrees with no bb environment are drawn.
+   *
+   * Off by default: they are useful to adopt, but they are not places bb can
+   * already run a thread and should not expand every project that happens to
+   * have an external worktree.
+   */
+  showUnregisteredWorktrees: boolean;
   /**
    * Whether one repository is drawn as one row.
    *
@@ -288,6 +306,18 @@ export function resolveNestPreferences(
     showChildCount: readBoolean(values?.showChildCount, true),
     showThreadLocation: readBoolean(values?.showThreadLocation, true),
     autoProjectIcons: readBoolean(values?.autoProjectIcons, true),
+    workspaceOwnership:
+      readOption(
+        values?.workspaceOwnership,
+        WORKSPACE_OWNERSHIP_OPTIONS,
+        "Filesystem",
+      ) === "Filesystem"
+        ? "filesystem"
+        : "claimed",
+    showUnregisteredWorktrees: readBoolean(
+      values?.showUnregisteredWorktrees,
+      false,
+    ),
     groupByRepository: readBoolean(values?.groupByRepository, false),
     pageSize: resolvePageSize(values?.pageSize),
   };

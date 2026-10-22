@@ -29,7 +29,7 @@ import type {
 } from "../workspace.ts";
 
 /** Bumped whenever the shape below changes, so an old row is discarded. */
-export const SIDEBAR_INDEX_VERSION = 1;
+export const SIDEBAR_INDEX_VERSION = 2;
 
 /**
  * One row, because there is one index.

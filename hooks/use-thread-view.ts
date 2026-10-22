@@ -93,7 +93,11 @@ export function useThreadView(): ThreadViewApi {
         if (!mounted.current) return;
         setRecovered({
           threads: toRecoveryThreads(result.threads),
-          projects: result.projects,
+          projects: result.projects.map((project) => ({
+            ...project,
+            href: `/projects/${project.id}`,
+            settingsHref: `/projects/${project.id}/settings`,
+          })),
         });
       })
       .catch((error: unknown) => {

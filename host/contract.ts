@@ -28,6 +28,8 @@ const workspaceFactSchema = z
     isDirectory: z.boolean(),
     isMainWorktree: z.boolean(),
     isLinkedWorktree: z.boolean(),
+    isNestedRepository: z.boolean(),
+    repositoryRoot: z.string().min(1).nullable(),
     commonDir: z.string().min(1).nullable(),
     remoteUrl: z.string().min(1).nullable(),
     worktrees: z.array(worktreeFactSchema).readonly(),

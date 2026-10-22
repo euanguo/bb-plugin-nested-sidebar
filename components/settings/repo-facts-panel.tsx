@@ -34,6 +34,9 @@ export function RepoFactsPanel() {
     (total, repo) => total + repo.unseenWorktrees.length,
     0,
   );
+  const ownershipConflicts = Object.values(facts.workspaceOwnership).filter(
+    (ownership) => ownership.conflict,
+  );
 
   return (
     <div data-nest-repo-facts="" className="space-y-2 text-2xs">
@@ -43,6 +46,9 @@ export function RepoFactsPanel() {
         </span>{" "}
         read from disk. {unseen} worktree{unseen === 1 ? "" : "s"} the repository
         records {unseen === 1 ? "is" : "are"} not in bb.{" "}
+        {ownershipConflicts.length === 0
+          ? "Every visible workspace belongs to its claimed project."
+          : `${ownershipConflicts.length} workspace record${ownershipConflicts.length === 1 ? " is" : "s are"} drawn under its filesystem owner instead of its claimed project.`}{" "}
         {facts.unavailableHostIds.length > 0
           ? `${facts.unavailableHostIds.length} machine(s) did not answer, so their workspaces are drawn unverified.`
           : "Every machine answered."}
@@ -82,6 +88,8 @@ const DIAGNOSTIC_LABELS: Readonly<Record<RepoDiagnostic["code"], string>> = {
   "split-repo": "One repository, several projects",
   "multi-repo-project": "One project, several repositories",
   "orphan-workspace": "Workspace in another repository",
+  "ownership-conflict": "Workspace moved to its filesystem owner",
+  "ambiguous-owner": "Repository shared by several projects",
   "dangling-path": "Path could not be read",
   "duplicate-path": "Two records for one directory",
   "unseen-worktree": "Worktree bb does not know",

@@ -1,8 +1,8 @@
 import {
-  experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
+import { useThreadActions } from "@/hooks/use-thread-actions";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { ThreadRowMenu } from "@/components/inbox/thread-menu-items";
@@ -34,7 +34,7 @@ export function SlimRow({
   onNavigate: () => void;
   onRestore: () => void;
 }) {
-  const actions = useSidebarThreadActions();
+  const actions = useThreadActions();
   /**
    * A parked row is still a thread, so it is still a split source.
    *

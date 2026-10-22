@@ -21,7 +21,7 @@
  *   shelf gets, rather than a second, quieter failure path.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useRpc,
   type PluginSidebarThread,
@@ -29,6 +29,8 @@ import {
 import type { nestRpcContract } from "@/server";
 import { useCoalescedRealtime } from "@/hooks/use-coalesced-realtime";
 import { toArchivedThread, type RecoveryThreadRow } from "@/lib/recovery-threads";
+import type { WorkspaceEnvironmentDescriptor } from "@/lib/workspace";
+import type { WorkspaceOwnershipMap } from "@/lib/workspace-ownership";
 
 export interface ProjectArchivedThreadsApi {
   /** Archived rows per project id, for the projects whose shelf is on. */
@@ -39,10 +41,16 @@ export interface ProjectArchivedThreadsApi {
 
 export function useProjectArchivedThreads({
   projectIds,
+  environments,
+  ownership,
   limit,
 }: {
   /** The projects whose shelf is on. Empty means nothing is read. */
   projectIds: readonly string[];
+  /** Every environment, for deriving the physical rows under each project. */
+  environments: Readonly<Record<string, WorkspaceEnvironmentDescriptor>>;
+  /** Filesystem ownership when that view is enabled, absent in claimed mode. */
+  ownership: WorkspaceOwnershipMap | undefined;
   limit: number;
 }): ProjectArchivedThreadsApi {
   const rpc = useRpc<typeof nestRpcContract>();
@@ -61,8 +69,44 @@ export function useProjectArchivedThreads({
   // comparator is explicit rather than `sort()`'s implicit string order: the key
   // is a join on a separator, and a sort that depends on the engine's default is
   // not a thing to leave unsaid.
+  const requestByProject = useMemo(
+    () =>
+      new Map(
+        projectIds.map((projectId) => {
+          const owned = Object.values(environments).filter(
+            (environment) =>
+              ownership === undefined
+                ? environment.projectId === projectId
+                : ownership[environment.id]?.ownerProjectId === projectId,
+          );
+          const environmentIds = owned.map((environment) => environment.id);
+          const actualProjectIds = [
+            projectId,
+            ...owned.map((environment) => environment.projectId),
+          ];
+          return [
+            projectId,
+            {
+              projectIds: [...new Set(actualProjectIds)].sort(),
+              environmentIds: [...new Set(environmentIds)].sort(),
+            },
+          ] as const;
+        }),
+      ),
+    [environments, ownership, projectIds],
+  );
   const key = [...projectIds]
     .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+    .map((projectId) => {
+      const request = requestByProject.get(projectId);
+      return request === undefined
+        ? projectId
+        : [
+            projectId,
+            request.projectIds.join(","),
+            request.environmentIds.join(","),
+          ].join("|");
+    })
     .join("\u0000");
 
   // Only the newest read may write: two reads race whenever the shelf is toggled
@@ -79,11 +123,17 @@ export function useProjectArchivedThreads({
     const results = await Promise.all(
       ids.map(
         async (
-          projectId,
+          encoded,
         ): Promise<readonly [string, readonly PluginSidebarThread[] | null]> => {
+          const projectId = encoded.split("|")[0] ?? encoded;
+          const request = requestByProject.get(projectId);
           try {
             const result = await rpc.call("listProjectArchivedThreads", {
               projectId,
+              ownershipMode:
+                ownership === undefined ? "claimed" : "filesystem",
+              projectIds: request?.projectIds,
+              environmentIds: request?.environmentIds,
               limit,
             });
             return [
@@ -108,7 +158,7 @@ export function useProjectArchivedThreads({
       if (threads !== null) next.set(projectId, threads);
     }
     setByProject(next);
-  }, [key, limit, rpc]);
+  }, [key, limit, requestByProject, rpc]);
 
   useEffect(() => {
     void read();

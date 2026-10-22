@@ -20,6 +20,8 @@ describe("resolveNestPreferences", () => {
     assert.equal(loading.showRelativeTime, true);
     assert.equal(loading.showChildCount, true);
     assert.equal(loading.showThreadLocation, true);
+    assert.equal(loading.workspaceOwnership, "filesystem");
+    assert.equal(loading.showUnregisteredWorktrees, false);
     assert.equal(loading.pageSize, 5);
     assert.equal(loading.colors.working, "#34A853");
     assert.equal(loading.colors.prReady, "#34A853");
@@ -39,6 +41,34 @@ describe("resolveNestPreferences", () => {
     assert.equal(malformed.defaultChildrenExpanded, true);
     assert.equal(malformed.showProviderIcons, true);
     assert.equal(malformed.pageSize, 5);
+  });
+
+  it("can restore bb's claimed workspace ownership", () => {
+    assert.equal(
+      resolveNestPreferences({ workspaceOwnership: "bb claims" })
+        .workspaceOwnership,
+      "claimed",
+    );
+    assert.equal(
+      resolveNestPreferences({ workspaceOwnership: "Unknown" })
+        .workspaceOwnership,
+      "filesystem",
+    );
+  });
+
+  it("shows unregistered worktrees only when explicitly enabled", () => {
+    assert.equal(
+      resolveNestPreferences({
+        showUnregisteredWorktrees: true,
+      }).showUnregisteredWorktrees,
+      true,
+    );
+    assert.equal(
+      resolveNestPreferences({
+        showUnregisteredWorktrees: "yes",
+      }).showUnregisteredWorktrees,
+      false,
+    );
   });
 
   it("takes a configured page size, bounded", () => {
