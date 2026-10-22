@@ -10,6 +10,12 @@ const menu = await readFile(
   new URL("../components/inbox/thread-menu-items.tsx", import.meta.url),
   "utf8",
 );
+const packageJson = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+) as {
+  engines: Record<string, string>;
+  devDependencies: Record<string, string>;
+};
 
 describe("current bb thread actions", () => {
   it("adapts navigation and mutations over the current browser SDK", () => {
@@ -30,9 +36,15 @@ describe("current bb thread actions", () => {
     assert.doesNotMatch(menu, /experimental_useSidebarThreadActions/);
   });
 
-  it("routes destructive deletion through bb's registered delete action", () => {
-    assert.match(menu, /experimental_useThreadActions\(actionTarget\)/);
-    assert.match(menu, /entry\.pluginId === "bb--core"/);
-    assert.match(menu, /deleteAction\.action\.run\(\)/);
+  it("confirms destructive deletion before calling the thread API", () => {
+    assert.match(menu, /function DeleteThreadDialog/);
+    assert.match(menu, /childThreadsConfirmed: true/);
+    assert.match(menu, /sdk\.threads\.delete/);
+  });
+
+  it("pins the lowest SDK surface the compatibility adapter supports", () => {
+    assert.equal(packageJson.devDependencies["@get-bb/plugin-sdk"], "0.5.8");
+    assert.equal(packageJson.engines.bbPluginSdk, ">=0.5.8");
+    assert.equal(packageJson.engines.bb, ">=0.36");
   });
 });

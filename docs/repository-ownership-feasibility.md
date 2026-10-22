@@ -47,7 +47,7 @@ Implementation outcome:
   and unobserved paths.
 - bb's environment and thread records remain untouched; ownership conflicts
   remain visible as diagnostics.
-- The plugin uses the current bb 0.6.65 Plugin SDK surface.
+- The plugin compiles against the minimum supported Plugin SDK, 0.5.8.
 
 ## Reproduction
 
@@ -141,7 +141,7 @@ Therefore the current setting cannot be relied on as the final ownership model.
 
 ## SDK Constraints
 
-Checked against the installed `@get-bb/plugin-sdk` 0.6.65 declarations.
+Checked against the minimum supported `@get-bb/plugin-sdk` 0.5.8 declarations.
 
 `environments.update()` accepts only:
 
@@ -568,7 +568,7 @@ remain out of scope until bb exposes a first-party move operation.
 Before this investigation, the repository had:
 
 ```text
-937 tests passing
+938 tests passing
 TypeScript typecheck passing
 ```
 
@@ -597,7 +597,7 @@ Primary implementation sources:
 - [`components/settings/repo-facts-panel.tsx`](../components/settings/repo-facts-panel.tsx)
   — current report-only presentation.
 
-Installed SDK contract, `@get-bb/plugin-sdk` 0.6.65:
+Minimum SDK contract, `@get-bb/plugin-sdk` 0.5.8:
 
 - `EnvironmentsArea.update` and `updateEnvironmentRequestSchema`
 - `updateThreadRequestSchema`

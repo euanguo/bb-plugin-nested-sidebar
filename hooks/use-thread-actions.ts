@@ -27,7 +27,14 @@ export function useThreadActions(): ThreadActions {
   return useMemo(
     () => ({
       open(threadId, options) {
-        navigate.toThread(threadId, options);
+        // Current bb accepts split placement; the SDK 0.5.x declaration does
+        // not expose the second argument yet. The extra argument is ignored by
+        // runtimes that predate it.
+        const openThread = navigate.toThread as (
+          id: string,
+          openOptions?: { split?: boolean },
+        ) => void;
+        openThread(threadId, options);
       },
       openNewThread(options) {
         navigate.toCompose(options);

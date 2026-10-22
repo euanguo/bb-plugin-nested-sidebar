@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from "react";
 import {
-  experimental_useThreadActions,
+  useSdk,
   type PluginSidebarThread,
-  type PluginThreadActionTarget,
 } from "@get-bb/plugin-sdk/app";
 import { useThreadActions } from "@/hooks/use-thread-actions";
 import { copyWithAnnouncement } from "@/lib/clipboard";
@@ -11,6 +10,7 @@ import { threadDisplayTitle } from "@/lib/inbox";
 import { ThreadRenameDialog } from "@/components/inbox/thread-rename-dialog";
 import { RowMenu, type RowMenuItem } from "@/components/inbox/row-context-menu";
 import { resolveSnoozePresets } from "@/lib/lifecycle";
+import { Modal } from "@/components/ui/modal";
 
 /**
  * One thread action, described once and drawn by the one menu.
@@ -68,29 +68,8 @@ export function useThreadMenuActions({
   splitAvailable: boolean;
 }): ThreadMenuActions {
   const actions = useThreadActions();
-  const actionTarget: PluginThreadActionTarget = {
-    id: thread.id,
-    projectId: thread.projectId,
-    parentThreadId: thread.parentThreadId,
-    archivedAt: thread.archivedAt,
-    pinnedAt: thread.pinnedAt,
-    sectionId: thread.sectionId,
-    isUnread: thread.isUnread,
-    status: thread.status,
-    environment:
-      thread.environment?.id === null || thread.environment?.id === undefined
-        ? null
-        : {
-            id: thread.environment.id,
-            path: thread.environment.path,
-          },
-  };
-  const deleteAction = experimental_useThreadActions(actionTarget).find(
-    (entry) =>
-      entry.pluginId === "bb--core" &&
-      /delete/i.test(entry.action.label),
-  );
   const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const tomorrow = () => {
     const preset = resolveTomorrow();
     if (preset !== null) onSnooze(preset);
@@ -194,23 +173,99 @@ export function useThreadMenuActions({
       icon: "Trash",
       label: "Delete…",
       destructive: true,
-      disabled: deleteAction === undefined,
-      onSelect: () => {
-        if (deleteAction !== undefined) void deleteAction.action.run();
-      },
+      onSelect: () => setDeleting(true),
     },
   );
 
   return {
     items,
     dialog: renaming ? (
-      <ThreadRenameDialog
-        threadId={thread.id}
-        currentTitle={threadDisplayTitle(thread)}
-        onClose={() => setRenaming(false)}
-      />
-    ) : null,
+        <ThreadRenameDialog
+          threadId={thread.id}
+          currentTitle={threadDisplayTitle(thread)}
+          onClose={() => setRenaming(false)}
+        />
+      ) : deleting ? (
+        <DeleteThreadDialog
+          thread={thread}
+          childCount={childCount}
+          onClose={() => setDeleting(false)}
+        />
+      ) : null,
   };
+}
+
+function DeleteThreadDialog({
+  thread,
+  childCount,
+  onClose,
+}: {
+  thread: PluginSidebarThread;
+  childCount: number;
+  onClose: () => void;
+}) {
+  const sdk = useSdk();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const title = threadDisplayTitle(thread);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await sdk.threads.delete({
+        threadId: thread.id,
+        childThreadsConfirmed: true,
+      });
+      onClose();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      busy={busy}
+      icon="Trash"
+      title="Delete thread?"
+      width="26rem"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="h-7 rounded-md px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void submit()}
+            className="h-7 rounded-md bg-destructive px-2.5 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-40"
+          >
+            {busy ? "Deleting…" : "Delete thread"}
+          </button>
+        </div>
+      }
+    >
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        This deletes <span className="font-medium text-foreground">{title}</span>
+        {childCount === 0
+          ? "."
+          : ` and ${childCount} child thread${childCount === 1 ? "" : "s"}.`}{" "}
+        This cannot be undone.
+      </p>
+      {error === null ? null : (
+        <p className="mt-2 text-2xs text-destructive">{error}</p>
+      )}
+    </Modal>
+  );
 }
 
 /**
