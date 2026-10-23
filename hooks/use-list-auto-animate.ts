@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { autoAnimate } from "@formkit/auto-animate";
+import { publishRowLayoutChanged } from "@/lib/row-pointer";
 
 /**
  * The list transitions for the tree's row containers.
@@ -85,6 +86,22 @@ function sweepAbandonedExits(node: HTMLElement) {
   }
 }
 
+/**
+ * auto-animate floats a leaving row over the list until its exit finishes.
+ * Even with `pointer-events: none` on the row, descendants can still win the
+ * browser's hit test. `inert` removes the whole subtree from hit testing and
+ * focus while the animation owns it.
+ */
+function disableExitPointerTargets(node: HTMLElement) {
+  for (const row of Array.from(node.children)) {
+    if (!(row instanceof HTMLElement)) continue;
+    if (row.style.position !== EXIT_STYLE.position) continue;
+    if (row.style.zIndex !== EXIT_STYLE.zIndex) continue;
+    row.inert = true;
+    row.style.setProperty("pointer-events", EXIT_STYLE.pointerEvents, "important");
+  }
+}
+
 export function useListAutoAnimate<T extends HTMLElement>() {
   return useCallback((node: T | null) => {
     // A DOM the tests build has no `matchMedia`, and auto-animate needs it — so
@@ -100,12 +117,23 @@ export function useListAutoAnimate<T extends HTMLElement>() {
     // batch is enough to catch it. One timer per batch rather than a debounce,
     // so a burst of changes cannot keep pushing the sweep out.
     const timers = new Set<number>();
+    const layoutTimers = new Set<number>();
     const observer = new MutationObserver(() => {
+      disableExitPointerTargets(node);
       const timer = window.setTimeout(() => {
         timers.delete(timer);
         sweepAbandonedExits(node);
       }, SWEEP_DELAY_MS);
       timers.add(timer);
+
+      // The first check covers removals without an exit animation. The second
+      // lands after auto-animate has moved the surviving rows into place.
+      publishRowLayoutChanged();
+      const layoutTimer = window.setTimeout(() => {
+        layoutTimers.delete(layoutTimer);
+        publishRowLayoutChanged();
+      }, EXIT_MS + 16);
+      layoutTimers.add(layoutTimer);
     });
     observer.observe(node, { childList: true });
 
@@ -113,6 +141,8 @@ export function useListAutoAnimate<T extends HTMLElement>() {
       observer.disconnect();
       for (const timer of timers) window.clearTimeout(timer);
       timers.clear();
+      for (const timer of layoutTimers) window.clearTimeout(timer);
+      layoutTimers.clear();
       // Dropping our reference is not enough: auto-animate holds the parent in
       // its own registry and keeps observers and a polling interval alive until
       // it is told to let go.

@@ -379,9 +379,9 @@ describe("the row's pin control", () => {
     // drift apart: the three arrive together or not at all.
     assert.match(
       card,
-      /const rowActionsRevealed =\n    canPark && !selectionMode && showRowDetails && reveal\.revealed;/,
+      /const rowActionsRevealed =\n    rootParkActionsAvailable && reveal\.revealed;/,
     );
-    assert.match(card, /const showRootParkActions = rowActionsRevealed;/);
+    assert.match(card, /const showRootParkActions = rootParkActionsAvailable;/);
     assert.match(
       card,
       /const showRootPin = !selectionMode && \(thread\.isPinned \|\| rowActionsRevealed\);/,

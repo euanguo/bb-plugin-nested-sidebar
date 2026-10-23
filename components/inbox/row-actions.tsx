@@ -1,5 +1,10 @@
 import * as React from "react";
 import { Icon } from "@/components/ui/icon";
+import {
+  ROW_LAYOUT_CHANGED_EVENT,
+  lastRowPointer,
+  rememberRowPointer,
+} from "@/lib/row-pointer";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,13 +31,37 @@ import { cn } from "@/lib/utils";
  * for every ancestor group, which would light up a parent's controls while the
  * pointer is on a child.
  */
-export function useRowReveal() {
+export function useRowReveal<T extends HTMLElement = HTMLElement>() {
+  const ref = React.useRef<T | null>(null);
   const [pointer, setPointer] = React.useState(false);
   const [focus, setFocus] = React.useState(false);
+
+  React.useEffect(() => {
+    const recheck = () => {
+      const node = ref.current;
+      const position = lastRowPointer();
+      if (node === null || position === null) return;
+      if (typeof document.elementFromPoint !== "function") return;
+      const hit = document.elementFromPoint(position.x, position.y);
+      setPointer(hit !== null && node.contains(hit));
+    };
+    document.addEventListener(ROW_LAYOUT_CHANGED_EVENT, recheck);
+    return () => {
+      document.removeEventListener(ROW_LAYOUT_CHANGED_EVENT, recheck);
+    };
+  }, []);
+
   return {
+    ref,
     revealed: pointer || focus,
     handlers: {
-      onPointerEnter: () => setPointer(true),
+      onPointerEnter: (event: React.PointerEvent<HTMLElement>) => {
+        rememberRowPointer({ x: event.clientX, y: event.clientY });
+        setPointer(true);
+      },
+      onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+        rememberRowPointer({ x: event.clientX, y: event.clientY });
+      },
       onPointerLeave: () => setPointer(false),
       onFocusCapture: () => setFocus(true),
       onBlurCapture: () => setFocus(false),

@@ -98,7 +98,14 @@ describe("compact root card contract", () => {
         ?.length,
       2,
     );
-    assert.match(rootSource, /showRowDetails && reveal\.revealed/);
+    assert.match(
+      rootSource,
+      /rootParkActionsAvailable\s*=\s*canPark && !selectionMode && showRowDetails/,
+    );
+    assert.match(
+      rootSource,
+      /rowActionsRevealed\s*=\s*rootParkActionsAvailable && reveal\.revealed/,
+    );
   });
 
   it("uses normal foreground text for thread titles", () => {

@@ -105,7 +105,7 @@ export function ThreadCard({
   preferences: NestPreferences;
 }) {
   const actions = useThreadActions();
-  const reveal = useRowReveal();
+  const reveal = useRowReveal<HTMLDivElement>();
   /**
    * Two different questions, and neither answers the other.
    *
@@ -196,8 +196,10 @@ export function ThreadCard({
    * otherwise offer is in the row's menu, which is where the rest of a thread's
    * verbs live anyway. Written once so the two cannot drift apart.
    */
+  const rootParkActionsAvailable =
+    canPark && !selectionMode && showRowDetails;
   const rowActionsRevealed =
-    canPark && !selectionMode && showRowDetails && reveal.revealed;
+    rootParkActionsAvailable && reveal.revealed;
   /**
    * The pin, and when it is drawn.
    *
@@ -209,9 +211,9 @@ export function ThreadCard({
    * arrives with — same conditions, and the same motion in `PIN_MOTION`.
    */
   const showRootPin = !selectionMode && (thread.isPinned || rowActionsRevealed);
-  const showRootParkActions = rowActionsRevealed;
+  const showRootParkActions = rootParkActionsAvailable;
   const showRootTime =
-    !showRootParkActions && preferences.showRelativeTime && showRowDetails;
+    preferences.showRelativeTime && showRowDetails;
   const showRootRail =
     showRootPin || showRootParkActions || showRootTime || hasRootMetadata;
   /**
@@ -253,24 +255,45 @@ export function ThreadCard({
         />
       ) : null}
       {showRootParkActions ? (
-        <span data-nest-root-time="" className="flex h-4 items-center gap-0.5">
-          <ParkButton
-            tone="snooze"
-            label="Snooze until tomorrow"
-            icon="Clock"
-            onActivate={() => {
-              const tomorrow = resolveSnoozePresets(new Date()).find(
-                (preset) => preset.id === "tomorrow",
-              );
-              if (tomorrow) onSnooze(tomorrow.snoozedUntil);
-            }}
-          />
-          <ParkButton
-            tone="settle"
-            label="Settle thread"
-            icon="Archive"
-            onActivate={onSettle}
-          />
+        <span
+          data-nest-root-time=""
+          className="relative flex h-4 w-10 shrink-0 items-center justify-end"
+        >
+          {showRootTime ? (
+            <span
+              className={cn(
+                "flex items-center transition-opacity duration-150 motion-reduce:transition-none",
+                rowActionsRevealed && "invisible",
+              )}
+            >
+              <StatusOrTime thread={thread} now={now} />
+            </span>
+          ) : null}
+          <span
+            data-nest-park-actions=""
+            className={cn(
+              "absolute inset-y-0 right-0 flex items-center gap-0.5 transition-opacity duration-150 motion-reduce:transition-none",
+              rowActionsRevealed ? "opacity-100" : "opacity-0",
+            )}
+          >
+            <ParkButton
+              tone="snooze"
+              label="Snooze until tomorrow"
+              icon="Clock"
+              onActivate={() => {
+                const tomorrow = resolveSnoozePresets(new Date()).find(
+                  (preset) => preset.id === "tomorrow",
+                );
+                if (tomorrow) onSnooze(tomorrow.snoozedUntil);
+              }}
+            />
+            <ParkButton
+              tone="settle"
+              label="Settle thread"
+              icon="Archive"
+              onActivate={onSettle}
+            />
+          </span>
         </span>
       ) : showRootTime ? (
         <span data-nest-root-time="" className="flex h-4 items-center">
@@ -373,8 +396,9 @@ export function ThreadCard({
             outlined family box on top of a row that also tints read as two
             nested panels. */}
         <div
+          ref={reveal.ref}
           data-nest-root-card=""
-        {...reveal.handlers}
+          {...reveal.handlers}
           className={cn(
             "group/root @container relative flex min-w-0 items-center gap-x-2 rounded-md px-2.5 transition-colors duration-150 ease-out motion-reduce:transition-none",
           clusterRidesTheTitle ? "min-h-5" : "min-h-10",

@@ -237,13 +237,15 @@ describe("row affordances across the four levels", () => {
     assert.doesNotMatch(card, /ROW_MENU_OVERLAY_CLASS/);
     assert.match(card, /showRootRail \? \(/);
     // Hover state survives in exactly one place now: the root card, where the
-    // park buttons replace the age while the pointer is on it. The menu trigger
-    // it used to reveal is a right-click now, and nothing else reads hover.
+    // park buttons replace the age while the pointer is on it. They stay mounted
+    // so a row moving under a stationary pointer can be clicked immediately.
     assert.match(
       card,
-      /canPark && !selectionMode && showRowDetails && reveal\.revealed/,
+      /rootParkActionsAvailable\s*=\s*canPark && !selectionMode && showRowDetails/,
     );
-    assert.equal(card.match(/useRowReveal\(\)/g)?.length, 1);
+    assert.match(card, /data-nest-park-actions=""/);
+    assert.match(card, /rowActionsRevealed \? "opacity-100" : "opacity-0"/);
+    assert.equal(card.match(/useRowReveal<HTMLDivElement>\(\)/g)?.length, 1);
     for (const [level, source] of [
       ["group", groupRow],
       ["project", projectRow],
